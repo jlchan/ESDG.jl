@@ -30,6 +30,8 @@ function gauss_lobatto_quad(α, β, N)
         xint, w = gauss_quad(α+1, β+1, N-2)
         x = [-1 transpose(xint) 1]
 
+        # V = vandermonde1D(N,x)
+        # w = vec(sum(inv(V*V'),dims=2))
     end
     return x[:]
 end
