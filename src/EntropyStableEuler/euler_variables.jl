@@ -29,7 +29,7 @@ end
 function VU(U,γ=1.4)
     (rho,rhou,rhov,E) = U
     ρe = rhoefun(U)
-    v1 = (-E + ρe*(γ + 1 - sfun(rho,rhou,rhov,E)))/ρe
+    v1 = (-E + ρe*(γ + 1 - sfun(U)))/ρe
     v2 = rhou/ρe
     v3 = rhov/ρe
     v4 = (-rho)/ρe
