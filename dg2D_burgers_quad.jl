@@ -14,13 +14,13 @@ using Basis2DQuad
 using QuadMeshUtils
 
 "Approximation parameters"
-N = 2 # The order of approximation
+N = 3 # The order of approximation
 K1D = 16
 
 "Mesh related variables"
 Nfaces = 4  # number of faces per element
 (VX, VY, EToV) = uniform_quad_mesh(K1D, K1D)
-K = size(EToV, 1); # The number of element on the mesh we constructed
+K  = size(EToV, 1); # The number of element on the mesh we constructed
 Nv = size(VX, 1); # Total number of nodes on the mesh
 EToE, EToF = connect_2D(EToV)
 
@@ -135,7 +135,7 @@ rk4c = [ 0.0  ...
 CN = (N+1)*(N+2)  # estimated trace constant
 CFL = .5;
 dt = CFL * 2 / (CN*K1D)
-T = .5 # endtime
+T = 1.0 # endtime
 Nsteps = convert(Int,ceil(T/dt))
 
 rhsu = zeros(size(x))
@@ -177,21 +177,23 @@ function lazy_hadamard_sum(A,u,fun)
 end
 
 function rhs(Qh,ops,geo,nodemaps,hadamard_sum_fun)
+    # unpack args
     (uh)=Qh
     (Qrhskew,Qshskew,Ph,Lf)=ops
     (rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ)=geo
     (mapP,mapB) = nodemaps
-
     Nh = size(Qrhskew,1)
     Nq = size(Ph,1)
+
+    # compute fluxes
     uM = uh[Nq+1:end,:]
     uP = uM[mapP]
-
     du = uP-uM
     lam = @. max(abs(uM),abs(uP))
     uflux = @. burgers_flux.(uM,uP)*nxJ - .5*lam*du*sJ
-
     rhsu = Lf*uflux
+
+    # compute volume contributions
     for e = 1:size(u,2)
         Qxh = rxJ[1,e]*Qrhskew + sxJ[1,e]*Qshskew
         ue = uh[:,e]
@@ -199,7 +201,6 @@ function rhs(Qh,ops,geo,nodemaps,hadamard_sum_fun)
     end
 
     rhsu = @. -rhsu/J
-
     return (rhsu)
 end
 
@@ -231,11 +232,11 @@ for i = 1:Nsteps
 end
 
 "plotting nodes"
-rp, sp = equi_nodes_2D(10)
+rp, sp = equi_nodes_2D(25)
 Vp = vandermonde_2D(N,rp,sp)/V
 
-pyplot(size=(200,200),legend=false,markerstrokewidth=0,markersize=2)
-# gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2)
+# pyplot(size=(200,200),legend=false,markerstrokewidth=0,markersize=2)
+gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2)
 
 vv = Vp*u
 scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90))
