@@ -274,7 +274,7 @@ Returns quadrature nodeswhich exactly integrate degree N polynomials
 function quad_nodes_tri(N)
 
     if N<28
-        rsw = readdlm(string("./src/data/quad_nodes_tri_N", N, ".txt"),' ', Float64, '\n')
+        rsw = readdlm(string("./src/QuadratureData/quad_nodes_tri_N", N, ".txt"),' ', Float64, '\n')
         r = rsw[:,1]
         s = rsw[:,2]
         w = rsw[:,3]
