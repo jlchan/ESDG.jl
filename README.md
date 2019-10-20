@@ -3,11 +3,16 @@
 
 These codes are based loosely on the Matlab codes for the book Nodal Discontinuous Galerkin methods by Hesthaven and Warburton (2007).
 
-The methods used are based loosely on the following references
-- https://doi.org/10.1016/j.jcp.2018.02.033
-- https://doi.org/10.1016/j.jcp.2018.11.010
-- https://doi.org/10.1137/18M1209234
-- https://doi.org/10.1007/s10915-019-01026-w
+The file "dg2D_cfd_quad.jl" provides a demo of entropy stable DG methods on quadrilateral elements for Burgers' equation.
+
+The routines "dg2D_wave_tri.jl" or see "dg2D_wave_quad.jl" also compute solutions to the acoustic wave equation. 
+
+The methods used are based on the following references:
+- [On discretely entropy conservative and entropy stable DG methods
+](https://doi.org/10.1016/j.jcp.2018.02.033)
+- [On discretely entropy stable weight-adjusted DG methods: curvilinear meshes](https://doi.org/10.1016/j.jcp.2018.11.010)
+- [Efficient Entropy Stable Gauss Collocation Methods](https://doi.org/10.1137/18M1209234)
+- [Skew-Symmetric Entropy Stable Modal DG Formulations](https://doi.org/10.1007/s10915-019-01026-w)
 
 <!-- using Pkg
 Pkg.add("Revise")
