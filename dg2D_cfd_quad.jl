@@ -14,7 +14,7 @@ using Basis2DQuad
 using QuadMeshUtils
 
 "Approximation parameters"
-N = 3 # The order of approximation
+N = 2 # The order of approximation
 K1D = 16
 
 "Mesh related variables"
@@ -51,7 +51,7 @@ nrJ = [z; e; z; -e]
 nsJ = [-e; z; e; z]
 Vf = vandermonde_2D(N,rf,sf)/V
 
-"Decoupled SBP operators"
+"Make hybridized SBP operators"
 Qr = Pq'*M*Dr*Pq
 Qs = Pq'*M*Ds*Pq
 E = Vf*Pq
@@ -62,24 +62,20 @@ Qrh = .5*[Qr-Qr' E'*Br;
 Qsh = .5*[Qs-Qs' E'*Br;
 -Bs*E Bs]
 
-# interpolates to
-Vh = [diagm(ones(size(rq))); E]
-Ph = diagm(wq)\transpose(Vh)
+"interpolation to and from hybridized quad points"
+Vh = [Vq; Vf]
+Ph = M\transpose(Vh) # inverse mass for Gauss points
+"Lift matrix"
+Lf = M\(transpose(Vf)*diagm(wf))
 
-# skew symmetric version of the operators
-Qrh = droptol!(sparse(Qrh),1e-10)
-Qsh = droptol!(sparse(Qsh),1e-10)
+"skew symmetric version of the operators"
+Qrhskew = .5*(Qrh-Qrh')
+Qshskew = .5*(Qsh-Qsh')
+Qrhskew = droptol!(sparse(Qrhskew),1e-10)
+Qshskew = droptol!(sparse(Qshskew),1e-10)
 Vh = droptol!(sparse(Vh),1e-10)
 Ph = droptol!(sparse(Ph),1e-10)
-
-
-"Lift matrix"
-LIFT = M\(transpose(Vf)*diagm(wf))
-
-# sparsify
-Dr = droptol!(sparse(Dr), 1e-10)
-Ds = droptol!(sparse(Ds), 1e-10)
-LIFT = droptol!(sparse(LIFT),1e-10)
+Lf = droptol!(sparse(Lf),1e-10)
 
 "Map to physical nodes"
 va = transpose(EToV[:, 1])
@@ -110,10 +106,12 @@ nxJ = (Vf*rxJ).*nrJ + (Vf*sxJ).*nsJ;
 nyJ = (Vf*ryJ).*nrJ + (Vf*syJ).*nsJ;
 sJ = @. sqrt(nxJ^2 + nyJ^2)
 
+"Hybridized geofacs"
+rxJh = Vh*rxJ; sxJh = Vh*sxJ
+ryJh = Vh*ryJ; syJh = Vh*syJ
+
 "initial conditions"
-p = @. exp(-100*((x-.5)^2+y^2))
-u = zeros(size(x))
-v = zeros(size(x))
+u = @. -sin(pi*x)*sin(pi*y)
 
 "Time integration"
 rk4a = [            0.0 ...
@@ -133,83 +131,75 @@ rk4c = [ 0.0  ...
 2802321613138.0/2924317926251.0 ...
 1.0];
 
+"Estimate timestep"
 CN = (N+1)*(N+2)  # estimated trace constant
-CFL = .75;
+CFL = .5;
 dt = CFL * 2 / (CN*K1D)
-T = .75 # endtime
+T = .5 # endtime
 Nsteps = convert(Int,ceil(T/dt))
 
-rhsp = zeros(size(x))
 rhsu = zeros(size(x))
-rhsv = zeros(size(x))
-resp = zeros(size(x))
 resu = zeros(size(x))
-resv = zeros(size(x))
 
 "Pack arguments into tuples"
-Q = (p,u,v)
-rhsQ = (rhsp,rhsu,rhsv)
-resQ = (resp,resu,resv)
-ops = (Dr,Ds,LIFT,Vf)
-geo = (rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ)
+ops = (Qrhskew,Qshskew,Ph,Lf)
+geo = (rxJh,sxJh,ryJh,syJh,J,nxJ,nyJ,sJ)
 Nfp = length(r1D)
 mapM = reshape(mapM,Nfp*Nfaces,K)
 mapP = reshape(mapP,Nfp*Nfaces,K)
 nodemaps = (mapP,mapB)
 
-"varying wavespeed"
-c2 = @. 1 + .5*sin(pi*x)*sin(pi*y)
-# c2 = ones(size(x))
+function burgers_flux(uL,uR)
+    return (uL^2 + uL*uR + uR^2)/6.0
+end
 
-function rhs(Q,ops,geo,nodemaps,params...)
-
-    (p,u,v) = Q
-    (Dr,Ds,LIFT,Vf)=ops # should make functions for these
+function rhs(Qh,ops,geo,nodemaps,params...)
+    (uh)=Qh
+    (Qrhskew,Qshskew,Ph,Lf)=ops
     (rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ)=geo
     (mapP,mapB) = nodemaps
-    pM = Vf*p
-    uM = Vf*u
-    vM = Vf*v
-    pP = pM[mapP]
+
+    Nq = size(Ph,1)
+    uM = uh[Nq+1:end,:]
     uP = uM[mapP]
-    vP = vM[mapP]
 
-    dp = pP-pM
     du = uP-uM
-    dv = vP-vM
-    # du[mapB] = -2*uM[mapB]
-    # dv[mapB] = -2*vM[mapB]
-    pflux = @. du*nxJ + dv*nyJ
-    uflux = @. dp*nxJ
-    vflux = @. dp*nyJ
+    lam = @. max(abs(uM),abs(uP))
+    uflux = @. burgers_flux.(uM,uP)*nxJ - .5*lam*du*sJ
 
-    pr = Dr*p;   ps = Ds*p
-    ur = Dr*u;   us = Ds*u
-    vr = Dr*v;   vs = Ds*v
+    rhsu = Lf*uflux
+    for e = 1:size(u,2)
+        Qxh = rxJ[1,e]*Qrhskew + sxJ[1,e]*Qshskew
 
-    px = @. rxJ*pr + sxJ*ps;
-    py = @. ryJ*pr + syJ*ps
-    ux = @. rxJ*ur + sxJ*us;
-    vy = @. ryJ*vr + syJ*vs
+        # QF = zeros(size(Qxh,1))
+        # for i = 1:size(Qxh,1)
+        #     ui = uh[i,e]
+        #     QFi = 0
+        #     for j = Qxh[i,:].nzind
+        #         uj = uh[j,e]
+        #         QFi += Qxh[i,j]*burgers_flux(ui,uj)
+        #     end
+        #     QF[i] = QFi
+        # end
+        # rhsu[:,e] += 2*Ph*QF
+        ux, uy = meshgrid(uh[:,e])
+        F = burgers_flux.(ux,uy);
+        rhsu[:,e] += 2*Ph*sum(Qxh.*F,dims=2)
+    end
 
-    rhsp = (ux+vy) + .5*LIFT*pflux
-    rhsu = px + .5*LIFT*uflux
-    rhsv = py + .5*LIFT*vflux
-
-    c2 = params[1]
-    rhsp = @. -c2*rhsp/J
     rhsu = @. -rhsu/J
-    rhsv = @. -rhsv/J
-    return (rhsp,rhsu,rhsv)
+
+    return (rhsu)
 end
 
 for i = 1:Nsteps
-    global Q, resQ # for scoping - these variables are updated
+    global u, resu # for scoping - these variables are updated
 
     for INTRK = 1:5
-        rhsQ = rhs(Q,ops,geo,nodemaps,c2)
-        resQ = @. rk4a[INTRK]*resQ + dt*rhsQ
-        Q    = @. Q + rk4b[INTRK]*resQ
+        Qh = (Vh*u)
+        rhsu = rhs(Qh,ops,geo,nodemaps)
+        resu = @. rk4a[INTRK]*resu + dt*rhsu
+        u    = @. u + rk4b[INTRK]*resu
     end
 
     if i%10==0 || i==Nsteps
@@ -217,14 +207,12 @@ for i = 1:Nsteps
     end
 end
 
-(p,u,v) = Q
-
 "plotting nodes"
-rp, sp = equi_nodes_2D(10)
+rp, sp = equi_nodes_2D(25)
 Vp = vandermonde_2D(N,rp,sp)/V
 
 # pyplot(size=(500,500),legend=false,markerstrokewidth=0)
 gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2)
 
-vv = Vp*p
+vv = Vp*u
 scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90))
