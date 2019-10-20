@@ -59,6 +59,12 @@ xf = Vf*x
 yf = Vf*y
 mapM,mapP,mapB = build_node_maps_2D(xf,yf,Nfaces,EToE,EToF)
 
+"Make periodic"
+LX = maximum(VX)-minimum(VX)
+LY = maximum(VY)-minimum(VY)
+mapPB = build_periodic_boundary_maps_2D(xf,yf,LX,LY,Nfaces,mapM,mapP,mapB)
+mapP[mapB] = mapPB
+
 "Geometric factors and surface normals"
 rxJ, sxJ, ryJ, syJ, J = geometric_factors_2D(x, y, Dr, Ds)
 nxJ = (Vf*rxJ).*nrJ + (Vf*sxJ).*nsJ;
@@ -66,7 +72,7 @@ nyJ = (Vf*ryJ).*nrJ + (Vf*syJ).*nsJ;
 sJ = @. sqrt(nxJ^2 + nyJ^2)
 
 "initial conditions"
-p = @. exp(-25*(x^2+y^2))
+p = @. exp(-25*((x-.5)^2+y^2))
 u = zeros(size(x))
 v = zeros(size(x))
 
@@ -91,7 +97,7 @@ rk4c = [ 0.0  ...
 CN = (N+1)*(N+2)/2  # estimated trace constant
 CFL = .5;
 dt = CFL * 2 / (CN*K1D)
-T = 0.5 # endtime
+T = 0.75 # endtime
 Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
@@ -133,8 +139,8 @@ function rhs(Q,ops,geo,nodemaps,params...)
     dp = pP-pM
     du = uP-uM
     dv = vP-vM
-    du[mapB] = -2*uM[mapB]
-    dv[mapB] = -2*vM[mapB]
+    # du[mapB] = -2*uM[mapB]
+    # dv[mapB] = -2*vM[mapB]
     pflux = @. du*nxJ + dv*nyJ
     uflux = @. dp*nxJ
     vflux = @. dp*nyJ
@@ -182,7 +188,7 @@ rp, sp = equi_nodes_2D(10)
 Vp = vandermonde_2D(N,rp,sp)/V
 
 # pyplot(size=(500,500),legend=false,markerstrokewidth=0)
-gr(size=(300,300),legend=false,markerstrokewidth=0)
+gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2)
 
 vv = Vp*p
 scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90))
