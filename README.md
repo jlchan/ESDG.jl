@@ -1,11 +1,11 @@
 # JuliaDG
-## A set of codes for solving time-dependent hyperbolic PDEs using high order DG methods on either triangular or quadrilateral meshes.
+## A set of codes for solving 2D time-dependent hyperbolic PDEs using high order DG methods on either triangular or quadrilateral meshes.
 
 These codes are based loosely on the Matlab codes for the book Nodal Discontinuous Galerkin methods by Hesthaven and Warburton (2007).
 
 The file "dg2D_cfd_quad.jl" provides a demo of entropy stable DG methods on quadrilateral elements for Burgers' equation.
 
-The routines "dg2D_wave_tri.jl" or see "dg2D_wave_quad.jl" also compute solutions to the acoustic wave equation. 
+The routines "dg2D_wave_tri.jl" and "dg2D_wave_quad.jl" compute solutions to the acoustic wave equation on triangular and quadrilateral meshes.
 
 The methods used are based on the following references:
 - [On discretely entropy conservative and entropy stable DG methods
