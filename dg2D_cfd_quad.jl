@@ -153,12 +153,36 @@ function burgers_flux(uL,uR)
     return (uL^2 + uL*uR + uR^2)/6.0
 end
 
-function rhs(Qh,ops,geo,nodemaps,params...)
+"dense lin alg hadamard sum"
+function hadamard_sum(A,u,fun)
+    ux,uy = meshgrid(u,u)
+    return sum(A.*fun.(ux,uy),dims=2)
+end
+
+"lazy evaluation of F in sum(Q.*F,dims=2)"
+function lazy_hadamard_sum(A,u,fun)
+    NN = size(A,1)
+    AF = zeros(NN)
+    for i = 1:NN
+        Ai = A[i,:]
+        ui = u[i]
+        AFi = 0.0
+        for j = Ai.nzind
+            uj = u[j]
+            AFi += Ai[j]*fun(ui,uj)
+        end
+        AF[i] = AFi
+    end
+    return AF
+end
+
+function rhs(Qh,ops,geo,nodemaps,hadamard_sum_fun)
     (uh)=Qh
     (Qrhskew,Qshskew,Ph,Lf)=ops
     (rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ)=geo
     (mapP,mapB) = nodemaps
 
+    Nh = size(Qrhskew,1)
     Nq = size(Ph,1)
     uM = uh[Nq+1:end,:]
     uP = uM[mapP]
@@ -170,21 +194,8 @@ function rhs(Qh,ops,geo,nodemaps,params...)
     rhsu = Lf*uflux
     for e = 1:size(u,2)
         Qxh = rxJ[1,e]*Qrhskew + sxJ[1,e]*Qshskew
-
-        # QF = zeros(size(Qxh,1))
-        # for i = 1:size(Qxh,1)
-        #     ui = uh[i,e]
-        #     QFi = 0
-        #     for j = Qxh[i,:].nzind
-        #         uj = uh[j,e]
-        #         QFi += Qxh[i,j]*burgers_flux(ui,uj)
-        #     end
-        #     QF[i] = QFi
-        # end
-        # rhsu[:,e] += 2*Ph*QF
-        ux, uy = meshgrid(uh[:,e])
-        F = burgers_flux.(ux,uy);
-        rhsu[:,e] += 2*Ph*sum(Qxh.*F,dims=2)
+        ue = uh[:,e]
+        rhsu[:,e] += 2*Ph*hadamard_sum_fun(Qxh,uh[:,e],burgers_flux)
     end
 
     rhsu = @. -rhsu/J
@@ -192,12 +203,24 @@ function rhs(Qh,ops,geo,nodemaps,params...)
     return (rhsu)
 end
 
+# Qh = (Vh*u)
+# time = zeros(2)
+# for i = 1:10
+#     global timea, timeb
+#     a = @timed rhs(Qh,ops,geo,nodemaps,hadamard_sum)
+#     b = @timed rhs(Qh,ops,geo,nodemaps,lazy_hadamard_sum)
+#     time[1] += a[2]
+#     time[2] += b[2]
+# end
+# print("times = ",time/10,"\n")
+# error("d")
+
 for i = 1:Nsteps
     global u, resu # for scoping - these variables are updated
 
     for INTRK = 1:5
         Qh = (Vh*u)
-        rhsu = rhs(Qh,ops,geo,nodemaps)
+        rhsu = rhs(Qh,ops,geo,nodemaps,lazy_hadamard_sum)
         resu = @. rk4a[INTRK]*resu + dt*rhsu
         u    = @. u + rk4b[INTRK]*resu
     end
@@ -208,11 +231,11 @@ for i = 1:Nsteps
 end
 
 "plotting nodes"
-rp, sp = equi_nodes_2D(25)
+rp, sp = equi_nodes_2D(10)
 Vp = vandermonde_2D(N,rp,sp)/V
 
-# pyplot(size=(500,500),legend=false,markerstrokewidth=0)
-gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2)
+pyplot(size=(200,200),legend=false,markerstrokewidth=0,markersize=2)
+# gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2)
 
 vv = Vp*u
 scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90))
