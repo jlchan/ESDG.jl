@@ -139,8 +139,12 @@ function rhs(Q,ops,geo,nodemaps,params...)
     dp = pP-pM
     du = uP-uM
     dv = vP-vM
+
+    # "uncomment for wall boundary conditions"
+    # dp[mapB] = 0*pM[mapB]
     # du[mapB] = -2*uM[mapB]
     # dv[mapB] = -2*vM[mapB]
+
     pflux = @. du*nxJ + dv*nyJ
     uflux = @. dp*nxJ
     vflux = @. dp*nyJ
