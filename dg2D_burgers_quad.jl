@@ -1,7 +1,7 @@
 push!(LOAD_PATH, "./src")
 
 # "Packages"
-using Revise # reduce need for recompile
+using Revise # reduce recompilation
 using Plots
 using Documenter
 using LinearAlgebra
@@ -14,12 +14,12 @@ using Basis2DQuad
 using QuadMeshUtils
 
 "Approximation parameters"
-N = 3 # The order of approximation
+N = 2 # The order of approximation
 K1D = 16
 
 "Mesh related variables"
-Nfaces = 4  # number of faces per element
 (VX, VY, EToV) = uniform_quad_mesh(K1D, K1D)
+Nfaces = 4  # number of faces per element
 K  = size(EToV, 1); # The number of element on the mesh we constructed
 Nv = size(VX, 1); # Total number of nodes on the mesh
 EToE, EToF = connect_2D(EToV)
@@ -62,13 +62,14 @@ Qrh = .5*[Qr-Qr' E'*Br;
 Qsh = .5*[Qs-Qs' E'*Br;
 -Bs*E Bs]
 
-"interpolation to and from hybridized quad points"
-Vh = [Vq; Vf]
-Ph = M\transpose(Vh) # inverse mass for Gauss points
 "Lift matrix"
 Lf = M\(transpose(Vf)*diagm(wf))
 
-"skew symmetric version of the operators"
+"interpolation to and from hybridized quad points"
+Vh = [Vq; Vf]
+Ph = M\transpose(Vh) # inverse mass for Gauss points
+
+"sparse skew symmetric versions of the operators"
 Qrhskew = .5*(Qrh-Qrh')
 Qshskew = .5*(Qsh-Qsh')
 Qrhskew = droptol!(sparse(Qrhskew),1e-10)
@@ -133,9 +134,9 @@ rk4c = [ 0.0  ...
 
 "Estimate timestep"
 CN = (N+1)*(N+2)  # estimated trace constant
-CFL = .5;
+CFL = .75;
 dt = CFL * 2 / (CN*K1D)
-T = 1.0 # endtime
+T = .5 # endtime
 Nsteps = convert(Int,ceil(T/dt))
 
 rhsu = zeros(size(x))
@@ -161,9 +162,9 @@ end
 
 "lazy evaluation of F in sum(Q.*F,dims=2)"
 function lazy_hadamard_sum(A,u,fun)
-    NN = size(A,1)
-    AF = zeros(NN)
-    for i = 1:NN
+    N = size(A,1)
+    AF = zeros(N)
+    for i = 1:N
         Ai = A[i,:]
         ui = u[i]
         AFi = 0.0
@@ -196,7 +197,7 @@ function rhs(Qh,ops,geo,nodemaps,hadamard_sum_fun)
     # compute volume contributions
     for e = 1:size(u,2)
         Qxh = rxJ[1,e]*Qrhskew + sxJ[1,e]*Qshskew
-        ue = uh[:,e]
+        # Qyh = ryJ[1,e]*Qrhskew + syJ[1,e]*Qshskew
         rhsu[:,e] += 2*Ph*hadamard_sum_fun(Qxh,uh[:,e],burgers_flux)
     end
 
@@ -227,12 +228,12 @@ for i = 1:Nsteps
     end
 
     if i%10==0 || i==Nsteps
-        println("Number of time steps: ", i, " out of ", Nsteps)
+        println("Time step: ", i, " out of ", Nsteps)
     end
 end
 
 "plotting nodes"
-rp, sp = equi_nodes_2D(25)
+rp, sp = equi_nodes_2D(15)
 Vp = vandermonde_2D(N,rp,sp)/V
 
 # pyplot(size=(200,200),legend=false,markerstrokewidth=0,markersize=2)
