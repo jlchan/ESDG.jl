@@ -1,11 +1,11 @@
 """
-function build_periodic_boundary_maps_2D(xf,yf,LX,LY,mapM,mapP,mapB)
+function build_periodic_boundary_maps(xf,yf,LX,LY,mapM,mapP,mapB)
 
 # Examples
 ```jldoctest
 """
 
-function build_periodic_boundary_maps_2D(xf,yf,LX,LY,Nfaces,mapM,mapP,mapB)
+function build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces,mapM,mapP,mapB)
 
     xb = xf[mapB]
     yb = yf[mapB]

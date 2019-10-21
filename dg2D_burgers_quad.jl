@@ -88,12 +88,12 @@ y = V1*VY[transpose(EToV)]
 "Face nodes and connectivity maps"
 xf = Vf*x
 yf = Vf*y
-mapM, mapP, mapB = build_node_maps_2D(xf, yf, Nfaces, EToE, EToF)
+mapM, mapP, mapB = build_node_maps(xf, yf, Nfaces, EToE, EToF)
 
 "Make node maps periodic"
 LX = maximum(VX)-minimum(VX)
 LY = maximum(VY)-minimum(VY)
-mapPB = build_periodic_boundary_maps_2D(xf,yf,LX,LY,Nfaces,mapM,mapP,mapB)
+mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces,mapM,mapP,mapB)
 mapP[mapB] = mapPB
 
 "Geometric factors and surface normals"

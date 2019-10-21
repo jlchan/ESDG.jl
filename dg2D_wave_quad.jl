@@ -62,7 +62,7 @@ Ds = droptol!(sparse(Ds), 1e-10)
 LIFT = droptol!(sparse(LIFT),1e-10)
 
 "Map to physical nodes"
-r1,r2 = nodes_2D(1)
+r1,s1 = nodes_2D(1)
 V1 = vandermonde_2D(1,r,s)/vandermonde_2D(1,r1,s1)
 x = V1*VX[transpose(EToV)]
 y = V1*VY[transpose(EToV)]
@@ -70,7 +70,7 @@ y = V1*VY[transpose(EToV)]
 "Face nodes and connectivity maps"
 xf = Vf*x
 yf = Vf*y
-mapM, mapP, mapB = build_node_maps_2D(xf, yf, Nfaces, EToE, EToF)
+mapM, mapP, mapB = build_node_maps(xf, yf, Nfaces, EToE, EToF)
 
 "Geometric factors and surface normals"
 rxJ, sxJ, ryJ, syJ, J = geometric_factors_2D(x, y, Dr, Ds)

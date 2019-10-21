@@ -8,7 +8,7 @@ elements. mapM - map minus (interior). mapP - map plus (exterior).
 ```jldoctest
 """
 
-function build_node_maps_2D(xf,yf,Nfaces,EToE,EToF)
+function build_node_maps(xf,yf,Nfaces,EToE,EToF)
 
     K = size(EToE,1);
     Nfaces = size(EToF,2)
