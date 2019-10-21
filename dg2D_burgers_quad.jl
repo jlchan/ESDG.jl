@@ -80,16 +80,10 @@ Ph = droptol!(sparse(Ph),1e-10)
 Lf = droptol!(sparse(Lf),1e-10)
 
 "Map to physical nodes"
-va = transpose(EToV[:, 1])
-vb = transpose(EToV[:, 2])
-vc = transpose(EToV[:, 3])
-vd = transpose(EToV[:, 4])
-L1 = @. 0.25 * (1 - r) * (1 - s)
-L2 = @. 0.25 * (1 + r) * (1 - s)
-L3 = @. 0.25 * (1 + r) * (1 + s)
-L4 = @. 0.25 * (1 - r) * (1 + s)
-x = L1 * VX[va] + L2 * VX[vb] + L3 * VX[vc] + L4 * VX[vd]
-y = L1 * VY[va] + L2 * VY[vb] + L3 * VY[vc] + L4 * VY[vd]
+r1,r2 = nodes_2D(1)
+V1 = vandermonde_2D(1,r,s)/vandermonde_2D(1,r1,s1)
+x = V1*VX[transpose(EToV)]
+y = V1*VY[transpose(EToV)]
 
 "Face nodes and connectivity maps"
 xf = Vf*x

@@ -14,7 +14,7 @@ using UniformTriMesh
 
 "Approximation parameters"
 N   = 3; # The order of approximation
-K1D = 16
+K1D = 8
 
 "Mesh related variables"
 (VX,VY,EToV) = uniform_tri_mesh(K1D,K1D)
@@ -49,11 +49,10 @@ Vf = vandermonde_2D(N,rf,sf)/V
 LIFT = M\(transpose(Vf)*diagm(wf))
 
 "Construct global coordinates"
-va = transpose(EToV[:,1])
-vb = transpose(EToV[:,2])
-vc = transpose(EToV[:,3])
-x = 0.5*(-(r+s)*VX[va]+(1 .+ r)*VX[vb]+(1 .+ s)*VX[vc])
-y = 0.5*(-(r+s)*VY[va]+(1 .+ r)*VY[vb]+(1 .+ s)*VY[vc])
+r1,s1 = nodes_2D(1)
+V1 = vandermonde_2D(1,r,s)/vandermonde_2D(1,r1,s1)
+x = V1*VX[transpose(EToV)]
+y = V1*VY[transpose(EToV)]
 
 "Connectivity maps"
 xf = Vf*x

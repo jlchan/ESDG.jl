@@ -38,7 +38,7 @@ function uniform_quad_mesh(Nx,Ny)
         k = 1;
         for i = 1:Ny
                 for j = 1:Nx
-                        EToV[k,:] = [inds[i,j] inds[i,j+1] inds[i+1,j+1] inds[i+1,j]];
+                        EToV[k,:] = [inds[i,j] inds[i,j+1] inds[i+1,j] inds[i+1,j+1]];
                         k += 1;
                 end
         end
@@ -64,7 +64,7 @@ element to face connectivity.
 """
 
 function quad_face_vertices()
-        return [1,2],[2,3],[3,4],[4,1]
+        return [1,2],[2,4],[3,4],[3,1]
 end
 
 
