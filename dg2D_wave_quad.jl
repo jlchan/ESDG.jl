@@ -11,18 +11,19 @@ using SparseArrays
 using Utils
 using Basis1D
 using Basis2DQuad
-using QuadMeshUtils
+using UniformQuadMesh
 
 "Approximation parameters"
 N = 3; # The order of approximation
 K1D = 16
 
 "Mesh related variables"
-Nfaces = 4  # number of faces per element
 (VX, VY, EToV) = uniform_quad_mesh(K1D, K1D)
-K = size(EToV, 1); # The number of element on the mesh we constructed
+fv = quad_face_vertices()
+Nfaces = length(fv)  # number of faces per element
+K  = size(EToV, 1); # The number of element on the mesh we constructed
 Nv = size(VX, 1); # Total number of nodes on the mesh
-EToE, EToF = connect_2D(EToV)
+EToE, EToF = connect_mesh(EToV,fv)
 
 "Set up reference element nodes and operators"
 r, s = nodes_2D(N)
