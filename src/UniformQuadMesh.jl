@@ -1,15 +1,16 @@
 """
-Module QuadMeshUtils
+Module UniformQuadMesh
 
 Includes mesh related utility functions
 """
 
-module QuadMeshUtils
+module UniformQuadMesh
 
 using SparseArrays
 using Utils # for meshgrid
 
-export uniform_quad_mesh, connect_2D
+export uniform_quad_mesh
+export quad_face_vertices
 
 """
 uniform_quad_mesh(Kx::Int,Ky::Int)
@@ -61,24 +62,9 @@ element to face connectivity.
 # Examples
 ```jldoctest
 """
-function connect_2D(EToV)
-        Nfaces = 4
-        K = size(EToV,1)
-        Nnodes = maximum(EToV)
-        fnodes = [EToV[:,[1,2]]; EToV[:,[2,3]]; EToV[:,[3,4]]; EToV[:,[4,1]]]
-        sort!(fnodes, dims = 2)
-        fnodes = fnodes.-1;
-        EToE = (1:K)*ones(Int64,1,Nfaces)
-        EToF = ones(Int64,K,1)*transpose(1:Nfaces)
-        id = fnodes[:,1]*Nnodes + fnodes[:,2].+1;
-        spNodeToNode = [id collect(1:Nfaces*K) EToE[:] EToF[:]]
-        sorted = sortslices(spNodeToNode, dims=1)
-        indices = findall(sorted[1:(end-1),1] .== sorted[2:end,1])
-        matchL = [sorted[indices,:]; sorted[indices.+1,:]]
-        matchR = [sorted[indices.+1,:]; sorted[indices,:]]
-        EToE[matchL[:,2]] = matchR[:,3]
-        EToF[matchL[:,2]] = matchR[:,4]
-        return EToE, EToF
+
+function quad_face_vertices()
+        return [1,2],[2,3],[3,4],[4,1]
 end
 
 
