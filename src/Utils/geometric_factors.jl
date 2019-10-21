@@ -1,5 +1,5 @@
 """
-    geometric_factors_2D(Nfp, K, x, y, Dr, Ds, Fmask)
+    geometric_factors(Nfp, K, x, y, Dr, Ds, Fmask)
 
 Compute metrics of mappings between "real" elements and reference elements,
 outward pointing normals on faces of every elements, and Jacobian.
@@ -8,7 +8,7 @@ outward pointing normals on faces of every elements, and Jacobian.
 ```jldoctest
 
 """
-function geometric_factors_2D(x, y, Dr, Ds)
+function geometric_factors(x, y, Dr, Ds)
     "Transformation and Jacobian"
 
     xr = Dr*x;  xs = Ds*x;

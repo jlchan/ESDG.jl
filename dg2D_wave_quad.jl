@@ -73,7 +73,7 @@ yf = Vf*y
 mapM, mapP, mapB = build_node_maps(xf, yf, Nfaces, EToE, EToF)
 
 "Geometric factors and surface normals"
-rxJ, sxJ, ryJ, syJ, J = geometric_factors_2D(x, y, Dr, Ds)
+rxJ, sxJ, ryJ, syJ, J = geometric_factors(x, y, Dr, Ds)
 nxJ = (Vf*rxJ).*nrJ + (Vf*sxJ).*nsJ;
 nyJ = (Vf*ryJ).*nrJ + (Vf*syJ).*nsJ;
 sJ = @. sqrt(nxJ^2 + nyJ^2)
