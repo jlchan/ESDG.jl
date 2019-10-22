@@ -1,5 +1,5 @@
 """
-    geometric_factors(Nfp, K, x, y, Dr, Ds, Fmask)
+    geometric_factors(x, y, Dr, Ds)
 
 Compute metrics of mappings between "real" elements and reference elements,
 outward pointing normals on faces of every elements, and Jacobian.
