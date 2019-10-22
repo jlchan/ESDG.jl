@@ -14,8 +14,8 @@ using Basis2DQuad
 using UniformQuadMesh
 
 "Approximation parameters"
-N = 2 # The order of approximation
-K1D = 16
+N = 3 # The order of approximation
+K1D = 8
 
 "Mesh related variables"
 (VX, VY, EToV) = uniform_quad_mesh(K1D, K1D)
@@ -155,8 +155,8 @@ function hadamard_sum(A,u,fun)
     return sum(A.*fun.(ux,uy),dims=2)
 end
 
-"lazy evaluation of F in sum(Q.*F,dims=2)"
-function lazy_hadamard_sum(A,u,fun)
+"sparse evaluation of F in sum(Q.*F,dims=2)"
+function sparse_hadamard_sum(A,u,fun)
     N = size(A,1)
     AF = zeros(N)
     for i = 1:N
@@ -192,7 +192,6 @@ function rhs(Qh,ops,geo,nodemaps,hadamard_sum_fun)
     # compute volume contributions
     for e = 1:size(u,2)
         Qxh = rxJ[1,e]*Qrhskew + sxJ[1,e]*Qshskew
-        # Qyh = ryJ[1,e]*Qrhskew + syJ[1,e]*Qshskew
         rhsu[:,e] += 2*Ph*hadamard_sum_fun(Qxh,uh[:,e],burgers_flux)
     end
 
@@ -205,7 +204,7 @@ end
 # for i = 1:10
 #     global timea, timeb
 #     a = @timed rhs(Qh,ops,geo,nodemaps,hadamard_sum)
-#     b = @timed rhs(Qh,ops,geo,nodemaps,lazy_hadamard_sum)
+#     b = @timed rhs(Qh,ops,geo,nodemaps,sparse_hadamard_sum)
 #     time[1] += a[2]
 #     time[2] += b[2]
 # end
@@ -217,7 +216,7 @@ for i = 1:Nsteps
 
     for INTRK = 1:5
         Qh = (Vh*u)
-        rhsu = rhs(Qh,ops,geo,nodemaps,lazy_hadamard_sum)
+        rhsu = rhs(Qh,ops,geo,nodemaps,sparse_hadamard_sum)
         resu = @. rk4a[INTRK]*resu + dt*rhsu
         u    = @. u + rk4b[INTRK]*resu
     end
@@ -228,7 +227,7 @@ for i = 1:Nsteps
 end
 
 "plotting nodes"
-rp, sp = equi_nodes_2D(15)
+rp, sp = equi_nodes_2D(25)
 Vp = vandermonde_2D(N,rp,sp)/V
 
 # pyplot(size=(200,200),legend=false,markerstrokewidth=0,markersize=2)
