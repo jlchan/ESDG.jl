@@ -14,8 +14,8 @@ using Basis2DQuad
 using UniformQuadMesh
 
 "Approximation parameters"
-N = 3 # The order of approximation
-K1D = 8
+N = 2 # The order of approximation
+K1D = 16
 
 "Mesh related variables"
 (VX, VY, EToV) = uniform_quad_mesh(K1D, K1D)
@@ -137,6 +137,12 @@ Nsteps = convert(Int,ceil(T/dt))
 rhsu = zeros(size(x))
 resu = zeros(size(x))
 
+"convert to Gauss node basis"
+u = Vq*u
+Vh = droptol!(sparse([diagm(ones(length(rq))); E]),1e-10)
+Ph = droptol!(sparse(diagm(@. 1/wq)*transpose(Vh)),1e-10)
+Lf = droptol!(sparse(diagm(@. 1/wq)*(transpose(E)*diagm(wf))),1e-10)
+
 "Pack arguments into tuples"
 ops = (Qrhskew,Qshskew,Ph,Lf)
 geo = (rxJh,sxJh,ryJh,syJh,J,nxJ,nyJ,sJ)
@@ -192,6 +198,7 @@ function rhs(Qh,ops,geo,nodemaps,hadamard_sum_fun)
     # compute volume contributions
     for e = 1:size(u,2)
         Qxh = rxJ[1,e]*Qrhskew + sxJ[1,e]*Qshskew
+        # Qyh = ryJ[1,e]*Qrhskew + syJ[1,e]*Qshskew
         rhsu[:,e] += 2*Ph*hadamard_sum_fun(Qxh,uh[:,e],burgers_flux)
     end
 
@@ -225,6 +232,8 @@ for i = 1:Nsteps
         println("Time step: ", i, " out of ", Nsteps)
     end
 end
+
+u = Pq*u
 
 "plotting nodes"
 rp, sp = equi_nodes_2D(25)
