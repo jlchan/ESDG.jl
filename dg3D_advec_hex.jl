@@ -164,13 +164,17 @@ end
 rp, sp, tp = equi_nodes_3D(10)
 Vp = vandermonde_3D(N,rp,sp,tp)/V
 
-pyplot(size=(100,100),legend=false,markerstrokewidth=0,markersize=2)
-# gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2)
+# pyplot(size=(100,100),legend=false,markerstrokewidth=0,markersize=2)
+gr(size=(200,200),legend=false,markerstrokewidth=0,markersize=2)
 
 xp = Vp*x
 yp = Vp*y
 zp = Vp*z
 vv = Vp*u
 # vv = @. vv - sin(pi*(xp-T))
-# ids = map(x->x[1],findall(@. abs(abs(xp[:])-1.0)<1e-10 | abs(abs(yp[:])-1.0)<1e-10 | abs(abs(zp[:])-1.0)<1e-10))
+ids = map(x->x[1],findall(@. (abs(yp[:]+1.0)<1e-10) | (abs(xp[:]+1.0)<1e-10) | (abs(zp[:]+1.0)<1e-10)))
+xp = xp[ids]
+yp = yp[ids]
+zp = zp[ids]
+vv = vv[ids]
 scatter(xp,yp,zp,zcolor=vv)
