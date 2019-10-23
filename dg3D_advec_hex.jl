@@ -15,7 +15,7 @@ using Basis3DHex
 using UniformHexMesh
 
 N = 3
-K1D = 8
+K1D = 16
 VX,VY,VZ,EToV = uniform_hex_mesh(K1D,K1D,K1D)
 fv = hex_face_vertices()
 Nfaces = length(fv)
@@ -99,7 +99,7 @@ rk4c = [ 0.0  ...
 1.0];
 
 CN = (N+1)*(N+2)*3/2  # estimated trace constant
-CFL = .5;
+CFL = .75;
 dt = CFL * 2 / (CN*K1D)
 T = .5 # endtime
 Nsteps = convert(Int,ceil(T/dt))
