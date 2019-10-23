@@ -74,8 +74,8 @@ mapM, mapP, mapB = build_node_maps(xf, yf, Nfaces, EToE, EToF)
 
 "Geometric factors and surface normals"
 rxJ, sxJ, ryJ, syJ, J = geometric_factors(x, y, Dr, Ds)
-nxJ = (Vf*rxJ).*nrJ + (Vf*sxJ).*nsJ;
-nyJ = (Vf*ryJ).*nrJ + (Vf*syJ).*nsJ;
+nxJ = (Vf*rxJ).*nrJ + (Vf*sxJ).*nsJ
+nyJ = (Vf*ryJ).*nrJ + (Vf*syJ).*nsJ
 sJ = @. sqrt(nxJ^2 + nyJ^2)
 
 "initial conditions"
@@ -107,17 +107,10 @@ dt = CFL * 2 / (CN*K1D)
 T = .75 # endtime
 Nsteps = convert(Int,ceil(T/dt))
 
-rhsp = zeros(size(x))
-rhsu = zeros(size(x))
-rhsv = zeros(size(x))
-resp = zeros(size(x))
-resu = zeros(size(x))
-resv = zeros(size(x))
-
 "pack arguments into tuples"
 Q = (p,u,v)
-rhsQ = (rhsp,rhsu,rhsv)
-resQ = (resp,resu,resv)
+rhsQ = (zeros(size(x)) for i in eachindex(Q))
+resQ = (zeros(size(x)) for i in eachindex(Q))
 ops = (Dr,Ds,LIFT,Vf)
 geo = (rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ)
 mapM = reshape(mapM,Nfp*Nfaces,K)
@@ -134,26 +127,20 @@ function rhs(Q,ops,geo,nodemaps,params...)
     (Dr,Ds,LIFT,Vf)=ops # should make functions for these
     (rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ)=geo
     (mapP,mapB) = nodemaps
-    pM = Vf*p
-    uM = Vf*u
-    vM = Vf*v
-    pP = pM[mapP]
-    uP = uM[mapP]
-    vP = vM[mapP]
+    QM = [Vf*Q[i] for i in eachindex(Q)]
+    QP = [QM[i][mapP] for i in eachindex(Q)]
+    (dp,du,dv) = [QP[i]-QM[i] for i in eachindex(Q)]
 
-    dp = pP-pM
-    du = uP-uM
-    dv = vP-vM
+    "compute numerical flux"
+    (pM,uM,vM) = QM
     du[mapB] = -2*uM[mapB]
     dv[mapB] = -2*vM[mapB]
     pflux = @. du*nxJ + dv*nyJ
     uflux = @. dp*nxJ
     vflux = @. dp*nyJ
 
-    pr = Dr*p;   ps = Ds*p
-    ur = Dr*u;   us = Ds*u
-    vr = Dr*v;   vs = Ds*v
-
+    (pr,ur,vr) = [Dr*Q[i] for i in eachindex(Q)]
+    (ps,us,vs) = [Ds*Q[i] for i in eachindex(Q)]
     px = @. rxJ*pr + sxJ*ps;
     py = @. ryJ*pr + syJ*ps
     ux = @. rxJ*ur + sxJ*us;
