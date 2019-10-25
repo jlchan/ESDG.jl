@@ -14,7 +14,7 @@ using Basis2DQuad
 using UniformQuadMesh
 
 "Approximation parameters"
-N = 3; # The order of approximation
+N = 4; # The order of approximation
 K1D = 16
 
 "Mesh related variables"
@@ -72,6 +72,12 @@ xf = Vf*x
 yf = Vf*y
 mapM, mapP, mapB = build_node_maps(xf, yf, Nfaces, EToE, EToF)
 
+"Make periodic"
+LX = maximum(VX)-minimum(VX)
+LY = maximum(VY)-minimum(VY)
+mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces,mapM,mapP,mapB)
+mapP[mapB] = mapPB
+
 "Geometric factors and surface normals"
 rxJ, sxJ, ryJ, syJ, J = geometric_factors(x, y, Dr, Ds)
 nxJ = (Vf*rxJ).*nrJ + (Vf*sxJ).*nsJ
@@ -79,7 +85,7 @@ nyJ = (Vf*ryJ).*nrJ + (Vf*syJ).*nsJ
 sJ = @. sqrt(nxJ^2 + nyJ^2)
 
 "initial conditions"
-p = @. exp(-100*(x^2+y^2))
+p = @. exp(-100*(x^2+(y-.25)^2))
 u = zeros(size(x))
 v = zeros(size(x))
 
@@ -133,8 +139,8 @@ function rhs(Q,ops,geo,nodemaps,params...)
 
     "compute numerical flux"
     (pM,uM,vM) = QM
-    du[mapB] = -2*uM[mapB]
-    dv[mapB] = -2*vM[mapB]
+    # du[mapB] = -2*uM[mapB]
+    # dv[mapB] = -2*vM[mapB]
     pflux = @. du*nxJ + dv*nyJ
     uflux = @. dp*nxJ
     vflux = @. dp*nyJ
