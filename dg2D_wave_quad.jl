@@ -145,8 +145,11 @@ function rhs(Q,ops,geo,nodemaps,params...)
     uflux = @. dp*nxJ
     vflux = @. dp*nyJ
 
-    (pr,ur,vr) = [Dr*Q[i] for i in eachindex(Q)]
-    (ps,us,vs) = [Ds*Q[i] for i in eachindex(Q)]
+    # (pr,ur,vr) = [Dr*Q[i] for i in eachindex(Q)]
+    # (ps,us,vs) = [Ds*Q[i] for i in eachindex(Q)]
+    pr = Dr*p;   ps = Ds*p
+    ur = Dr*u;   us = Ds*u
+    vr = Dr*v;   vs = Ds*v
     px = @. rxJ*pr + sxJ*ps;
     py = @. ryJ*pr + syJ*ps
     ux = @. rxJ*ur + sxJ*us;
