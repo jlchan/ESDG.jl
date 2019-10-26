@@ -59,6 +59,7 @@ wf = vec(repeat(w1D,Nfaces,1));
 nrJ = [z; e; z; -e]
 nsJ = [-e; z; e; z]
 Vf = vandermonde_2D(N,rf,sf)/V
+Lf = M\(transpose(Vf)*diagm(wf)) # lift matrix
 
 "Make hybridized SBP operators"
 Qr = Pq'*M*Dr*Pq
@@ -71,9 +72,6 @@ Qrh = .5*[Qr-Qr' Ef'*Br;
 Qsh = .5*[Qs-Qs' Ef'*Bs;
 -Bs*Ef Bs]
 
-"Lift matrix"
-Lf = M\(transpose(Vf)*diagm(wf))
-
 "interpolation to and from hybridized quad points"
 Vh = [Vq; Vf]
 Ph = M\transpose(Vh)
@@ -83,6 +81,10 @@ Qrhskew = .5*(Qrh-transpose(Qrh))
 Qshskew = .5*(Qsh-transpose(Qsh))
 Qrhskew = droptol!(sparse(Qrhskew),1e-12)
 Qshskew = droptol!(sparse(Qshskew),1e-12)
+
+# precompute union of sparse ids for Qr, Qs
+Qrsids = [unique([Qrhskew[i,:].nzind; Qshskew[i,:].nzind]) for i = 1:size(Qrhskew,1)]
+
 Vh = droptol!(sparse(Vh),1e-12)
 Ph = droptol!(sparse(Ph),1e-12)
 Lf = droptol!(sparse(Lf),1e-12)
@@ -129,7 +131,7 @@ Lf = droptol!(sparse(diagm(@. 1/wq)*(transpose(Ef)*diagm(wf))),1e-12)
 Q = collect(Vq*Q[i] for i in eachindex(Q)) # interp to quad pts
 
 "Pack arguments into tuples"
-ops = (Qrhskew,Qshskew,Ph,Lf)
+ops = (Qrhskew,Qshskew,Qrsids,Ph,Lf)
 geo = (rxJh,sxJh,ryJh,syJh,J,nxJ,nyJ,sJ)
 Nfp = length(r1D)
 mapM = reshape(mapM,Nfp*Nfaces,K)
@@ -161,10 +163,120 @@ dt = CFL * 2 / (CN*K1D)
 T = .5 # endtime
 Nsteps = convert(Int,ceil(T/dt))
 
+"sparse version - precompute sparse row ids for speed"
+function sparse_hadamard_sum(Qhe,Qr,Qs,Qrsids,vgeo,flux_fun)
+
+    (rxJ,sxJ,ryJ,syJ) = vgeo
+
+    # precompute logs for logmean
+    (rho,u,v,beta) = Qhe
+    Qlog = (log.(rho), log.(beta))
+    Qlogi = zeros(length(Qlog))
+    Qlogj = zeros(length(Qlog))
+
+    nrows = size(Qr,1)
+    rhsQe = [zeros(nrows) for fld in eachindex(Qhe)]
+    rhsi = zeros(length(Qhe))
+    Qi = zeros(length(Qhe))
+    Qj = zeros(length(Qhe))
+
+    for i = 1:nrows
+        for fld in eachindex(Qhe)
+            Qi[fld] = Qhe[fld][i]
+        end
+        for fld in eachindex(Qlog)
+            Qlogi[fld] = Qlog[fld][i]
+        end
+
+        # intialize rhsi and accumulate into it
+        for fld in eachindex(Qhe)
+            rhsi[fld] = 0.0
+        end
+        for j = Qrsids[i]
+            for fld in eachindex(Qhe)
+                Qj[fld] = Qhe[fld][j]
+            end
+            for fld in eachindex(Qlog)
+                Qlogj[fld] = Qlog[fld][j]
+            end
+            Qrij = Qr[i,j]
+            Qsij = Qs[i,j]
+            Fx,Fy = flux_fun(Qi,Qj,Qlogi,Qlogj)
+
+            Fr = @. rxJ*Fx + ryJ*Fy
+            Fs = @. sxJ*Fx + syJ*Fy
+            for fld in eachindex(Qhe)
+                rhsi[fld] = rhsi[fld] + Qrij*Fr[fld] + Qsij*Fs[fld]
+            end
+        end
+
+        for fld in eachindex(Qhe)
+            rhsQe[fld][i] = rhsi[fld]
+        end
+    end
+
+    return rhsQe
+end
+
+"dense version - speed up by prealloc + transpose for col major "
+function dense_hadamard_sum(Qhe,Qr,Qs,vgeo,flux_fun)
+
+    (rxJ,sxJ,ryJ,syJ) = vgeo
+    # transpose for column-major evals
+    QxTr = transpose(rxJ*Qr + sxJ*Qs)
+    QyTr = transpose(ryJ*Qr + syJ*Qs)
+
+    # precompute logs for logmean
+    (rho,u,v,beta) = Qhe
+    Qlog = (log.(rho), log.(beta))
+    Qlogi = zeros(length(Qlog))
+    Qlogj = zeros(length(Qlog))
+
+    n = size(Qr,1)
+    QF = [zeros(n) for fld in eachindex(Qhe)]
+    QFi = zeros(length(Qhe))
+    Qi = zeros(length(Qhe))
+    Qj = zeros(length(Qhe))
+    for i = 1:n
+        for fld in eachindex(Qhe)
+            Qi[fld] = Qhe[fld][i]
+        end
+        for fld in eachindex(Qlog)
+            Qlogi[fld] = Qlog[fld][i]
+        end
+
+        for fld in eachindex(Qhe)
+            QFi[fld] = 0.0
+        end
+        for j = 1:n
+            for fld in eachindex(Qhe)
+                Qj[fld] = Qhe[fld][j]
+            end
+            for fld = 1:2
+                Qlogj[fld] = Qlog[fld][j]
+            end
+
+            # compute flux interaction
+            Fxij,Fyij = flux_fun(Qi,Qj,Qlogi,Qlogj)
+
+            for fld in eachindex(Qhe)
+                QFi[fld] = QFi[fld] + QxTr[j,i]*Fxij[fld] + QyTr[j,i]*Fyij[fld]
+            end
+        end
+
+        for fld in eachindex(Qhe)
+            QF[fld][i] = QFi[fld]
+        end
+    end
+
+    return QF
+end
+
+"Qh = (rho,u,v,beta), while Uh = conservative vars"
 function rhs(Qh,Uh,ops,geo,nodemaps,flux_fun)
 
     # unpack args
-    (Qrhskew,Qshskew,Ph,Lf)=ops
+    (Qrhskew,Qshskew,Qrsids,Ph,Lf)=ops
     (rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ)=geo
     (mapP,mapB) = nodemaps
     Nh = size(Qrhskew,1)
@@ -174,39 +286,48 @@ function rhs(Qh,Uh,ops,geo,nodemaps,flux_fun)
     QM = [Qh[fld][Nq+1:end,:] for fld in eachindex(Qh)]
     QP = [QM[fld][mapP] for fld in eachindex(QM)]
 
-    # lax friedrichs dissipation
+    # simple lax friedrichs dissipation
     UM = [Uh[fld][Nq+1:end,:] for fld in eachindex(Uh)]
-    UP = [UM[fld][mapP] for fld in eachindex(UM)]
+    dU = [UM[fld][mapP].-UM[fld] for fld in eachindex(UM)]
     lam = abs.(wavespeed(UM))
     LFc = .5*max.(lam,lam[mapP]).*sJ
-    # LFc = 0.0
 
     fSx,fSy = flux_fun(QM,QP)
-    flux = [fSx[fld].*nxJ + fSy[fld].*nyJ - LFc.*(UP[fld]-UM[fld]) for fld in eachindex(fSx)]
+    flux = [fSx[fld].*nxJ + fSy[fld].*nyJ - LFc.*dU[fld] for fld in eachindex(fSx)]
     rhsQ = [Lf*flux[fld] for fld in eachindex(flux)]
 
     # compute volume contributions
+    Qhe = [zeros(Nh) for fld in eachindex(Qh)] # pre-allocate storage
     for e = 1:K
-        (rho,u,v,beta) = [Qh[fld][:,e] for fld in eachindex(Qh)]
-        rhox,rhoy   = meshgrid(rho)
-        ux,uy       = meshgrid(u)
-        vx,vy       = meshgrid(v)
-        betax,betay = meshgrid(beta)
-
-        Ux = (rhox,ux,vx,betax)
-        Uy = (rhoy,uy,vy,betay)
-        Fx,Fy = flux_fun(Ux,Uy)
-
-        Qx = rxJ[1,e]*Qrhskew + sxJ[1,e]*Qshskew
-        Qy = ryJ[1,e]*Qrhskew + syJ[1,e]*Qshskew
-
         for fld in eachindex(Qh)
-            rhsQ[fld][:,e] += 2*Ph*sum(Qx.*Fx[fld] + Qy.*Fy[fld],dims=2)
+            Qhe[fld] = Qh[fld][:,e]
+        end
+
+        # assuming constant geofacs
+        vgeo = (rxJ[1,e],sxJ[1,e],ryJ[1,e],syJ[1,e])
+        # rhsQe = dense_hadamard_sum(Qhe,Qrhskew,Qshskew,vgeo,flux_fun)
+        rhsQe = sparse_hadamard_sum(Qhe,Qrhskew,Qshskew,Qrsids,vgeo,flux_fun)
+        for fld in eachindex(rhsQ)
+            rhsQ[fld][:,e] = rhsQ[fld][:,e] + 2*Ph*rhsQe[fld]
         end
     end
 
-    return [-rhsQ[fld]./J for fld in eachindex(rhsQ)]
+    for fld in eachindex(rhsQ)
+        rhsQ[fld] = -rhsQ[fld]./J
+    end
+    return rhsQ
 end
+
+# "profiling"
+# VU = v_ufun(Q...)
+# Uh = u_vfun([Vh*VU[i] for i in eachindex(VU)]...)
+# (rho,rhou,rhov,E) = Uh
+# u = rhou./rho; v = rhov./rho; beta = betafun.(rho,u,v,E)
+# Qh = (rho,u,v,beta) # redefine Q
+#
+# @btime rhsQ = rhs(Qh,Uh,ops,geo,nodemaps,euler_fluxes)
+#
+# error("d")
 
 wJq = diagm(wq)*J
 resQ = [zeros(size(x)) for i in eachindex(Q)]
