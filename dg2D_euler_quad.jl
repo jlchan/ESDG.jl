@@ -87,7 +87,7 @@ Ph = droptol!(sparse(Ph),1e-12)
 Lf = droptol!(sparse(Lf),1e-12)
 
 # precompute union of sparse ids for Qr, Qs
-Qrsids = [unique([Qrhskew[i,:].nzind; Qshskew[i,:].nzind]) for i = 1:size(Qrhskew,1)]
+Qrsids = [unique([Qrhskew_sparse[i,:].nzind; Qshskew_sparse[i,:].nzind]) for i = 1:size(Qrhskew,1)]
 
 
 "Map physical nodes"
