@@ -3,6 +3,14 @@ function ??
 
 """
 
+"primitive pressure to conservative vars"
+function primitive_to_conservative(rho,u,v,p)
+    rhou = @. rho*u
+    rhov = @. rho*v
+    E = @. p/(γ-1) + .5*rho*(u^2+v^2)
+    return (rho,rhou,rhov,E)
+end
+
 "inverse temperature (used in entropy conservative fluxes)"
 function betafun(rho,u,v,E,γ=1.4)
     return rho/(2*pfun(rho,u,v,E,γ))

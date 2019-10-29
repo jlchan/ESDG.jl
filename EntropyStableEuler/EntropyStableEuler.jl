@@ -10,7 +10,7 @@ const γ=1.4
 export logmean
 export u_vfun, v_ufun, betafun
 export euler_fluxes, wavespeed
-export vortex
+export vortex, primitive_to_conservative
 
 using SpecialFunctions
 

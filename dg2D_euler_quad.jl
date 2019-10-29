@@ -2,12 +2,13 @@ push!(LOAD_PATH, "./src")
 push!(LOAD_PATH, "./EntropyStableEuler")
 
 # "Packages"
-using Revise # reduce recompilation
+using Revise # reduce recompilation time
 using Plots
 using Documenter
 using LinearAlgebra
 using SparseArrays
-using Profile
+
+using BenchmarkTools
 
 # "User defined modules"
 using Utils
@@ -19,14 +20,14 @@ using EntropyStableEuler
 
 "Approximation parameters"
 N = 3 # The order of approximation
-K1D = 8
+K1D = 12
 
 "Mesh related variables"
-Kx = 2*K1D
+Kx = convert(Int,4/3*K1D)
 Ky = K1D
 (VX, VY, EToV) = uniform_quad_mesh(Kx, Ky)
-VX = @. 20*(1+VX)/2
-VY = @. 5*VY
+@. VX = 15*(1+VX)/2
+@. VY = 5*VY
 
 Nfaces = 4  # number of faces per element
 K  = size(EToV, 1); # The number of element on the mesh we constructed
@@ -52,10 +53,10 @@ Pq = M\(transpose(Vq)*diagm(wq))
 # w1D = vec(sum(inv(V1D*transpose(V1D)),dims=2))
 r1D,w1D = gauss_quad(0,0,N)
 e = ones(size(r1D))
-z = zeros(size(r1D))
 rf = [r1D; e; -r1D; -e]
 sf = [-e; r1D; e; -r1D]
 wf = vec(repeat(w1D,Nfaces,1));
+z = zeros(size(r1D))
 nrJ = [z; e; z; -e]
 nsJ = [-e; z; e; z]
 Vf = vandermonde_2D(N,rf,sf)/V
@@ -72,24 +73,24 @@ Qrh = .5*[Qr-Qr' Ef'*Br;
 Qsh = .5*[Qs-Qs' Ef'*Bs;
 -Bs*Ef Bs]
 
-"interpolation to and from hybridized quad points"
+"operators to and from hybridized quad points"
 Vh = [Vq; Vf]
-Ph = M\transpose(Vh)
+Ph = 2*(M\transpose(Vh))
 
 "sparse skew symmetric versions of the operators"
 Qrhskew = .5*(Qrh-transpose(Qrh))
 Qshskew = .5*(Qsh-transpose(Qsh))
-Qrhskew = droptol!(sparse(Qrhskew),1e-12)
-Qshskew = droptol!(sparse(Qshskew),1e-12)
-
-# precompute union of sparse ids for Qr, Qs
-Qrsids = [unique([Qrhskew[i,:].nzind; Qshskew[i,:].nzind]) for i = 1:size(Qrhskew,1)]
-
+Qrhskew_sparse = droptol!(sparse(Qrhskew),1e-12)
+Qshskew_sparse = droptol!(sparse(Qshskew),1e-12)
 Vh = droptol!(sparse(Vh),1e-12)
 Ph = droptol!(sparse(Ph),1e-12)
 Lf = droptol!(sparse(Lf),1e-12)
 
-"Map to physical nodes"
+# precompute union of sparse ids for Qr, Qs
+Qrsids = [unique([Qrhskew[i,:].nzind; Qshskew[i,:].nzind]) for i = 1:size(Qrhskew,1)]
+
+
+"Map physical nodes"
 r1,s1 = nodes_2D(1)
 V1 = vandermonde_2D(1,r,s)/vandermonde_2D(1,r1,s1)
 x = V1*VX[transpose(EToV)]
@@ -119,19 +120,17 @@ ryJh = Vh*ryJ; syJh = Vh*syJ
 "initial conditions"
 γ = 1.4
 rho,u,v,p = vortex(x,y,0)
-rhou = @. rho*u
-rhov = @. rho*v
-E = @. p/(γ-1) + .5*rho*(u^2+v^2)
+(rho,rhou,rhov,E) = primitive_to_conservative(rho,u,v,p)
 Q = (rho,rhou,rhov,E)
 
 "convert to Gauss node basis"
 Vh = droptol!(sparse([diagm(ones(length(rq))); Ef]),1e-12)
-Ph = droptol!(sparse(diagm(@. 1/wq)*transpose(Vh)),1e-12)
+Ph = droptol!(sparse(2*diagm(@. 1/wq)*transpose(Vh)),1e-12)
 Lf = droptol!(sparse(diagm(@. 1/wq)*(transpose(Ef)*diagm(wf))),1e-12)
 Q = collect(Vq*Q[i] for i in eachindex(Q)) # interp to quad pts
 
 "Pack arguments into tuples"
-ops = (Qrhskew,Qshskew,Qrsids,Ph,Lf)
+ops = (Qrhskew,Qshskew,Qrhskew_sparse,Qshskew_sparse,Qrsids,Ph,Lf)
 geo = (rxJh,sxJh,ryJh,syJh,J,nxJ,nyJ,sJ)
 Nfp = length(r1D)
 mapM = reshape(mapM,Nfp*Nfaces,K)
@@ -157,15 +156,16 @@ rk4c = [ 0.0  ...
 1.0];
 
 "Estimate timestep"
-CN = (N+1)*(N+2)  # estimated trace constant
-CFL = .5;
+CN = (N+1)*(N+2)/2  # estimated trace constant
+CFL = .8;
 dt = CFL * 2 / (CN*K1D)
-T = .5 # endtime
+T = 5.0 # endtime
 Nsteps = convert(Int,ceil(T/dt))
 
 "sparse version - precompute sparse row ids for speed"
-function sparse_hadamard_sum(Qhe,Qr,Qs,Qrsids,vgeo,flux_fun)
+function sparse_hadamard_sum(Qhe,ops,vgeo,flux_fun)
 
+    (Qr,Qs,Qrsids) = ops
     (rxJ,sxJ,ryJ,syJ) = vgeo
 
     # precompute logs for logmean
@@ -219,8 +219,9 @@ function sparse_hadamard_sum(Qhe,Qr,Qs,Qrsids,vgeo,flux_fun)
 end
 
 "dense version - speed up by prealloc + transpose for col major "
-function dense_hadamard_sum(Qhe,Qr,Qs,vgeo,flux_fun)
+function dense_hadamard_sum(Qhe,ops,vgeo,flux_fun)
 
+    (Qr,Qs) = ops
     (rxJ,sxJ,ryJ,syJ) = vgeo
     # transpose for column-major evals
     QxTr = transpose(rxJ*Qr + sxJ*Qs)
@@ -276,7 +277,7 @@ end
 function rhs(Qh,Uh,ops,geo,nodemaps,flux_fun)
 
     # unpack args
-    (Qrhskew,Qshskew,Qrsids,Ph,Lf)=ops
+    (Qrh,Qsh,Qrh_sparse,Qsh_sparse,Qrsids,Ph,Lf)=ops
     (rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ)=geo
     (mapP,mapB) = nodemaps
     Nh = size(Qrhskew,1)
@@ -295,38 +296,45 @@ function rhs(Qh,Uh,ops,geo,nodemaps,flux_fun)
     fSx,fSy = flux_fun(QM,QP)
     flux = [fSx[fld].*nxJ + fSy[fld].*nyJ - LFc.*dU[fld] for fld in eachindex(fSx)]
     rhsQ = [Lf*flux[fld] for fld in eachindex(flux)]
+    # rhsQ = [zeros(Nq,K) for fld in eachindex(Qh)]
 
     # compute volume contributions
     Qhe = [zeros(Nh) for fld in eachindex(Qh)] # pre-allocate storage
     for e = 1:K
         for fld in eachindex(Qh)
-            Qhe[fld] = Qh[fld][:,e]
+            @. Qhe[fld] = Qh[fld][:,e]
         end
 
-        # assuming constant geofacs
-        vgeo = (rxJ[1,e],sxJ[1,e],ryJ[1,e],syJ[1,e])
-        # rhsQe = dense_hadamard_sum(Qhe,Qrhskew,Qshskew,vgeo,flux_fun)
-        rhsQe = sparse_hadamard_sum(Qhe,Qrhskew,Qshskew,Qrsids,vgeo,flux_fun)
+        vgeo = (rxJ[1,e],sxJ[1,e],ryJ[1,e],syJ[1,e]) # assuming constant geofacs
+        rhsQe = dense_hadamard_sum(Qhe,(Qrh,Qsh),vgeo,flux_fun)
+        rhsQe = sparse_hadamard_sum(Qhe,(Qrh_sparse,Qsh_sparse,Qrsids),vgeo,flux_fun)
         for fld in eachindex(rhsQ)
-            rhsQ[fld][:,e] = rhsQ[fld][:,e] + 2*Ph*rhsQe[fld]
+            rhsQ[fld][:,e] = rhsQ[fld][:,e] + Ph*rhsQe[fld]
         end
     end
 
     for fld in eachindex(rhsQ)
-        rhsQ[fld] = -rhsQ[fld]./J
+        @. rhsQ[fld] = -rhsQ[fld]/J
     end
     return rhsQ
 end
 
 # "profiling"
 # VU = v_ufun(Q...)
-# Uh = u_vfun([Vh*VU[i] for i in eachindex(VU)]...)
+# Qf = u_vfun([Ef*VU[i] for i in eachindex(VU)]...)
+# Uh = [[Q[i]; Qf[i]] for i in eachindex(Q)]
 # (rho,rhou,rhov,E) = Uh
-# u = rhou./rho; v = rhov./rho; beta = betafun.(rho,u,v,E)
+# u = rhou./rho
+# v = rhov./rho
+# beta = betafun.(rho,u,v,E)
 # Qh = (rho,u,v,beta) # redefine Q
+# # @btime rhsQ = rhs(Qh,Uh,ops,geo,nodemaps,euler_fluxes);
 #
-# @btime rhsQ = rhs(Qh,Uh,ops,geo,nodemaps,euler_fluxes)
-#
+# e = 1;
+# Qhe = [Qh[fld][:,e] for fld in eachindex(Qh)]
+# ops = (Qrhskew,Qshskew,Qrsids)
+# vgeo = (rxJ[1,e],rxJ[1,e],rxJ[1,e],rxJ[1,e])
+# @btime sparse_hadamard_sum(Qhe,ops,vgeo,euler_fluxes)
 # error("d")
 
 wJq = diagm(wq)*J
@@ -340,7 +348,8 @@ for i = 1:Nsteps
 
         # interp entropy vars
         VU = v_ufun(Q...)
-        Uh = u_vfun([Vh*VU[i] for i in eachindex(VU)]...)
+        Qf = u_vfun([Ef*VU[i] for i in eachindex(VU)]...)
+        Uh = [[Q[i]; Qf[i]] for i in eachindex(Q)]
 
         # convert to rho,u,v,beta vars
         (rho,rhou,rhov,E) = Uh
@@ -355,13 +364,12 @@ for i = 1:Nsteps
             rhstest = sum([sum(wJq.*VU[fld].*rhsQ[fld]) for fld in eachindex(VU)])
         end
 
-        # rhsQ = [zeros(size(x)) for i in eachindex(Q)]
-        resQ = @. rk4a[INTRK]*resQ + dt*rhsQ
-        Q = @. Q + rk4b[INTRK]*resQ
+        @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
+        @. Q = Q + rk4b[INTRK]*resQ
     end
 
     if i%10==0 || i==Nsteps
-        println("Time step: ", i, " out of ", Nsteps, ", rhstest = ",rhstest)
+        println("Time step: $i out of $Nsteps with rhstest = $rhstest")
     end
 end
 
@@ -370,12 +378,29 @@ end
 #
 (rho,rhou,rhov,E) = [Pq*Q[fld] for fld in eachindex(Q)]
 
-"plotting nodes"
-rp, sp = equi_nodes_2D(15)
-Vp = vandermonde_2D(N,rp,sp)/V
+rq2,sq2,wq2 = quad_nodes_2D(N+2)
+Vq2 = vandermonde_2D(N,rq2,sq2)/V
+wJq2 = diagm(wq2)*(Vq2*J)
+xq2 = Vq2*x
+yq2 = Vq2*y
 
-# pyplot(size=(200,200),legend=false,markerstrokewidth=0,markersize=2)
-gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2,aspect_ratio=:equal)
+Q = (rho,rhou,rhov,E)
+Qq = [Vq2*Q[fld] for fld in eachindex(Q)]
+Qex = primitive_to_conservative(vortex(xq2,yq2,T)...)
+L2err = 0.0
+for fld in eachindex(Q)
+    global L2err
+    L2err += sum(@. wJq2*(Qq[fld]-Qex[fld])^2)
+end
+L2err = sqrt(L2err)
+println("L2err = $L2err\n")
 
-vv = Vp*rho
-scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90))
+# "plotting nodes"
+# rp, sp = equi_nodes_2D(15)
+# Vp = vandermonde_2D(N,rp,sp)/V
+#
+# # pyplot(size=(200,200),legend=false,markerstrokewidth=0,markersize=2)
+# gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2,aspect_ratio=:equal)
+#
+# vv = Vp*rho
+# scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90))
