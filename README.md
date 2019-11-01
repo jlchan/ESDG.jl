@@ -13,6 +13,7 @@ Currently, JuliaDG uses the following non-base packages:
 
 ## Nonlinear problems
 - The file "dg2D_burgers_quad.jl" provides a demo of entropy stable DG methods on quadrilateral elements for Burgers' equation.
+- The file "dg2D_euler_quad.jl" provides a demo of entropy stable DG methods on quadrilateral elements for the compressible Euler equations, with an optimized implementation of the Hadamard sum step in flux differencing.
 - More to come...
 
 ## References

@@ -20,7 +20,7 @@ using EntropyStableEuler
 
 "Approximation parameters"
 N = 3 # The order of approximation
-K1D = 12
+K1D = 24
 
 "Mesh related variables"
 Kx = convert(Int,4/3*K1D)
@@ -120,8 +120,7 @@ ryJh = Vh*ryJ; syJh = Vh*syJ
 "initial conditions"
 γ = 1.4
 rho,u,v,p = vortex(x,y,0)
-(rho,rhou,rhov,E) = primitive_to_conservative(rho,u,v,p)
-Q = (rho,rhou,rhov,E)
+Q = primitive_to_conservative(rho,u,v,p) # Q = (rho,rhou,rhov,E)
 
 "convert to Gauss node basis"
 Vh = droptol!(sparse([diagm(ones(length(rq))); Ef]),1e-12)
@@ -133,7 +132,6 @@ Q = collect(Vq*Q[i] for i in eachindex(Q)) # interp to quad pts
 ops = (Qrhskew,Qshskew,Qrhskew_sparse,Qshskew_sparse,Qrsids,Ph,Lf)
 geo = (rxJh,sxJh,ryJh,syJh,J,nxJ,nyJ,sJ)
 Nfp = length(r1D)
-mapM = reshape(mapM,Nfp*Nfaces,K)
 mapP = reshape(mapP,Nfp*Nfaces,K)
 nodemaps = (mapP,mapB)
 
@@ -157,7 +155,7 @@ rk4c = [ 0.0  ...
 
 "Estimate timestep"
 CN = (N+1)*(N+2)/2  # estimated trace constant
-CFL = .8;
+CFL = .75;
 dt = CFL * 2 / (CN*K1D)
 T = 5.0 # endtime
 Nsteps = convert(Int,ceil(T/dt))
@@ -306,7 +304,7 @@ function rhs(Qh,Uh,ops,geo,nodemaps,flux_fun)
         end
 
         vgeo = (rxJ[1,e],sxJ[1,e],ryJ[1,e],syJ[1,e]) # assuming constant geofacs
-        rhsQe = dense_hadamard_sum(Qhe,(Qrh,Qsh),vgeo,flux_fun)
+        # rhsQe = dense_hadamard_sum(Qhe,(Qrh,Qsh),vgeo,flux_fun)
         rhsQe = sparse_hadamard_sum(Qhe,(Qrh_sparse,Qsh_sparse,Qrsids),vgeo,flux_fun)
         for fld in eachindex(rhsQ)
             rhsQ[fld][:,e] = rhsQ[fld][:,e] + Ph*rhsQe[fld]
@@ -319,24 +317,6 @@ function rhs(Qh,Uh,ops,geo,nodemaps,flux_fun)
     return rhsQ
 end
 
-# "profiling"
-# VU = v_ufun(Q...)
-# Qf = u_vfun([Ef*VU[i] for i in eachindex(VU)]...)
-# Uh = [[Q[i]; Qf[i]] for i in eachindex(Q)]
-# (rho,rhou,rhov,E) = Uh
-# u = rhou./rho
-# v = rhov./rho
-# beta = betafun.(rho,u,v,E)
-# Qh = (rho,u,v,beta) # redefine Q
-# # @btime rhsQ = rhs(Qh,Uh,ops,geo,nodemaps,euler_fluxes);
-#
-# e = 1;
-# Qhe = [Qh[fld][:,e] for fld in eachindex(Qh)]
-# ops = (Qrhskew,Qshskew,Qrsids)
-# vgeo = (rxJ[1,e],rxJ[1,e],rxJ[1,e],rxJ[1,e])
-# @btime sparse_hadamard_sum(Qhe,ops,vgeo,euler_fluxes)
-# error("d")
-
 wJq = diagm(wq)*J
 resQ = [zeros(size(x)) for i in eachindex(Q)]
 
@@ -346,7 +326,7 @@ for i = 1:Nsteps
 
     for INTRK = 1:5
 
-        # interp entropy vars
+        # interp entropy vars to faces
         VU = v_ufun(Q...)
         Qf = u_vfun([Ef*VU[i] for i in eachindex(VU)]...)
         Uh = [[Q[i]; Qf[i]] for i in eachindex(Q)]
@@ -373,11 +353,10 @@ for i = 1:Nsteps
     end
 end
 
-# funs = (v_ufun,u_vfun,betafun,euler_fluxes)
-# Q = rk_run(Q,rhs,funs)
-#
+"project solution back to GLL nodes"
 (rho,rhou,rhov,E) = [Pq*Q[fld] for fld in eachindex(Q)]
 
+"higher degree quadrature for error evaluation"
 rq2,sq2,wq2 = quad_nodes_2D(N+2)
 Vq2 = vandermonde_2D(N,rq2,sq2)/V
 wJq2 = diagm(wq2)*(Vq2*J)
@@ -393,14 +372,15 @@ for fld in eachindex(Q)
     L2err += sum(@. wJq2*(Qq[fld]-Qex[fld])^2)
 end
 L2err = sqrt(L2err)
-println("L2err = $L2err\n")
+println("L2err at final time T = $T is $L2err\n")
 
-# "plotting nodes"
-# rp, sp = equi_nodes_2D(15)
-# Vp = vandermonde_2D(N,rp,sp)/V
-#
-# # pyplot(size=(200,200),legend=false,markerstrokewidth=0,markersize=2)
-# gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2,aspect_ratio=:equal)
-#
-# vv = Vp*rho
-# scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90))
+
+"plotting nodes"
+rp, sp = equi_nodes_2D(15)
+Vp = vandermonde_2D(N,rp,sp)/V
+
+# pyplot(size=(200,200),legend=false,markerstrokewidth=0,markersize=2)
+gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2,aspect_ratio=:equal)
+
+vv = Vp*rho
+scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90))

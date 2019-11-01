@@ -14,7 +14,7 @@ using UniformTriMesh
 
 "Approximation parameters"
 N   = 3; # The order of approximation
-K1D = 8
+K1D = 16
 
 "Mesh related variables"
 (VX,VY,EToV) = uniform_tri_mesh(K1D,K1D)
