@@ -3,11 +3,11 @@
 
 These codes are based loosely on the Matlab codes for the book Nodal Discontinuous Galerkin methods by Hesthaven and Warburton (2007).
 
-## Linear problems
+## Demos for linear problems
 - The demos "dg2D_wave_tri.jl" and "dg2D_wave_quad.jl" compute solutions to the acoustic wave equation on triangular and quadrilateral meshes.
 - The demo "dg3D_advec_hex.jl" solves the advection equation on a hexahedral mesh.
 
-## Nonlinear problems
+## Demos for nonlinear problems
 - The file "dg2D_burgers_quad.jl" provides a demo of entropy stable DG methods on quadrilateral elements for Burgers' equation.
 - The file "dg2D_euler_quad.jl" provides a demo of entropy stable DG methods on quadrilateral elements for the compressible Euler equations, with an optimized implementation of the Hadamard sum step in flux differencing.
 - More to come...

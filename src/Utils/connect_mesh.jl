@@ -26,5 +26,12 @@ function connect_mesh(EToV,fv)
         EToE[matchL[:,2]] = matchR[:,3]
         EToF[matchL[:,2]] = matchR[:,4]
 
-        return EToE, EToF
+        FToF = reshape(collect(1:Nfaces*K),Nfaces,K)
+        for e = 1:K
+            for f = 1:Nfaces
+                FToF[f,e] = EToF[e,f] + (EToE[e,f]-1)*Nfaces
+            end
+        end
+
+        return EToE, EToF, FToF
 end

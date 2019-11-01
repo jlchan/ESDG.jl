@@ -17,12 +17,12 @@ N   = 3; # The order of approximation
 K1D = 16
 
 "Mesh related variables"
-(VX,VY,EToV) = uniform_tri_mesh(K1D,K1D)
-fv           = tri_face_vertices()
-Nfaces       = length(fv)  # number of faces per element
-K            = size(EToV,1); # number of element on the mesh we constructed
-Nv           = size(VX,1);   # number of vertex nodes
-EToE, EToF   = connect_mesh(EToV,fv)
+(VX,VY,EToV)   = uniform_tri_mesh(K1D,K1D)
+fv             = tri_face_vertices()
+Nfaces         = length(fv)  # number of faces per element
+K              = size(EToV,1); # number of element on the mesh we constructed
+Nv             = size(VX,1);   # number of vertex nodes
+EToE,EToF,FToF = connect_mesh(EToV,fv)
 
 "Construct matrices on reference elements"
 r, s = nodes_2D(N)
@@ -57,7 +57,7 @@ y = V1*VY[transpose(EToV)]
 "Connectivity maps"
 xf = Vf*x
 yf = Vf*y
-mapM,mapP,mapB = build_node_maps(xf,yf,Nfaces,EToE,EToF)
+mapM,mapP,mapB = build_node_maps((xf,yf),FToF)
 
 "Make periodic"
 LX = maximum(VX)-minimum(VX)

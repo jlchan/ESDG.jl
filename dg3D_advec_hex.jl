@@ -19,7 +19,7 @@ K1D = 16
 VX,VY,VZ,EToV = uniform_hex_mesh(K1D,K1D,K1D)
 fv = hex_face_vertices()
 Nfaces = length(fv)
-EToE,EToF = connect_mesh(EToV,fv)
+EToE,EToF,FToF = connect_mesh(EToV,fv)
 K = size(EToV,1)
 
 r,s,t = nodes_3D(N)
@@ -62,7 +62,7 @@ z = V1*VZ[transpose(EToV)]
 xf = Vf*x
 yf = Vf*y
 zf = Vf*z
-mapM, mapP, mapB = build_node_maps(xf,yf,zf,Nfaces,EToE,EToF)
+mapM, mapP, mapB = build_node_maps((xf,yf,zf),FToF)
 
 "make periodic"
 LX = 2; LY = 2; LZ = 2
