@@ -4,13 +4,6 @@ function euler_fluxes(UL,UR)
     2D version.  Figure out multiple dispatch version for 3D?
 
 """
-function wavespeed(U,γ=1.4)
-    (rho,rhou,rhov,E) = U
-    unorm2 = @. (rhou^2 + rhov^2)/rho
-    p = @. (γ-1.0)*(E - .5*rho*unorm2)
-    cvel = @. sqrt(γ*p/rho)
-    lam = @. sqrt(unorm2)+cvel
-end
 
 function euler_fluxes(UL,UR)
     (rhoL,uL,vL,betaL) = UL
@@ -22,11 +15,18 @@ end
 
 "vectorized version"
 function euler_fluxes(UL,UR,logL,logR)
-    γ = 1.4
+
     (rhoL,uL,vL,betaL) = UL
     (rhoR,uR,vR,betaR) = UR
     (rhologL,betalogL) = logL
     (rhologR,betalogR) = logR
+
+#     return euler_fluxes(UL...,UR...,logL...,logR...)
+#     # return euler_fluxes(rhoL,uL,vL,betaL,rhoR,uR,vR,betaR,rhologL,betalogL,rhologR,betalogR)
+# end
+#
+# "2d version"
+# function euler_fluxes(rhoL,uL,vL,betaL,rhoR,uR,vR,betaR,rhologL,betalogL,rhologR,betalogR)
 
     rholog = logmean.(rhoL,rhoR,rhologL,rhologR)
     betalog = logmean.(betaL,betaR,betalogL,betalogR)
@@ -49,5 +49,5 @@ function euler_fluxes(UL,UR,logL,logR)
     FyS2 = @. FxS3
     FyS3 = @. FyS1*vavg + pa
     FyS4 = @. f4aux*vavg
-    return ((FxS1,FxS2,FxS3,FxS4),(FyS1,FyS2,FyS3,FyS4))
+    return (FxS1,FxS2,FxS3,FxS4),(FyS1,FyS2,FyS3,FyS4)
 end

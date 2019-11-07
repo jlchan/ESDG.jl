@@ -15,7 +15,7 @@ using Basis3DHex
 using UniformHexMesh
 
 N = 3
-K1D = 16
+K1D = 8
 VX,VY,VZ,EToV = uniform_hex_mesh(K1D,K1D,K1D)
 fv = hex_face_vertices()
 Nfaces = length(fv)
@@ -33,6 +33,7 @@ Dt = Vt/V
 rq,sq,tq,wq = quad_nodes_3D(N)
 Vq = vandermonde_3D(N,rq,sq,tq)/V
 M = transpose(Vq)*diagm(wq)*Vq
+Pq = M\(transpose(Vq)*diagm(wq))
 
 "face nodes and matrices"
 rquad,squad,wquad = Basis2DQuad.quad_nodes_2D(N)
