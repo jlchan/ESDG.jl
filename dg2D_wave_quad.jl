@@ -133,11 +133,11 @@ function rhs(Q,ops,geo,nodemaps,params...)
     (Dr,Ds,LIFT,Vf)=ops # should make functions for these
     (rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ)=geo
     (mapP,mapB) = nodemaps
-    QM = [Vf*Q[i] for i in eachindex(Q)]
-    QP = [QM[i][mapP] for i in eachindex(Q)]
-    (dp,du,dv) = [QP[i]-QM[i] for i in eachindex(Q)]
+    QM = (x->Vf*x).(Q)
+    QP = (x->x[mapP]).(QM)
+    (dp,du,dv) = QP.-QM
 
-    "compute numerical flux"
+    "compute central numerical flux"
     (pM,uM,vM) = QM
     # du[mapB] = -2*uM[mapB]
     # dv[mapB] = -2*vM[mapB]
@@ -145,11 +145,9 @@ function rhs(Q,ops,geo,nodemaps,params...)
     uflux = @. dp*nxJ
     vflux = @. dp*nyJ
 
-    # (pr,ur,vr) = [Dr*Q[i] for i in eachindex(Q)]
-    # (ps,us,vs) = [Ds*Q[i] for i in eachindex(Q)]
-    pr = Dr*p;   ps = Ds*p
-    ur = Dr*u;   us = Ds*u
-    vr = Dr*v;   vs = Ds*v
+    pr,ur,vr = (x->Dr*x).(Q)
+    ps,us,vs = (x->Ds*x).(Q)
+
     px = @. rxJ*pr + sxJ*ps;
     py = @. ryJ*pr + syJ*ps
     ux = @. rxJ*ur + sxJ*us;
