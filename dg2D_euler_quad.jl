@@ -146,57 +146,35 @@ Nsteps = convert(Int,ceil(T/dt))
 "sparse version - precompute sparse row ids for speed"
 function sparse_hadamard_sum(Qhe,ops,vgeo,flux_fun)
 
-    (Qr,Qs,Qrsids) = ops
+    (Qr,Qs,Qnzids) = ops
     (rxJ,sxJ,ryJ,syJ) = vgeo
+    nrows = size(Qr,1)
+    nfields = length(Qhe)
 
     # precompute logs for logmean
     (rho,u,v,beta) = Qhe
     Qlog = (log.(rho), log.(beta))
-    Qi = zeros(length(Qhe))
-    Qj = zeros(length(Qhe))
-    Qlogi = zeros(length(Qlog))
-    Qlogj = zeros(length(Qlog))
 
-    nrows = size(Qr,1)
-    rhsQe = [zeros(nrows) for fld in eachindex(Qhe)]
-    rhsi = zeros(length(Qhe))
-
+    rhsQe = ntuple(x->zeros(nrows),nfields)
+    rhsi = zeros(nfields) # prealloc a small array
     for i = 1:nrows
-        for fld in eachindex(Qhe)
-            Qi[fld] = Qhe[fld][i]
-        end
-        for fld in eachindex(Qlog)
-            Qlogi[fld] = Qlog[fld][i]
-        end
-        # Qi = getfield.(Qhe,i)
-        # Qlogi = getfield.(Qlog,i)
+        Qi = (x->x[i]).(Qhe)
+        Qlogi = (x->x[i]).(Qlog)
 
-        # intialize rhsi and accumulate into it
-        for fld in eachindex(Qhe)
-            rhsi[fld] = 0.0
-        end
-        for j = Qrsids[i]
-            for fld in eachindex(Qhe)
-                Qj[fld] = Qhe[fld][j]
-            end
-            for fld in eachindex(Qlog)
-                Qlogj[fld] = Qlog[fld][j]
-            end
-            # Qj = getfield.(Qhe,j)
-            # Qlogj = getfield.(Qlog,j)
+        fill!(rhsi,0) # reset rhsi before accumulation
+        for j = Qnzids[i] # nonzero row entries
+            Qj = (x->x[j]).(Qhe)
+            Qlogj = (x->x[j]).(Qlog)
 
-            Qrij = Qr[i,j]
-            Qsij = Qs[i,j]
             Fx,Fy = flux_fun(Qi,Qj,Qlogi,Qlogj)
-
             Fr = @. rxJ*Fx + ryJ*Fy
             Fs = @. sxJ*Fx + syJ*Fy
-            for fld in eachindex(Qhe)
-                rhsi[fld] = rhsi[fld] + Qrij*Fr[fld] + Qsij*Fs[fld]
-            end
+
+            @. rhsi += Qr[i,j]*Fr + Qs[i,j]*Fs
         end
 
-        for fld in eachindex(Qhe)
+        # faster than one-line fixes (no return args)
+        for fld in eachindex(rhsQe)
             rhsQe[fld][i] = rhsi[fld]
         end
     end
@@ -220,35 +198,21 @@ function dense_hadamard_sum(Qhe,ops,vgeo,flux_fun)
     Qlogj = zeros(length(Qlog))
 
     n = size(Qr,1)
-    QF = [zeros(n) for fld in eachindex(Qhe)]
-    QFi = zeros(length(Qhe))
-    Qi = zeros(length(Qhe))
-    Qj = zeros(length(Qhe))
+    nfields = length(Qhe)
+
+    QF = ntuple(x->zeros(n),nfields)
+    QFi = zeros(nfields)
     for i = 1:n
-        for fld in eachindex(Qhe)
-            Qi[fld] = Qhe[fld][i]
-        end
-        for fld in eachindex(Qlog)
-            Qlogi[fld] = Qlog[fld][i]
-        end
-        for fld in eachindex(Qhe)
-            QFi[fld] = 0.0
-        end
+        Qi = (x->x[i]).(Qhe)
+        Qlogi = (x->x[i]).(Qlog)
 
+        fill!(QFi,0)
         for j = 1:n
-            for fld in eachindex(Qhe)
-                Qj[fld] = Qhe[fld][j]
-            end
-            for fld = 1:2
-                Qlogj[fld] = Qlog[fld][j]
-            end
+            Qj = (x->x[j]).(Qhe)
+            Qlogj = (x->x[j]).(Qlog)
 
-            # compute flux interaction
-            Fxij,Fyij = flux_fun(Qi,Qj,Qlogi,Qlogj)
-
-            for fld in eachindex(Qhe)
-                QFi[fld] = QFi[fld] + QxTr[j,i]*Fxij[fld] + QyTr[j,i]*Fyij[fld]
-            end
+            Fx,Fy = flux_fun(Qi,Qj,Qlogi,Qlogj)
+            @. QFi += QxTr[j,i]*Fx + QyTr[j,i]*Fy
         end
 
         for fld in eachindex(Qhe)
@@ -270,55 +234,50 @@ function rhs(Qh,UM,ops,geo,nodemaps,flux_fun)
     Nq = size(Ph,1)
     K  = size(Qh[1],2)
 
-    QM = [Qh[fld][Nq+1:end,:] for fld in eachindex(Qh)]
-    QP = [QM[fld][mapP] for fld in eachindex(QM)]
+    QM = (x->x[Nq+1:end,:]).(Qh)
+    QP = (x->x[mapP]).(QM)
 
     # simple lax friedrichs dissipation
     lam = abs.(wavespeed(UM...))
     LFc = .5*max.(lam,lam[mapP]).*sJ
 
     fSx,fSy = flux_fun(QM,QP)
-    flux = [@. fSx[fld]*nxJ + fSy[fld]*nyJ - LFc*(UM[fld][mapP]-UM[fld]) for fld in eachindex(UM)]
-    rhsQ = [Lf*flux[fld] for fld in eachindex(flux)]
+    normal_flux_fun(fx,fy,u) = fx.*nxJ + fy.*nyJ - LFc.*(u[mapP]-u)
+    flux = normal_flux_fun.(fSx,fSy,UM)
+    rhsQ = (x->Lf*x).(flux)
 
-    # compute volume contributions
-    # Qhe = [zeros(Nh) for fld in eachindex(Qh)] # pre-allocate storage
+    # compute volume contributions using flux differencing
     for e = 1:K
-        Qhe = getindex.(Qh,(:),e)
-        vgeo = getindex.(geo,1,e)
-        QFe = sparse_hadamard_sum(Qhe,(Qrh_sparse,Qsh_sparse,Qrsids),vgeo,flux_fun)
+        Qhe = (x->x[:,e]).(Qh)
+        vgeo = (x->x[1,e]).(geo)
 
-        # apply Ph to all components of rhsQe
+        # Qops = (Qrh_sparse,Qsh_sparse,Qrsids)
+        # QFe = sparse_hadamard_sum(Qhe,Qops,vgeo,flux_fun)
+
+        Qops = (Qrh,Qsh)
+        QFe = dense_hadamard_sum(Qhe,Qops,vgeo,flux_fun)
+
         applyA!(X,x,e) = X[:,e] += Ph*x
         applyA!.(rhsQ,QFe,e)
     end
 
-    for fld in eachindex(rhsQ)
-        @. rhsQ[fld] = -rhsQ[fld]/J
-    end
-
-    return rhsQ
+    return (x -> -x./J).(rhsQ) # scale by Jacobian
 end
 
-# # interp entropy vars to faces
-# VU = v_ufun(Q...)
-# Uf = u_vfun([Ef*VU[i] for i in eachindex(VU)]...)
-# Uh = [[Q[i]; Uf[i]] for i in eachindex(Q)]
-#
-# # convert to rho,u,v,beta vars
-# (rho,rhou,rhov,E) = Uh
-# beta = betafun.(rho,rhou,rhov,E)
-# Qh = (rho,rhou./rho,rhov./rho,beta) # redefine Q = (rho,u,v,β)
-#
-# @time rhs(Qh,Uf,ops,geo,nodemaps,euler_fluxes)
-#
-# println("\n Second (more accurate) timing\n")
-# @time rhs(Qh,Uf,ops,geo,nodemaps,euler_fluxes)
-#
+VU = v_ufun(Q...)
+Uf = u_vfun((x->Ef*x).(VU)...)
+Uh = vcat.(Q,Uf)
+
+# convert to rho,u,v,beta vars
+(rho,rhou,rhov,E) = Uh
+beta = betafun(rho,rhou,rhov,E)
+Qh = (rho,rhou./rho,rhov./rho,beta) # redefine Q = (rho,u,v,β)
+
+@btime rhs($Qh,$Uf,$ops,$geo,$nodemaps,$euler_fluxes)
 # error("d")
 
 wJq = diagm(wq)*J
-resQ = [zeros(size(x)) for i in eachindex(Q)]
+resQ = (zeros(size(x)),zeros(size(x)),zeros(size(x)),zeros(size(x)))
 
 for i = 1:Nsteps
 
@@ -326,24 +285,26 @@ for i = 1:Nsteps
 
     for INTRK = 1:5
 
-        # interp entropy vars to faces
         VU = v_ufun(Q...)
-        Uf = u_vfun([Ef*VU[i] for i in eachindex(VU)]...)
-        Uh = [[Q[i]; Uf[i]] for i in eachindex(Q)]
+        Uf = u_vfun((x->Ef*x).(VU)...)
+        Uh = vcat.(Q,Uf)
 
         # convert to rho,u,v,beta vars
         (rho,rhou,rhov,E) = Uh
-        beta = betafun.(rho,rhou,rhov,E)
+        beta = betafun(rho,rhou,rhov,E)
         Qh = (rho,rhou./rho,rhov./rho,beta) # redefine Q = (rho,u,v,β)
 
         rhsQ = rhs(Qh,Uf,ops,geo,nodemaps,euler_fluxes)
 
         if INTRK==5
-            rhstest = sum([sum(wJq.*VU[fld].*rhsQ[fld]) for fld in eachindex(VU)])
+            rhstest = 0
+            for fld in eachindex(rhsQ)
+                rhstest += sum(wJq.*VU[fld].*rhsQ[fld])
+            end
         end
 
-        @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
-        @. Q = Q + rk4b[INTRK]*resQ
+        resQ = rk4a[INTRK].*resQ .+ dt.*rhsQ
+        Q = Q .+ rk4b[INTRK].*resQ
     end
 
     if i%10==0 || i==Nsteps
