@@ -1,26 +1,24 @@
-push!(LOAD_PATH, "./src")
-push!(LOAD_PATH, "./EntropyStableEuler")
-
-# "Packages"
 using Revise # reduce recompilation time
 using Plots
 using Documenter
 using LinearAlgebra
 using SparseArrays
-
 using BenchmarkTools
 
-# "User defined modules"
+push!(LOAD_PATH, "./src")
 using Utils
 using Basis1D
 using Basis2DQuad
 using UniformQuadMesh
 
+push!(LOAD_PATH, "./EntropyStableEuler")
 using EntropyStableEuler
 
 "Approximation parameters"
-N = 4 # The order of approximation
+N = 3 # The order of approximation
 K1D = 12
+CFL = 1.0;
+T = 5.0 # endtime
 
 "Mesh related variables"
 Kx = convert(Int,4/3*K1D)
@@ -119,6 +117,16 @@ ryJh = Vh*ryJ; syJh = Vh*syJ
 
 "initial conditions"
 rho,u,v,p = vortex(x,y,0)
+# function rhoex(x,y,t)
+#     rho = fill(2,size(x))
+#     xc = sum(x,dims=1)/size(x,1)
+#     eids = map(x->x[2],findall(xc .> 10))
+#     rho[:,eids] .= 1;
+#     return rho
+# end
+# rho = rhoex(x,y,0)
+# u,v = ntuple(a->zeros(size(x)),2)
+# p = ones(size(x))
 Q = primitive_to_conservative(rho,u,v,p)
 
 "convert to Gauss node basis"
@@ -138,49 +146,8 @@ nodemaps = (mapP,mapB)
 "Time integration"
 rk4a,rk4b,rk4c = rk45_coeffs()
 CN = (N+1)*(N+2)/2  # estimated trace constant for CFL
-CFL = 1.0;
 dt = CFL * 2 / (CN*K1D)
-T = .1*5.0 # endtime
 Nsteps = convert(Int,ceil(T/dt))
-
-"sparse version - precompute sparse row ids for speed"
-function sparse_hadamard_sum(Qhe,ops,vgeo,flux_fun)
-
-    (Qr,Qs,Qnzids) = ops
-    (rxJ,sxJ,ryJ,syJ) = vgeo
-    nrows = size(Qr,1)
-    nfields = length(Qhe)
-
-    # precompute logs for logmean
-    (rho,u,v,beta) = Qhe
-    Qlog = (log.(rho), log.(beta))
-
-    rhsQe = ntuple(x->zeros(nrows),nfields)
-    rhsi = zeros(nfields) # prealloc a small array
-    for i = 1:nrows
-        Qi = (x->x[i]).(Qhe)
-        Qlogi = (x->x[i]).(Qlog)
-
-        fill!(rhsi,0) # reset rhsi before accumulation
-        for j = Qnzids[i] # nonzero row entries
-            Qj = (x->x[j]).(Qhe)
-            Qlogj = (x->x[j]).(Qlog)
-
-            Fx,Fy = flux_fun(Qi,Qj,Qlogi,Qlogj)
-            Fr = @. rxJ*Fx + ryJ*Fy
-            Fs = @. sxJ*Fx + syJ*Fy
-
-            @. rhsi += Qr[i,j]*Fr + Qs[i,j]*Fs
-        end
-
-        # faster than one-line fixes (no return args)
-        for fld in eachindex(rhsQe)
-            rhsQe[fld][i] = rhsi[fld]
-        end
-    end
-
-    return rhsQe
-end
 
 "dense version - speed up by prealloc + transpose for col major "
 function dense_hadamard_sum(Qhe,ops,vgeo,flux_fun)
@@ -223,6 +190,45 @@ function dense_hadamard_sum(Qhe,ops,vgeo,flux_fun)
     return QF
 end
 
+"sparse version - precompute sparse row ids for speed"
+function sparse_hadamard_sum(Qhe,ops,vgeo,flux_fun)
+
+    (Qr,Qs,Qnzids) = ops
+    (rxJ,sxJ,ryJ,syJ) = vgeo
+    nrows = size(Qr,1)
+    nfields = length(Qhe)
+
+    # precompute logs for logmean
+    (rho,u,v,beta) = Qhe
+    Qlog = (log.(rho), log.(beta))
+
+    rhsQe = ntuple(x->zeros(nrows),nfields)
+    rhsi = zeros(nfields) # prealloc a small array
+    for i = 1:nrows
+        Qi = (x->x[i]).(Qhe)
+        Qlogi = (x->x[i]).(Qlog)
+
+        fill!(rhsi,0) # reset rhsi before accumulation
+        for j = Qnzids[i] # nonzero row entries
+            Qj = (x->x[j]).(Qhe)
+            Qlogj = (x->x[j]).(Qlog)
+
+            Fx,Fy = flux_fun(Qi,Qj,Qlogi,Qlogj)
+            Fr = @. rxJ*Fx + ryJ*Fy
+            Fs = @. sxJ*Fx + syJ*Fy
+
+            @. rhsi += Qr[i,j]*Fr + Qs[i,j]*Fs
+        end
+
+        # faster than one-line fixes (no return args)
+        for fld in eachindex(rhsQe)
+            rhsQe[fld][i] = rhsi[fld]
+        end
+    end
+
+    return rhsQe
+end
+
 "Qh = (rho,u,v,beta), while Uh = conservative vars"
 function rhs(Qh,UM,ops,geo,nodemaps,flux_fun)
 
@@ -238,12 +244,14 @@ function rhs(Qh,UM,ops,geo,nodemaps,flux_fun)
     QP = (x->x[mapP]).(QM)
 
     # simple lax friedrichs dissipation
-    lam = abs.(wavespeed(UM...))
+    (rhoM,rhouM,rhovM,EM) = UM
+    rhoUM_n = @. (rhouM*nxJ + rhovM*nyJ)/sJ
+    lam = abs.(wavespeed(rhoM,rhoUM_n,EM))
     LFc = .5*max.(lam,lam[mapP]).*sJ
 
     fSx,fSy = flux_fun(QM,QP)
-    normal_flux_fun(fx,fy,u) = fx.*nxJ + fy.*nyJ - LFc.*(u[mapP]-u)
-    flux = normal_flux_fun.(fSx,fSy,UM)
+    normal_flux(fx,fy,u) = fx.*nxJ + fy.*nyJ - LFc.*(u[mapP]-u)
+    flux = normal_flux.(fSx,fSy,UM)
     rhsQ = (x->Lf*x).(flux)
 
     # compute volume contributions using flux differencing
@@ -251,11 +259,11 @@ function rhs(Qh,UM,ops,geo,nodemaps,flux_fun)
         Qhe = (x->x[:,e]).(Qh)
         vgeo = (x->x[1,e]).(geo)
 
-        # Qops = (Qrh_sparse,Qsh_sparse,Qrsids)
-        # QFe = sparse_hadamard_sum(Qhe,Qops,vgeo,flux_fun)
+        Qops = (Qrh_sparse,Qsh_sparse,Qrsids)
+        QFe = sparse_hadamard_sum(Qhe,Qops,vgeo,flux_fun)
 
-        Qops = (Qrh,Qsh)
-        QFe = dense_hadamard_sum(Qhe,Qops,vgeo,flux_fun)
+        # Qops = (Qrh,Qsh)
+        # QFe = dense_hadamard_sum(Qhe,Qops,vgeo,flux_fun)
 
         applyA!(X,x,e) = X[:,e] += Ph*x
         applyA!.(rhsQ,QFe,e)
@@ -264,16 +272,17 @@ function rhs(Qh,UM,ops,geo,nodemaps,flux_fun)
     return (x -> -x./J).(rhsQ) # scale by Jacobian
 end
 
-VU = v_ufun(Q...)
-Uf = u_vfun((x->Ef*x).(VU)...)
-Uh = vcat.(Q,Uf)
-
-# convert to rho,u,v,beta vars
-(rho,rhou,rhov,E) = Uh
-beta = betafun(rho,rhou,rhov,E)
-Qh = (rho,rhou./rho,rhov./rho,beta) # redefine Q = (rho,u,v,β)
-
-@btime rhs($Qh,$Uf,$ops,$geo,$nodemaps,$euler_fluxes)
+# VU = v_ufun(Q...)
+# Uf = u_vfun((x->Ef*x).(VU)...)
+# Uh = vcat.(Q,Uf)
+#
+# # convert to rho,u,v,beta vars
+# (rho,rhou,rhov,E) = Uh
+# beta = betafun(rho,rhou,rhov,E)
+# Qh = (rho,rhou./rho,rhov./rho,beta) # redefine Q = (rho,u,v,β)
+#
+# rhsQ = rhs(Qh,Uf,ops,geo,nodemaps,euler_fluxes)
+# # @btime rhs($Qh,$Uf,$ops,$geo,$nodemaps,$euler_fluxes)
 # error("d")
 
 wJq = diagm(wq)*J
@@ -287,10 +296,9 @@ for i = 1:Nsteps
 
         VU = v_ufun(Q...)
         Uf = u_vfun((x->Ef*x).(VU)...)
-        Uh = vcat.(Q,Uf)
+        (rho,rhou,rhov,E) = vcat.(Q,Uf)
 
         # convert to rho,u,v,beta vars
-        (rho,rhou,rhov,E) = Uh
         beta = betafun(rho,rhou,rhov,E)
         Qh = (rho,rhou./rho,rhov./rho,beta) # redefine Q = (rho,u,v,β)
 
@@ -313,7 +321,7 @@ for i = 1:Nsteps
 end
 
 "project solution back to GLL nodes"
-(rho,rhou,rhov,E) = [Pq*Q[fld] for fld in eachindex(Q)]
+(rho,rhou,rhov,E) = (x->Pq*x).(Q)
 
 "higher degree quadrature for error evaluation"
 rq2,sq2,wq2 = quad_nodes_2D(N+2)

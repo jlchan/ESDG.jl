@@ -3,6 +3,11 @@ function ??
 
 """
 
+"1D wavespeed for riemann problems"
+function wavespeed(rho,rhou,E)
+    cvel = @. sqrt(γ*pfun(rho,rhou,E)/rho)
+    return @. sqrt(abs(rhou/rho)) + cvel
+end
 
 function Unorm(U)
     unorm = zeros(size(U[1]))
@@ -10,14 +15,6 @@ function Unorm(U)
         @. unorm += u^2
     end
     return unorm
-end
-
-function wavespeed(rho,rhoU,E)
-    rhoUnorm = Unorm(rhoU)./rho
-    p = pfun(rho,rhoU,E,rhoUnorm)
-    cvel = @. sqrt(γ*p/rho)
-
-    return @. sqrt(rhoUnorm/rho) + cvel
 end
 
 "primitive pressure to conservative vars"
