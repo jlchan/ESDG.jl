@@ -20,7 +20,7 @@ using EntropyStableEuler
 
 N = 2
 K1D = 4
-T = 1.0 # endtime
+T = .10 # endtime
 CFL = .75;
 
 VX,VY,VZ,EToV = uniform_hex_mesh(K1D,K1D,K1D)
@@ -120,12 +120,12 @@ sJ = @. sqrt(nxJ.^2 + nyJ.^2 + nzJ.^2)
 "initial conditions"
 rhoex(x,y,z,t) = @. 2 + .5*sin(pi*x-t) #exp(-25*(x^2+y^2))
 # rhoex(x,y,z,t) = ones(size(x))
-function rhoex(x,y,z,t)
-    rho = fill(2,size(x))
-    xc = sum(x,dims=1)/size(x,1)
-    rho[:,xc[:] .> 0] .= 1
-    return rho
-end
+# function rhoex(x,y,z,t)
+#     rho = fill(2,size(x))
+#     xc = sum(x,dims=1)/size(x,1)
+#     rho[:,xc[:] .> 0] .= 1
+#     return rho
+# end
 rho = rhoex(x,y,z,0)
 u = ones(size(x))
 v,w = ntuple(a->zeros(size(x)),2)
@@ -206,7 +206,7 @@ function rhs(Qh,UM,ops,vgeo,fgeo,nodemaps,flux_fun)
     QM = (x->x[Nq+1:end,:]).(Qh)
     QP = (x->x[mapP]).(QM)
 
-    # simple lax friedrichs dissipation
+    # lax friedrichs dissipation
     (rho,rhou,rhov,rhow,E) = UM
     rhoU_n = @. (rhou*nxJ + rhov*nyJ + rhow*nzJ)/sJ
     lam = abs.(wavespeed(rho,rhoU_n,E))
@@ -273,7 +273,7 @@ end
 (rho,rhou,rhov,rhow,E) = (x->Pq*x).(Q) # project back to Lobatto nodes
 
 "plotting nodes"
-rp, sp, tp = equi_nodes_3D(10)
+rp, sp, tp = equi_nodes_3D(20)
 Vp = vandermonde_3D(N,rp,sp,tp)/V
 
 # pyplot(size=(100,100),legend=false,markerstrokewidth=0,markersize=2)
@@ -284,9 +284,10 @@ yp = Vp*y
 zp = Vp*z
 vv = Vp*rho
 
-ids = map(x->x[1],findall(@. (abs(yp[:]+1.0)<1e-10) | (abs(xp[:]+1.0)<1e-10) | (abs(zp[:]+1.0)<1e-10)))
+#ids = map(x->x[1],findall(@. (abs(yp[:]+1.0)<1e-10) | (abs(xp[:]+1.0)<1e-10) | (abs(zp[:]+1.0)<1e-10)))
+ids = map(x->x[1],findall(@. abs(zp[:])<1e-10))
 xp = xp[ids]
 yp = yp[ids]
 zp = zp[ids]
 vv = vv[ids]
-scatter(xp,yp,zp,zcolor=vv)
+scatter(xp,yp,zp,zcolor=vv,camera=(0,90))
