@@ -81,12 +81,9 @@ function build_periodic_boundary_maps(xf,yf,zf,LX,LY,LZ,Nfaces,mapM,mapP,mapB)
     mapMB = reshape(mapM[mapB],Nfp,Nbfaces)
     mapPB = reshape(mapP[mapB],Nfp,Nbfaces)
 
-    xmax = maximum(xc)
-    xmin = minimum(xc)
-    ymax = maximum(yc)
-    ymin = minimum(yc)
-    zmax = maximum(zc)
-    zmin = minimum(zc)
+    xmax = maximum(xc);  xmin = minimum(xc)
+    ymax = maximum(yc);  ymin = minimum(yc)
+    zmax = maximum(zc);  zmin = minimum(zc)
 
     "determine which faces lie on x and y boundaries"
     NODETOL = 1e-10
