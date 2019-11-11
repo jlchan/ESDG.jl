@@ -101,17 +101,9 @@ T = 0.75 # endtime
 Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
-rhsp = zeros(size(x))
-rhsu = zeros(size(x))
-rhsv = zeros(size(x))
-resp = zeros(size(x))
-resu = zeros(size(x))
-resv = zeros(size(x))
-
 "pack arguments into tuples"
 Q = (p,u,v)
-rhsQ = (rhsp,rhsu,rhsv)
-resQ = (resp,resu,resv)
+resQ = ntuple(a->zeros(size(x)),length(Q))
 ops = (Dr,Ds,LIFT,Vf)
 geo = (rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ)
 mapM = reshape(mapM,Nfp*Nfaces,K)

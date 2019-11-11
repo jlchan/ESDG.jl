@@ -95,7 +95,6 @@ Nsteps = convert(Int,ceil(T/dt))
 
 "pack arguments into tuples"
 Q = (p,u,v)
-rhsQ = (zeros(size(x)) for i in eachindex(Q))
 resQ = (zeros(size(x)) for i in eachindex(Q))
 ops = (Dr,Ds,LIFT,Vf)
 geo = (rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ)
