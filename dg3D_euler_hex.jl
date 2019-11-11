@@ -203,7 +203,7 @@ function rhs(Qh,UM,ops,vgeo,fgeo,nodemaps,flux_fun)
     (rho,rhou,rhov,rhow,E) = UM
     rhoU_n = @. (rhou*nxJ + rhov*nyJ + rhow*nzJ)/sJ
     lam = abs.(wavespeed(rho,rhoU_n,E))
-    LFc = .005*max.(lam,lam[mapP]).*sJ
+    LFc = .0001*max.(lam,lam[mapP]).*sJ
 
     fSx,fSy,fSz = flux_fun(QM,QP)
     normal_flux(fx,fy,fz,uM) = fx.*nxJ + fy.*nyJ + fz.*nzJ - LFc.*(uM[mapP]-uM)

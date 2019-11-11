@@ -43,12 +43,12 @@ function uniform_hex_mesh(Nx,Ny,Nz)
                 i = em % Nx
 
                 EToV[e,1] = i     + Nxp*j     + Nxp*Nyp*k
-                EToV[e,2] = i     + Nxp*(j+1) + Nxp*Nyp*k
-                EToV[e,3] = (i+1) + Nxp*j     + Nxp*Nyp*k
+                EToV[e,2] = (i+1) + Nxp*j     + Nxp*Nyp*k
+                EToV[e,3] = i     + Nxp*(j+1) + Nxp*Nyp*k
                 EToV[e,4] = (i+1) + Nxp*(j+1) + Nxp*Nyp*k
                 EToV[e,5] = i     + Nxp*j     + Nxp*Nyp*(k+1)
-                EToV[e,6] = i     + Nxp*(j+1) + Nxp*Nyp*(k+1)
-                EToV[e,7] = (i+1) + Nxp*j     + Nxp*Nyp*(k+1)
+                EToV[e,6] = (i+1) + Nxp*j     + Nxp*Nyp*(k+1)
+                EToV[e,7] = i     + Nxp*(j+1) + Nxp*Nyp*(k+1)
                 EToV[e,8] = (i+1) + Nxp*(j+1) + Nxp*Nyp*(k+1)
         end
         EToV = @. EToV + 1 # re-index to 1 index
