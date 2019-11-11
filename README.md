@@ -1,7 +1,7 @@
 # JuliaDG
 ## A set of codes for solving 1D/2D/3D time-dependent hyperbolic PDEs using high order DG methods on either triangular or quadrilateral meshes.
 
-These codes are based loosely on the Matlab codes for the book Nodal Discontinuous Galerkin methods by Hesthaven and Warburton (2007).
+These codes are inspired by the Matlab codes for the book Nodal Discontinuous Galerkin methods by Hesthaven and Warburton (2007).
 
 ## Demos for linear problems
 - 1D demos to come soon...
