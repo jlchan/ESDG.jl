@@ -75,7 +75,7 @@ triangles for polynomial of order N, with Np points
 """
 
 function nodes_2D(N)
-    r1D = gauss_lobatto_quad(0,0,N)
+    r1D,w1D = gauss_lobatto_quad(0,0,N)
     s,r = meshgrid(r1D)
     return r[:], s[:]
 end

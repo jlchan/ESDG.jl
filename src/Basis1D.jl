@@ -22,18 +22,25 @@ Initialize Legendre-Gauss-Lobatto quadrature points.
 ```jldoctest
 """
 function gauss_lobatto_quad(α, β, N)
+
+    if (α!=0) & (β!=0)
+        error("alpha/beta not zero")
+    end
     x = zeros(N+1, 1)
+    w = zeros(N+1, 1)
     if N == 1
         x[1] = -1.0
         x[2] = 1.0
+        w[1] = 1.0
+        w[2] = 1.0
     else
         xint, w = gauss_quad(α+1, β+1, N-2)
         x = [-1 transpose(xint) 1]
 
-        # V = vandermonde1D(N,x)
-        # w = vec(sum(inv(V*V'),dims=2))
+        V = vandermonde_1D(N,x)
+        w = vec(sum(inv(V*V'),dims=2))
     end
-    return x[:]
+    return x[:],w[:]
 end
 
 

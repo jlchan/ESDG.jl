@@ -17,10 +17,10 @@ using UniformHexMesh
 push!(LOAD_PATH, "./EntropyStableEuler")
 using EntropyStableEuler
 
-N = 4
+N = 2
 K1D = 4
-T = .5 # endtime
-CFL = .5;
+T = 1.0 # endtime
+CFL = 1.0;
 
 VX,VY,VZ,EToV = uniform_hex_mesh(K1D,K1D,K1D)
 fv = hex_face_vertices()
@@ -36,13 +36,22 @@ Ds = Vs/V
 Dt = Vt/V
 
 "quadrature"
-rq,sq,tq,wq = quad_nodes_3D(N)
+# rq,sq,tq,wq = quad_nodes_3D(N)
+r1D,w1D = gauss_lobatto_quad(0,0,N)
+r1D,w1D = gauss_quad(0,0,N)
+rq,sq,tq = meshgrid(r1D,r1D,r1D)
+wr,ws,wt = meshgrid(w1D,w1D,w1D)
+wq = wr.*ws.*wt
 Vq = vandermonde_3D(N,rq,sq,tq)/V
 M = transpose(Vq)*diagm(wq)*Vq
 Pq = M\(transpose(Vq)*diagm(wq))
 
 "face nodes and matrices"
-rquad,squad,wquad = Basis2DQuad.quad_nodes_2D(N)
+# rquad,squad,wquad = Basis2DQuad.quad_nodes_2D(N)
+rquad,squad = (x->x[:]).(meshgrid(r1D,r1D))
+wr,ws = (x->x[:]).(meshgrid(w1D,w1D))
+wquad = wr.*ws
+
 e = ones(size(rquad))
 zz = zeros(size(rquad))
 rf = [-e; e; rquad; rquad; rquad; rquad]
@@ -203,7 +212,7 @@ function rhs(Qh,UM,ops,vgeo,fgeo,nodemaps,flux_fun)
     (rho,rhou,rhov,rhow,E) = UM
     rhoU_n = @. (rhou*nxJ + rhov*nyJ + rhow*nzJ)/sJ
     lam = abs.(wavespeed(rho,rhoU_n,E))
-    LFc = .0001*max.(lam,lam[mapP]).*sJ
+    LFc = .5*max.(lam,lam[mapP]).*sJ
 
     fSx,fSy,fSz = flux_fun(QM,QP)
     normal_flux(fx,fy,fz,uM) = fx.*nxJ + fy.*nyJ + fz.*nzJ - LFc.*(uM[mapP]-uM)
@@ -277,7 +286,7 @@ L2err = sum(wJq2.*(Vq2*rho - rhoex(xq2,yq2,zq2,T)).^2)
 @show L2err
 
 "plotting nodes"
-rp, sp, tp = equi_nodes_3D(20)
+rp, sp, tp = equi_nodes_3D(25)
 Vp = vandermonde_3D(N,rp,sp,tp)/V
 
 # pyplot(size=(100,100),legend=false,markerstrokewidth=0,markersize=2)

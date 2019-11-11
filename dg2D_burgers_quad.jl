@@ -39,9 +39,6 @@ M = transpose(Vq)*diagm(wq)*Vq
 Pq = M\(transpose(Vq)*diagm(wq))
 
 "Reference face nodes and normals"
-# r1D = gauss_lobatto_quad(0,0,N)
-# V1D = vandermonde_1D(N,r1D) # hack together face quad nodes
-# w1D = vec(sum(inv(V1D*transpose(V1D)),dims=2))
 r1D,w1D = gauss_quad(0,0,N)
 e = ones(size(r1D))
 z = zeros(size(r1D))

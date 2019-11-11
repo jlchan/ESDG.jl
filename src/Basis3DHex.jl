@@ -75,7 +75,7 @@ end
 """
 
 function nodes_3D(N)
-    r1D = gauss_lobatto_quad(0,0,N)
+    r1D,w1D = gauss_lobatto_quad(0,0,N)
     return meshgrid(r1D,r1D,r1D)
 end
 

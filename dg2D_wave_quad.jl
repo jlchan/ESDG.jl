@@ -37,13 +37,8 @@ M = inv(V*transpose(V))
 M = diagm(vec(sum(M,dims=2)))
 
 "Reference face nodes and normals"
-r1D = gauss_lobatto_quad(0,0,N)
+r1D,w1D = gauss_lobatto_quad(0,0,N)
 Nfp = length(r1D)
-
-# hack together face quad nodes
-V1D = vandermonde_1D(N,r1D)
-w1D = vec(sum(inv(V1D*transpose(V1D)),dims=2))
-
 e = ones(size(r1D))
 z = zeros(size(r1D))
 rf = [r1D; e; -r1D; -e]

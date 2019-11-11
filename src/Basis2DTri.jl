@@ -166,7 +166,7 @@ Compute warp factor for triangular interp nodes.
 """
 
 function warp_factor(N, rout)
-    LGLr = gauss_lobatto_quad(0, 0, N)
+    LGLr,w1D = gauss_lobatto_quad(0, 0, N)
     # LGLr = transpose(LGLr[:])
     req = LinRange(-1,1,N+1)
     Veq = vandermonde_1D(N, req)
