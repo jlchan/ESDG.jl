@@ -18,7 +18,7 @@ using EntropyStableEuler
 N = 3 # The order of approximation
 K1D = 12
 CFL = 1.0;
-T = 5.0 # endtime
+T = .1*5.0 # endtime
 
 "Mesh related variables"
 Kx = convert(Int,4/3*K1D)
@@ -35,9 +35,7 @@ EToE, EToF, FToF = connect_mesh(EToV,quad_face_vertices())
 "Set up reference element nodes and operators"
 r, s = nodes_2D(N)
 V = vandermonde_2D(N, r, s)
-Vr, Vs = grad_vandermonde_2D(N, r, s)
-Dr = Vr / V
-Ds = Vs / V
+Dr, Ds = (A->A/V).(grad_vandermonde_2D(N, r, s))
 
 "Quadrature operators"
 rq,sq,wq = quad_nodes_2D(N)
@@ -75,67 +73,47 @@ Ph = 2*(M\transpose(Vh))
 "sparse skew symmetric versions of the operators"
 Qrhskew = .5*(Qrh-transpose(Qrh))
 Qshskew = .5*(Qsh-transpose(Qsh))
-Qrhskew_sparse = droptol!(sparse(Qrhskew),1e-12)
-Qshskew_sparse = droptol!(sparse(Qshskew),1e-12)
-Vh = droptol!(sparse(Vh),1e-12)
-Ph = droptol!(sparse(Ph),1e-12)
-Lf = droptol!(sparse(Lf),1e-12)
+Qrh_sparse = droptol!(sparse(Qrhskew),1e-12)
+Qsh_sparse = droptol!(sparse(Qshskew),1e-12)
 
 # precompute union of sparse ids for Qr, Qs
-Qrsids = [unique([Qrhskew_sparse[i,:].nzind; Qshskew_sparse[i,:].nzind]) for i = 1:size(Qrhskew,1)]
-
+Qrsids = [unique([Qrh_sparse[i,:].nzind; Qsh_sparse[i,:].nzind]) for i = 1:size(Qrhskew,1)]
 
 "Map physical nodes"
 r1,s1 = nodes_2D(1)
 V1 = vandermonde_2D(1,r,s)/vandermonde_2D(1,r1,s1)
-x = V1*VX[transpose(EToV)]
-y = V1*VY[transpose(EToV)]
+x,y = (x->V1*x[transpose(EToV)]).((VX,VY))
 
 "Face nodes and connectivity maps"
-xf = Vf*x
-yf = Vf*y
+xf,yf = (x->Vf*x).((x,y))
 mapM, mapP, mapB = build_node_maps((xf,yf), FToF)
 
 "Make node maps periodic"
-LX = maximum(VX)-minimum(VX)
-LY = maximum(VY)-minimum(VY)
+LX,LY = (x->maximum(x)-minimum(x)).((VX,VY))
 mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces,mapM,mapP,mapB)
 mapP[mapB] = mapPB
 
 "Geometric factors and surface normals"
-rxJ, sxJ, ryJ, syJ, J = geometric_factors(x, y, Dr, Ds)
+vgeo = geometric_factors(x, y, Dr, Ds)
+rxJ, sxJ, ryJ, syJ, J = vgeo
 nxJ = (Vf*rxJ).*nrJ + (Vf*sxJ).*nsJ;
 nyJ = (Vf*ryJ).*nrJ + (Vf*syJ).*nsJ;
 sJ = @. sqrt(nxJ^2 + nyJ^2)
 
-"Hybridized geofacs"
-rxJh = Vh*rxJ; sxJh = Vh*sxJ
-ryJh = Vh*ryJ; syJh = Vh*syJ
-
 "initial conditions"
 rho,u,v,p = vortex(x,y,0)
-# function rhoex(x,y,t)
-#     rho = fill(2,size(x))
-#     xc = sum(x,dims=1)/size(x,1)
-#     eids = map(x->x[2],findall(xc .> 10))
-#     rho[:,eids] .= 1;
-#     return rho
-# end
-# rho = rhoex(x,y,0)
-# u,v = ntuple(a->zeros(size(x)),2)
-# p = ones(size(x))
 Q = primitive_to_conservative(rho,u,v,p)
 
 "convert to Gauss node basis"
 Vh = droptol!(sparse([diagm(ones(length(rq))); Ef]),1e-12)
 Ph = droptol!(sparse(2*diagm(@. 1/wq)*transpose(Vh)),1e-12)
 Lf = droptol!(sparse(diagm(@. 1/wq)*(transpose(Ef)*diagm(wf))),1e-12)
-# Q = collect(Vq*Q[i] for i in eachindex(Q)) # interp to quad pts
 Q = (x->Vq*x).(Q)
 
 "Pack arguments into tuples"
-ops = (Qrhskew,Qshskew,Qrhskew_sparse,Qshskew_sparse,Qrsids,Ph,Lf)
-geo = (rxJh,sxJh,ryJh,syJh,J,nxJ,nyJ,sJ)
+ops = (Qrhskew,Qshskew,Qrh_sparse,Qsh_sparse,Qrsids,Ph,Lf)
+vgeo = (x->Vh*x).(vgeo) # interp to hybridized points
+fgeo = (nxJ,nyJ,sJ)
 Nfp = length(r1D)
 mapP = reshape(mapP,Nfp*Nfaces,K)
 nodemaps = (mapP,mapB)
@@ -227,11 +205,11 @@ function sparse_hadamard_sum(Qhe,ops,vgeo,flux_fun)
 end
 
 "Qh = (rho,u,v,beta), while Uh = conservative vars"
-function rhs(Qh,UM,ops,geo,nodemaps,flux_fun)
+function rhs(Qh,UM,ops,vgeo,fgeo,nodemaps,flux_fun)
 
     # unpack args
     (Qrh,Qsh,Qrh_sparse,Qsh_sparse,Qrsids,Ph,Lf)=ops
-    (rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ)=geo
+    nxJ,nyJ,sJ = fgeo
     (mapP,mapB) = nodemaps
     Nh = size(Qrhskew,1)
     Nq = size(Ph,1)
@@ -254,10 +232,10 @@ function rhs(Qh,UM,ops,geo,nodemaps,flux_fun)
     # compute volume contributions using flux differencing
     for e = 1:K
         Qhe = (x->x[:,e]).(Qh)
-        vgeo = (x->x[1,e]).(geo)
+        vgeo_local = (x->x[1,e]).(vgeo)
 
         Qops = (Qrh_sparse,Qsh_sparse,Qrsids)
-        QFe = sparse_hadamard_sum(Qhe,Qops,vgeo,flux_fun)
+        QFe = sparse_hadamard_sum(Qhe,Qops,vgeo_local,flux_fun)
 
         # Qops = (Qrh,Qsh)
         # QFe = dense_hadamard_sum(Qhe,Qops,vgeo,flux_fun)
@@ -269,21 +247,8 @@ function rhs(Qh,UM,ops,geo,nodemaps,flux_fun)
     return (x -> -x./J).(rhsQ) # scale by Jacobian
 end
 
-# VU = v_ufun(Q...)
-# Uf = u_vfun((x->Ef*x).(VU)...)
-# Uh = vcat.(Q,Uf)
-#
-# # convert to rho,u,v,beta vars
-# (rho,rhou,rhov,E) = Uh
-# beta = betafun(rho,rhou,rhov,E)
-# Qh = (rho,rhou./rho,rhov./rho,beta) # redefine Q = (rho,u,v,β)
-#
-# rhsQ = rhs(Qh,Uf,ops,geo,nodemaps,euler_fluxes)
-# # @btime rhs($Qh,$Uf,$ops,$geo,$nodemaps,$euler_fluxes)
-# error("d")
-
 wJq = diagm(wq)*J
-resQ = (zeros(size(x)),zeros(size(x)),zeros(size(x)),zeros(size(x)))
+resQ = ntuple(a->zeros(size(x)),length(Q))
 
 for i = 1:Nsteps
 
@@ -299,7 +264,7 @@ for i = 1:Nsteps
         beta = betafun(rho,rhou,rhov,E)
         Qh = (rho,rhou./rho,rhov./rho,beta) # redefine Q = (rho,u,v,β)
 
-        rhsQ = rhs(Qh,Uf,ops,geo,nodemaps,euler_fluxes)
+        rhsQ = rhs(Qh,Uf,ops,vgeo,fgeo,nodemaps,euler_fluxes)
 
         if INTRK==5
             rhstest = 0
@@ -324,8 +289,7 @@ end
 rq2,sq2,wq2 = quad_nodes_2D(N+2)
 Vq2 = vandermonde_2D(N,rq2,sq2)/V
 wJq2 = diagm(wq2)*(Vq2*J)
-xq2 = Vq2*x
-yq2 = Vq2*y
+xq2,yq2 = (x->Vq2*x).((x,y))
 
 Q = (rho,rhou,rhov,E)
 Qq = [Vq2*Q[fld] for fld in eachindex(Q)]
@@ -337,7 +301,6 @@ for fld in eachindex(Q)
 end
 L2err = sqrt(L2err)
 println("L2err at final time T = $T is $L2err\n")
-
 
 "plotting nodes"
 rp, sp = equi_nodes_2D(15)

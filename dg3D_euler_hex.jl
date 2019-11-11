@@ -19,7 +19,7 @@ using EntropyStableEuler
 
 N = 2
 K1D = 4
-T = 1.0 # endtime
+T = 2/3 # endtime
 CFL = 1.0;
 
 VX,VY,VZ,EToV = uniform_hex_mesh(K1D,K1D,K1D)
@@ -107,9 +107,7 @@ y = V1*VY[transpose(EToV)]
 z = V1*VZ[transpose(EToV)]
 
 "get physical face nodes"
-xf = Vf*x
-yf = Vf*y
-zf = Vf*z
+xf,yf,zf = (x->Vf*x).((x,y,z))
 mapM, mapP, mapB = build_node_maps((xf,yf,zf),FToF)
 
 "make periodic"
@@ -234,40 +232,43 @@ function rhs(Qh,UM,ops,vgeo,fgeo,nodemaps,flux_fun)
     return (x -> -x./J).(rhsQ) # scale by Jacobian
 end
 
-# error("d")
+
+function rk_rhs(Q,compute_rhstest)
+
+    VU = v_ufun(Q...)
+    Uf = u_vfun((x->Ef*x).(VU)...) # conservative vars
+    Uh = vcat.(Q,Uf)
+
+    # convert to rho,u,v,beta vars
+    (rho,rhou,rhov,rhow,E) = Uh
+    beta = betafun(rho,rhou,rhov,rhow,E)
+    Qh = (rho,rhou./rho,rhov./rho,rhow./rho,beta) # redefine Q = (rho,U,β)
+
+    rhsQ = rhs(Qh,Uf,ops,vgeo,fgeo,nodemaps,euler_fluxes)
+
+    rhstest = 0
+    if compute_rhstest
+        for fld in eachindex(rhsQ)
+            rhstest += sum(wJq.*VU[fld].*rhsQ[fld])
+        end
+    end
+    return rhsQ,rhstest
+end
 
 wJq = diagm(wq)*J
 resQ = ntuple(arg->zeros(size(x)),length(Q))
 
 for i = 1:Nsteps
 
-    global Q, resQ, rhstest # for scope, variables are updated
+    global Q, resQ # for scope, variables are updated
 
+    rhstest = 0
     for INTRK = 1:5
 
-        VU = v_ufun(Q...)
-        Uf = u_vfun((x->Ef*x).(VU)...) # conservative vars
-        Uh = vcat.(Q,Uf)
-
-        # convert to rho,u,v,beta vars
-        (rho,rhou,rhov,rhow,E) = Uh
-        beta = betafun(rho,rhou,rhov,rhow,E)
-        Qh = (rho,rhou./rho,rhov./rho,rhow./rho,beta) # redefine Q = (rho,U,β)
-
-        rhsQ = rhs(Qh,Uf,ops,vgeo,fgeo,nodemaps,euler_fluxes)
-        # @show maximum.(map(x->abs.(x),rhsQ))
-
-        if INTRK==5
-            rhstest = 0
-            for fld in eachindex(rhsQ)
-                rhstest += sum(wJq.*VU[fld].*rhsQ[fld])
-            end
-            # @show rhstest
-        end
-        # error("d")
-
+        rhsQ,rhstest = rk_rhs(Q,INTRK==5)
         resQ = rk4a[INTRK].*resQ .+ dt.*rhsQ
         Q    = Q .+ rk4b[INTRK].*resQ
+
     end
 
     if i%10==0 || i==Nsteps
@@ -293,7 +294,7 @@ Vp = vandermonde_3D(N,rp,sp,tp)/V
 gr(size=(200,200),legend=false,markerstrokewidth=0,markersize=2)
 
 (xp,yp,zp,vv) = (x->Vp*x).((x,y,z,rho))
-vv = rhoex(xp,yp,zp,2*T)
+# vv = rhoex(xp,yp,zp,2*T)
 
 #ids = map(x->x[1],findall(@. (abs(yp[:]+1.0)<1e-10) | (abs(xp[:]+1.0)<1e-10) | (abs(zp[:]+1.0)<1e-10)))
 ids = map(x->x[1],findall(@. abs(zp[:])<1e-10))
