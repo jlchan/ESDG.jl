@@ -14,10 +14,23 @@ function connect_mesh(EToV,fv)
         fnodes = vcat([EToV[:,ids] for ids = fv]...) # vertically concat array comprehension
 
         sort!(fnodes, dims = 2)
-        fnodes = fnodes.-1;
+        # @show fnodes
+        fnodes = fnodes .- 1;
         EToE = (1:K)*ones(Int64,1,Nfaces)
         EToF = ones(Int64,K,1)*transpose(1:Nfaces)
-        id = fnodes[:,1]*Nnodes + fnodes[:,2].+1;
+
+        # compute ids - may overflow around 50000 nodes
+        if Nnodes > 50000
+                error("too many nodes! may have overflow")
+        end
+        Nfv = size(fnodes,2)
+        id = zeros(size(fnodes,1))
+        for i = 1:Nfv
+                id .+= fnodes[:,i].*Nnodes^(Nfv-i+1)
+        end
+        id = convert.(Int,round.(id .+ 1))
+        # id = fnodes[:,1]*Nnodes + fnodes[:,2] .+ 1;
+
         spNodeToNode = [id collect(1:Nfaces*K) EToE[:] EToF[:]]
         sorted = sortslices(spNodeToNode, dims=1)
         indices = findall(sorted[1:(end-1),1] .== sorted[2:end,1])

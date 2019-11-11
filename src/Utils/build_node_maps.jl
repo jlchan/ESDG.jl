@@ -89,12 +89,14 @@ function build_node_maps(Xf,FToF)
             D += abs.(X1i - transpose(X2i))
         end
 
-        refd = maximum(D[:])
+        refd = maximum(D[:])        
         idM = map(id->id[1], findall(@. D < NODETOL*refd))
         idP = map(id->id[2], findall(@. D < NODETOL*refd))
         mapP[idM,f1] = @. idP + (f2-1)*Nfp
     end
 
     mapB = map(x->x[1],findall(@. mapM[:]==mapP[:]))
+    mapM = reshape(mapM,Nfp*Nfaces,K)
+    mapP = reshape(mapP,Nfp*Nfaces,K)
     return mapM,mapP,mapB
 end

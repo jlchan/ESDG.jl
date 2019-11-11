@@ -17,11 +17,10 @@ using UniformHexMesh
 push!(LOAD_PATH, "./EntropyStableEuler")
 using EntropyStableEuler
 
-
-N = 2
+N = 4
 K1D = 4
-T = .10 # endtime
-CFL = .75;
+T = .5 # endtime
+CFL = .5;
 
 VX,VY,VZ,EToV = uniform_hex_mesh(K1D,K1D,K1D)
 fv = hex_face_vertices()
@@ -118,17 +117,11 @@ nzJ = nrJ.*(Vf*rzJ) + nsJ.*(Vf*szJ) + ntJ.*(Vf*tzJ)
 sJ = @. sqrt(nxJ.^2 + nyJ.^2 + nzJ.^2)
 
 "initial conditions"
-rhoex(x,y,z,t) = @. 2 + .5*sin(pi*x-t) #exp(-25*(x^2+y^2))
-# rhoex(x,y,z,t) = ones(size(x))
-# function rhoex(x,y,z,t)
-#     rho = fill(2,size(x))
-#     xc = sum(x,dims=1)/size(x,1)
-#     rho[:,xc[:] .> 0] .= 1
-#     return rho
-# end
+rhoex(x,y,z,t) = @. 2 + .5*sin(pi*(x-t))
 rho = rhoex(x,y,z,0)
 u = ones(size(x))
-v,w = ntuple(a->zeros(size(x)),2)
+v = zeros(size(x))
+w = zeros(size(x))
 p = ones(size(x))
 Q = primitive_to_conservative(rho,u,v,w,p)
 
@@ -210,10 +203,10 @@ function rhs(Qh,UM,ops,vgeo,fgeo,nodemaps,flux_fun)
     (rho,rhou,rhov,rhow,E) = UM
     rhoU_n = @. (rhou*nxJ + rhov*nyJ + rhow*nzJ)/sJ
     lam = abs.(wavespeed(rho,rhoU_n,E))
-    LFc = 0*.5*max.(lam,lam[mapP]).*sJ
+    LFc = .005*max.(lam,lam[mapP]).*sJ
 
     fSx,fSy,fSz = flux_fun(QM,QP)
-    normal_flux(fx,fy,fz,u) = fx.*nxJ + fy.*nyJ + fz.*nzJ - LFc.*(u[mapP]-u)
+    normal_flux(fx,fy,fz,uM) = fx.*nxJ + fy.*nyJ + fz.*nzJ - LFc.*(uM[mapP]-uM)
     flux = normal_flux.(fSx,fSy,fSz,UM)
     rhsQ = (x->Lf*x).(flux)
 
@@ -253,16 +246,19 @@ for i = 1:Nsteps
         Qh = (rho,rhou./rho,rhov./rho,rhow./rho,beta) # redefine Q = (rho,U,β)
 
         rhsQ = rhs(Qh,Uf,ops,vgeo,fgeo,nodemaps,euler_fluxes)
+        # @show maximum.(map(x->abs.(x),rhsQ))
 
         if INTRK==5
             rhstest = 0
             for fld in eachindex(rhsQ)
                 rhstest += sum(wJq.*VU[fld].*rhsQ[fld])
             end
+            # @show rhstest
         end
+        # error("d")
 
         resQ = rk4a[INTRK].*resQ .+ dt.*rhsQ
-        Q = Q .+ rk4b[INTRK].*resQ
+        Q    = Q .+ rk4b[INTRK].*resQ
     end
 
     if i%10==0 || i==Nsteps
@@ -272,6 +268,14 @@ end
 
 (rho,rhou,rhov,rhow,E) = (x->Pq*x).(Q) # project back to Lobatto nodes
 
+rq2,sq2,tq2,wq2 = quad_nodes_3D(N+2)
+Vq2 = vandermonde_3D(N,rq2,sq2,tq2)/V
+(xq2,yq2,zq2) = (x->Vq2*x).((x,y,z))
+wJq2 = abs.(diagm(wq2)*(Vq2*J))
+L2err = sum(wJq2.*(Vq2*rho - rhoex(xq2,yq2,zq2,T)).^2)
+
+@show L2err
+
 "plotting nodes"
 rp, sp, tp = equi_nodes_3D(20)
 Vp = vandermonde_3D(N,rp,sp,tp)/V
@@ -279,15 +283,11 @@ Vp = vandermonde_3D(N,rp,sp,tp)/V
 # pyplot(size=(100,100),legend=false,markerstrokewidth=0,markersize=2)
 gr(size=(200,200),legend=false,markerstrokewidth=0,markersize=2)
 
-xp = Vp*x
-yp = Vp*y
-zp = Vp*z
-vv = Vp*rho
+(xp,yp,zp,vv) = (x->Vp*x).((x,y,z,rho))
+vv = rhoex(xp,yp,zp,2*T)
 
 #ids = map(x->x[1],findall(@. (abs(yp[:]+1.0)<1e-10) | (abs(xp[:]+1.0)<1e-10) | (abs(zp[:]+1.0)<1e-10)))
 ids = map(x->x[1],findall(@. abs(zp[:])<1e-10))
-xp = xp[ids]
-yp = yp[ids]
-zp = zp[ids]
-vv = vv[ids]
-scatter(xp,yp,zp,zcolor=vv,camera=(0,90))
+(xp,yp,zp,vv) = (x->x[ids]).((xp,yp,zp,vv))
+scatter(xp,yp,vv,zcolor=vv,camera=(0,90))
+# scatter(xp,yp,vv,zcolor=vv)
