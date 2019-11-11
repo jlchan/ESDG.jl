@@ -8,7 +8,7 @@ using BenchmarkTools
 push!(LOAD_PATH, "./src")
 using Utils
 using Basis1D
-using Basis2DQuad
+using Basis2DQuad 
 using UniformQuadMesh
 
 push!(LOAD_PATH, "./EntropyStableEuler")
@@ -96,8 +96,8 @@ mapP[mapB] = mapPB
 "Geometric factors and surface normals"
 vgeo = geometric_factors(x, y, Dr, Ds)
 rxJ, sxJ, ryJ, syJ, J = vgeo
-nxJ = (Vf*rxJ).*nrJ + (Vf*sxJ).*nsJ;
-nyJ = (Vf*ryJ).*nrJ + (Vf*syJ).*nsJ;
+nxJ = (Vf*rxJ).*nrJ + (Vf*sxJ).*nsJ
+nyJ = (Vf*ryJ).*nrJ + (Vf*syJ).*nsJ
 sJ = @. sqrt(nxJ^2 + nyJ^2)
 
 "initial conditions"

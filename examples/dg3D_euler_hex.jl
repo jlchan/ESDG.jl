@@ -10,7 +10,7 @@ using SparseArrays
 # "User defined modules"
 using Utils
 using Basis1D
-using Basis2DQuad
+using Basis2DQuad # face trace space
 using Basis3DHex
 using UniformHexMesh
 
