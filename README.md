@@ -4,8 +4,7 @@
 These codes are inspired by the Matlab codes for the book Nodal Discontinuous Galerkin methods by Hesthaven and Warburton (2007).
 
 ## Demos for linear problems
-- The simplest demo is "dg1D_advec.jl", which solves the 1D advection equation on a uniform 1D mesh.
-- The simplest multi-dimensional demo is "dg2D_advec_tri.jl", which simulates the advection equation on a triangular mesh.
+- The simplest demo is "dg1D_advec.jl", which solves the 1D advection equation on a uniform 1D mesh. The simplest multi-dimensional demo is "dg2D_advec_tri.jl", which simulates the advection equation on a triangular mesh.
 - The demos "dg2D_wave_tri.jl" and "dg2D_wave_quad.jl" compute solutions to the acoustic wave equation on triangular and quadrilateral meshes.
 - The demo "dg3D_advec_hex.jl" solves the advection equation on a hexahedral mesh.
 
