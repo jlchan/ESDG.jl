@@ -14,7 +14,7 @@ using Basis2DQuad # face trace space
 using Basis3DHex
 using UniformHexMesh
 
-push!(LOAD_PATH, "./EntropyStableEuler")
+push!(LOAD_PATH, "./examples/EntropyStableEuler")
 using EntropyStableEuler
 
 N = 2

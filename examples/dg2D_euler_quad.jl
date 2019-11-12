@@ -8,10 +8,10 @@ using BenchmarkTools
 push!(LOAD_PATH, "./src")
 using Utils
 using Basis1D
-using Basis2DQuad 
+using Basis2DQuad
 using UniformQuadMesh
 
-push!(LOAD_PATH, "./EntropyStableEuler")
+push!(LOAD_PATH, "./examples/EntropyStableEuler")
 using EntropyStableEuler
 
 "Approximation parameters"
