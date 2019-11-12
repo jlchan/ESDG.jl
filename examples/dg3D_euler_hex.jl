@@ -219,8 +219,8 @@ function rhs(Qh,UM,ops,vgeo,fgeo,nodemaps,flux_fun)
 
     # compute volume contributions using flux differencing
     for e = 1:K
-        Qhe = (x->x[:,e]).(Qh)
-        vgeo_elem = (x->x[1,e]).(vgeo)
+        Qhe = tuple((x->x[:,e]).(Qh)...)
+        vgeo_elem = (x->x[1,e]).(vgeo) # assumes affine elements for now
 
         Qops = (Qrh_sparse,Qsh_sparse,Qth_sparse,Qnzids)
         QFe = sparse_hadamard_sum(Qhe,Qops,vgeo_elem,flux_fun)
@@ -233,7 +233,7 @@ function rhs(Qh,UM,ops,vgeo,fgeo,nodemaps,flux_fun)
 end
 
 
-function rk_rhs(Q,compute_rhstest)
+function rk_step!(Q,resQ,rka,rkb,compute_rhstest)
 
     VU = v_ufun(Q...)
     Uf = u_vfun((x->Ef*x).(VU)...) # conservative vars
@@ -252,23 +252,22 @@ function rk_rhs(Q,compute_rhstest)
             rhstest += sum(wJq.*VU[fld].*rhsQ[fld])
         end
     end
-    return rhsQ,rhstest
+
+    @. resQ = rka*resQ + dt*rhsQ
+    @. Q += rkb*resQ
+
+    return rhstest
 end
 
 wJq = diagm(wq)*J
-resQ = ntuple(arg->zeros(size(x)),length(Q))
+Q = collect(Q) # force Q = array of arrays for mutability
+resQ = [zeros(size(x)) for i in eachindex(Q)]
 
 for i = 1:Nsteps
 
-    global Q, resQ # for scope, variables are updated
-
     rhstest = 0
     for INTRK = 1:5
-
-        rhsQ,rhstest = rk_rhs(Q,INTRK==5)
-        resQ = rk4a[INTRK].*resQ .+ dt.*rhsQ
-        Q    = Q .+ rk4b[INTRK].*resQ
-
+        rhstest = rk_step!(Q,resQ,rk4a[INTRK],rk4b[INTRK],INTRK==5)
     end
 
     if i%10==0 || i==Nsteps

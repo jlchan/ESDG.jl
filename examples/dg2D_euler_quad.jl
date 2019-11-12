@@ -108,6 +108,7 @@ Q = primitive_to_conservative(rho,u,v,p)
 Vh = droptol!(sparse([diagm(ones(length(rq))); Ef]),1e-12)
 Ph = droptol!(sparse(2*diagm(@. 1/wq)*transpose(Vh)),1e-12)
 Lf = droptol!(sparse(diagm(@. 1/wq)*(transpose(Ef)*diagm(wf))),1e-12)
+
 Q = (x->Vq*x).(Q)
 
 "Pack arguments into tuples"
@@ -208,9 +209,9 @@ end
 function rhs(Qh,UM,ops,vgeo,fgeo,nodemaps,flux_fun)
 
     # unpack args
-    (Qrh,Qsh,Qrh_sparse,Qsh_sparse,Qrsids,Ph,Lf)=ops
+    Qrh,Qsh,Qrh_sparse,Qsh_sparse,Qrsids,Ph,Lf=ops
     nxJ,nyJ,sJ = fgeo
-    (mapP,mapB) = nodemaps
+    mapP,mapB = nodemaps
     Nh = size(Qrhskew,1)
     Nq = size(Ph,1)
     K  = size(Qh[1],2)
@@ -231,8 +232,8 @@ function rhs(Qh,UM,ops,vgeo,fgeo,nodemaps,flux_fun)
 
     # compute volume contributions using flux differencing
     for e = 1:K
-        Qhe = (x->x[:,e]).(Qh)
-        vgeo_local = (x->x[1,e]).(vgeo)
+        Qhe = tuple((x->x[:,e]).(Qh)...) # force tuples for splatting speed
+        vgeo_local = (x->x[1,e]).(vgeo) # assumes affine elements for now
 
         Qops = (Qrh_sparse,Qsh_sparse,Qrsids)
         QFe = sparse_hadamard_sum(Qhe,Qops,vgeo_local,flux_fun)
@@ -247,34 +248,41 @@ function rhs(Qh,UM,ops,vgeo,fgeo,nodemaps,flux_fun)
     return (x -> -x./J).(rhsQ) # scale by Jacobian
 end
 
+function rk_step!(Q,resQ,rka,rkb,compute_rhstest=false)
+
+    VU = v_ufun(Q...)
+    Uf = u_vfun((x->Ef*x).(VU)...)
+    (rho,rhou,rhov,E) = vcat.(Q,Uf)
+
+    # convert to rho,u,v,beta vars
+    beta = betafun(rho,rhou,rhov,E)
+    Qh = (rho,rhou./rho,rhov./rho,beta) # redefine Q = (rho,u,v,β)
+
+    rhsQ = rhs(Qh,Uf,ops,vgeo,fgeo,nodemaps,euler_fluxes)
+
+    rhstest = 0
+    if compute_rhstest
+        for fld in eachindex(rhsQ)
+            rhstest += sum(wJq.*VU[fld].*rhsQ[fld])
+        end
+    end
+
+    @. resQ = rka*resQ + dt*rhsQ
+    @. Q += rkb*resQ
+
+    return rhstest
+end
+
 wJq = diagm(wq)*J
-resQ = ntuple(a->zeros(size(x)),length(Q))
+Q = collect(Q) # make Q,resQ arrays of arrays for mutability
+resQ = [zeros(size(x)) for i in eachindex(Q)]
 
 for i = 1:Nsteps
 
-    global Q, resQ, rhstest # for scope, variables are updated
-
+    rhstest = 0
     for INTRK = 1:5
-
-        VU = v_ufun(Q...)
-        Uf = u_vfun((x->Ef*x).(VU)...)
-        (rho,rhou,rhov,E) = vcat.(Q,Uf)
-
-        # convert to rho,u,v,beta vars
-        beta = betafun(rho,rhou,rhov,E)
-        Qh = (rho,rhou./rho,rhov./rho,beta) # redefine Q = (rho,u,v,β)
-
-        rhsQ = rhs(Qh,Uf,ops,vgeo,fgeo,nodemaps,euler_fluxes)
-
-        if INTRK==5
-            rhstest = 0
-            for fld in eachindex(rhsQ)
-                rhstest += sum(wJq.*VU[fld].*rhsQ[fld])
-            end
-        end
-
-        resQ = rk4a[INTRK].*resQ .+ dt.*rhsQ
-        Q = Q .+ rk4b[INTRK].*resQ
+        compute_rhstest = INTRK==5
+        rhstest = rk_step!(Q,resQ,rk4a[INTRK],rk4b[INTRK],compute_rhstest)
     end
 
     if i%10==0 || i==Nsteps
@@ -283,7 +291,7 @@ for i = 1:Nsteps
 end
 
 "project solution back to GLL nodes"
-(rho,rhou,rhov,E) = (x->Pq*x).(Q)
+Q = (x->Pq*x).(Q)
 
 "higher degree quadrature for error evaluation"
 rq2,sq2,wq2 = quad_nodes_2D(N+2)
@@ -291,8 +299,7 @@ Vq2 = vandermonde_2D(N,rq2,sq2)/V
 wJq2 = diagm(wq2)*(Vq2*J)
 xq2,yq2 = (x->Vq2*x).((x,y))
 
-Q = (rho,rhou,rhov,E)
-Qq = [Vq2*Q[fld] for fld in eachindex(Q)]
+Qq = (x->Vq2*x).(Q)
 Qex = primitive_to_conservative(vortex(xq2,yq2,T)...)
 L2err = 0.0
 for fld in eachindex(Q)

@@ -106,8 +106,8 @@ for i = 1:Nsteps
 
     for INTRK = 1:5
         rhsu = rhs(u,ops,vgeo,fgeo,nodemaps)
-        resu = @. rk4a[INTRK]*resu + dt*rhsu
-        u    = @. u + rk4b[INTRK]*resu
+        @. resu = rk4a[INTRK]*resu + dt*rhsu
+        @. u += rk4b[INTRK]*resu
     end
 
     if i%10==0 || i==Nsteps

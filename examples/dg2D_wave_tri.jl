@@ -102,8 +102,6 @@ Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
 "pack arguments into tuples"
-Q = (p,u,v)
-resQ = ntuple(a->zeros(size(x)),length(Q))
 ops = (Dr,Ds,LIFT,Vf)
 geo = (rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ)
 mapM = reshape(mapM,Nfp*Nfaces,K)
@@ -163,13 +161,15 @@ function rhs(Q,ops,geo,nodemaps,params...)
     return (rhsp,rhsu,rhsv)
 end
 
-for i = 1:Nsteps
-    global Q, resQ # for scoping - these variables are updated
+# make arrays of arrays for mutability
+Q = [p,u,v]
+resQ = [zeros(size(x)) for i in eachindex(Q)]
 
+for i = 1:Nsteps
     for INTRK = 1:5
         rhsQ = rhs(Q,ops,geo,nodemaps,c2)
-        resQ = @. rk4a[INTRK]*resQ + dt*rhsQ
-        Q    = @. Q + rk4b[INTRK]*resQ
+        @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
+        @. Q    = Q + rk4b[INTRK]*resQ
     end
 
     if i%10==0 || i==Nsteps
