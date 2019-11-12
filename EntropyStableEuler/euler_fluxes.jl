@@ -5,6 +5,18 @@ function euler_fluxes(UL,UR)
 
 """
 
+"1D wavespeed for use in interface fluxes"
+function wavespeed(rho,rhou,E)
+    cvel = @. sqrt(γ*pfun(rho,rhou,E)/rho)
+    return @. sqrt(abs(rhou/rho)) + cvel
+end
+function wavespeed(rho,rhou,rhov,E)
+    return wavespeed(rho,(rhou,rhov),E)
+end
+function wavespeed(rho,rhou,rhov,rhow,E)
+    return wavespeed(rho,(rhou,rhov,rhow),E)
+end
+
 function euler_fluxes(UL,UR)
     # (rhoL,uL,...,betaL) = UL
     # (rhoR,uR,...,betaR) = UR

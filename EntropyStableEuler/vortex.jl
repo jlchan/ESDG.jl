@@ -1,3 +1,5 @@
+"2D isentropic vortex solution"
+
 function vortex(x,y,t,γ=1.4)
 
     x0 = 5
