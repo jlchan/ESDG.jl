@@ -1,8 +1,5 @@
 """
 function build_periodic_boundary_maps(xf,yf,LX,LY,mapM,mapP,mapB)
-
-# Examples
-```jldoctest
 """
 
 function build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces,mapM,mapP,mapB)

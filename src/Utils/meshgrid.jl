@@ -1,42 +1,34 @@
 """
-    meshgrid(x, y)
+meshgrid(x)
+meshgrid(x, y)
+meshgrid(x, y, z)
 
-Matlab meshgrid function. Return 2D grid coordinates according to x and y.
+Copy of Matlab's meshgrid function.
+Returns 2D grid coordinates based on x and y.
 
 # Examples
 ```jldoctest
 julia> R = meshgrid(1:3, 1:3)
 ([1 2 3; 1 2 3; 1 2 3], [1 1 1; 2 2 2; 3 3 3])
 ```
+
+In 3D, meshgrid returns vectors rather than tensors.
+```jldoctest
+julia> meshgrid(1:3)
+([1 2 3; 1 2 3; 1 2 3], [1 1 1; 2 2 2; 3 3 3])
+```
 """
+
 function meshgrid(x,y)
-    X = repeat(transpose(x[:]), size(y[:], 1), 1)
-    Y = repeat(y, 1, size(x, 1))
-    return X, Y
+        X = repeat(transpose(x[:]), size(y[:], 1), 1)
+        Y = repeat(y, 1, size(x, 1))
+        return X, Y
 end
 
-"""
-    meshgrid(x)
-
-Matlab meshgrid function. Return 2D grid coordinates according to x and y=x.
-
-# Examples
-```jldoctest
-```
-"""
 function meshgrid(x)
-    return meshgrid(x,x)
+        return meshgrid(x,x)
 end
 
-"""
-    meshgrid(x,y,z)
-
-A hacky version of meshgrid which returns vectors, not tensors
-
-# Examples
-```jldoctest
-```
-"""
 function meshgrid(x1D,y1D,z1D)
         Np = length(x1D)*length(y1D)*length(z1D)
         x = zeros(Np)

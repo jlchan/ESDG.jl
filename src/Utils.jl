@@ -16,7 +16,6 @@ export rk45_coeffs
 export unzip # convert array of tuples to tuples of arrays
 unzip(a) = map(x->getfield.(a, x), fieldnames(eltype(a)))
 
-
 function rk45_coeffs()
     "Time integration"
     rk4a = [            0.0 ...

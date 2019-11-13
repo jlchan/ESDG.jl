@@ -2,11 +2,12 @@
 connect_mesh(EToV,fv)
 
 Initialize quad elements connectivity matrices, element to element and
-element to face connectivity. uses fv = array of ids of face nodes
+element to face connectivity. Uses fv = array of indices of face vertices
 
-# Examples
 ```jldoctest
+```
 """
+
 function connect_mesh(EToV,fv)
         Nfaces = length(fv)
         K = size(EToV,1)

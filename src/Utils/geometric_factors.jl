@@ -5,11 +5,10 @@
 Compute metrics of mappings between "real" elements and reference elements,
 outward pointing normals on faces of every elements, and Jacobian.
 
+x,y,z are arrays of coordinates, and Dr, Ds, Dt are nodal differentiation matrices
+
 Geometric terms in 3D are constructed to ensure satisfaction of free-stream
 preservation using the curl-based construction of David Kopriva (2001).
-
-# Examples
-```jldoctest
 
 """
 function geometric_factors(x, y, Dr, Ds)

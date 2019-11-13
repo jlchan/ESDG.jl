@@ -15,7 +15,7 @@ export hex_face_vertices
 """
 uniform_hex_mesh(Kx::Int,Ky::Int)
 
-Matlab uniform triangular mesh.
+Matlab uniform hexahedral mesh.
 
 # Examples
 ```jldoctest
