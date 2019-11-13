@@ -1,6 +1,5 @@
 using Revise # reduce need for recompile
 using Plots
-using Documenter
 using LinearAlgebra
 
 push!(LOAD_PATH, "./src") # user defined modules

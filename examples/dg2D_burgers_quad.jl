@@ -3,7 +3,6 @@ push!(LOAD_PATH, "./src")
 # "Packages"
 using Revise # reduce recompilation
 using Plots
-using Documenter
 using LinearAlgebra
 using SparseArrays
 
@@ -72,9 +71,6 @@ Qrhskew = .5*(Qrh-Qrh')
 Qshskew = .5*(Qsh-Qsh')
 Qrhskew = droptol!(sparse(Qrhskew),1e-10)
 Qshskew = droptol!(sparse(Qshskew),1e-10)
-Vh = droptol!(sparse(Vh),1e-10)
-Ph = droptol!(sparse(Ph),1e-10)
-Lf = droptol!(sparse(Lf),1e-10)
 
 "Map to physical nodes"
 r1,s1 = nodes_2D(1)
@@ -99,30 +95,11 @@ nxJ = (Vf*rxJ).*nrJ + (Vf*sxJ).*nsJ;
 nyJ = (Vf*ryJ).*nrJ + (Vf*syJ).*nsJ;
 sJ = @. sqrt(nxJ^2 + nyJ^2)
 
-"Hybridized geofacs"
-rxJh = Vh*rxJ; sxJh = Vh*sxJ
-ryJh = Vh*ryJ; syJh = Vh*syJ
-
 "initial conditions"
 u = @. -sin(pi*x)*sin(pi*y)
 
 "Time integration"
-rk4a = [            0.0 ...
--567301805773.0/1357537059087.0 ...
--2404267990393.0/2016746695238.0 ...
--3550918686646.0/2091501179385.0  ...
--1275806237668.0/842570457699.0];
-rk4b = [ 1432997174477.0/9575080441755.0 ...
-5161836677717.0/13612068292357.0 ...
-1720146321549.0/2090206949498.0  ...
-3134564353537.0/4481467310338.0  ...
-2277821191437.0/14882151754819.0]
-rk4c = [ 0.0  ...
-1432997174477.0/9575080441755.0 ...
-2526269341429.0/6820363962896.0 ...
-2006345519317.0/3224310063776.0 ...
-2802321613138.0/2924317926251.0 ...
-1.0];
+rk4a,rk4b,rk4c = rk45_coeffs()
 
 "Estimate timestep"
 CN = (N+1)*(N+2)  # estimated trace constant
@@ -130,9 +107,6 @@ CFL = .75;
 dt = CFL * 2 / (CN*K1D)
 T = .5 # endtime
 Nsteps = convert(Int,ceil(T/dt))
-
-rhsu = zeros(size(x))
-resu = zeros(size(x))
 
 "convert to Gauss node basis"
 u = Vq*u
@@ -142,6 +116,7 @@ Lf = droptol!(sparse(diagm(@. 1/wq)*(transpose(E)*diagm(wf))),1e-10)
 
 "Pack arguments into tuples"
 ops = (Qrhskew,Qshskew,Ph,Lf)
+(rxJh,sxJh,ryJh,syJh) = (x->Vh*x).((rxJ,sxJ,ryJ,syJ))
 geo = (rxJh,sxJh,ryJh,syJh,J,nxJ,nyJ,sJ)
 Nfp = length(r1D)
 mapM = reshape(mapM,Nfp*Nfaces,K)
@@ -175,7 +150,7 @@ function sparse_hadamard_sum(A,u,fun)
     return AF
 end
 
-function rhs(Qh,ops,geo,nodemaps,hadamard_sum_fun)
+function rhs(Qh,ops,geo,nodemaps)
     # unpack args
     (uh)=Qh
     (Qrhskew,Qshskew,Ph,Lf)=ops
@@ -189,40 +164,27 @@ function rhs(Qh,ops,geo,nodemaps,hadamard_sum_fun)
     uP = uM[mapP]
     du = uP-uM
     lam = @. max(abs(uM),abs(uP))
-    uflux = @. burgers_flux.(uM,uP)*nxJ - .5*lam*du*sJ
+    uflux = @. burgers_flux.(uM,uP)*(nxJ) - .5*lam*du*sJ
     rhsu = Lf*uflux
 
     # compute volume contributions
     for e = 1:size(u,2)
         Qxh = rxJ[1,e]*Qrhskew + sxJ[1,e]*Qshskew
-        # Qyh = ryJ[1,e]*Qrhskew + syJ[1,e]*Qshskew
-        rhsu[:,e] += 2*Ph*hadamard_sum_fun(Qxh,uh[:,e],burgers_flux)
+        rhsu[:,e] += 2*Ph*sparse_hadamard_sum(Qxh,uh[:,e],burgers_flux)
     end
 
-    rhsu = @. -rhsu/J
-    return (rhsu)
+    return -rhsu./J
 end
 
-# Qh = (Vh*u)
-# time = zeros(2)
-# for i = 1:10
-#     global timea, timeb
-#     a = @timed rhs(Qh,ops,geo,nodemaps,hadamard_sum)
-#     b = @timed rhs(Qh,ops,geo,nodemaps,sparse_hadamard_sum)
-#     time[1] += a[2]
-#     time[2] += b[2]
-# end
-# print("times = ",time/10,"\n")
-# error("d")
-
+resu = zeros(size(x))
 for i = 1:Nsteps
-    global u, resu # for scoping - these variables are updated
+    # global u, resu # for scoping - these variables are updated
 
     for INTRK = 1:5
         Qh = (Vh*u)
-        rhsu = rhs(Qh,ops,geo,nodemaps,sparse_hadamard_sum)
-        resu = @. rk4a[INTRK]*resu + dt*rhsu
-        u    = @. u + rk4b[INTRK]*resu
+        rhsu = rhs(Qh,ops,geo,nodemaps)
+        @. resu = rk4a[INTRK]*resu + dt*rhsu
+        @. u    = u + rk4b[INTRK]*resu
     end
 
     if i%10==0 || i==Nsteps
@@ -238,6 +200,5 @@ Vp = vandermonde_2D(N,rp,sp)/V
 
 # pyplot(size=(200,200),legend=false,markerstrokewidth=0,markersize=2)
 gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2)
-
 vv = Vp*u
 scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90))
