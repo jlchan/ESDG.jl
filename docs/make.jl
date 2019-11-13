@@ -1,6 +1,8 @@
-push!(LOAD_PATH, pwd()*"/src/")   # TODO: Refactor module into folder? Also path is
-push!(LOAD_PATH, pwd()*"/src/Utils")
+push!(LOAD_PATH, "./src/")   # TODO: Refactor module into folder? Also path is
+push!(LOAD_PATH, "./src/Utils/")
 using Documenter
-using Utils, MeshUtils
+using Utils
+using Basis1D,Basis2DTri,Basis2DQuad
+using UniformQuadMesh, UniformTriMesh
 
-makedocs(modules=[Utils, MeshUtils], sitename="Documentation for 2D DG code")
+makedocs(modules=[Utils,Basis1D,Basis2DTri,Basis2DQuad,UniformTriMesh], sitename="Documentation for JuliaDG")
