@@ -1,6 +1,3 @@
-push!(LOAD_PATH, "./src")
-
-# "Packages"
 using Revise # reduce need for recompile
 using Plots
 using Documenter
@@ -8,6 +5,7 @@ using LinearAlgebra
 using SparseArrays
 
 # "User defined modules"
+push!(LOAD_PATH, "./src")
 using Utils
 using Basis1D
 using Basis2DQuad
@@ -18,12 +16,9 @@ N = 4  # The order of approximation
 K1D = 16
 
 "Mesh related variables"
-(VX, VY, EToV) = uniform_quad_mesh(K1D, K1D)
-fv = quad_face_vertices()
-Nfaces = length(fv)  # number of faces per element
-K  = size(EToV, 1); # The number of element on the mesh we constructed
-Nv = size(VX, 1); # Total number of nodes on the mesh
-EToE, EToF, FToF = connect_mesh(EToV,fv)
+VX, VY, EToV = uniform_quad_mesh(K1D, K1D)
+FToF = connect_mesh(EToV,quad_face_vertices())
+Nfaces, K = size(FToF)
 
 "Set up reference element nodes and operators"
 r, s = nodes_2D(N)
@@ -51,7 +46,7 @@ Vf = vandermonde_2D(N,rf,sf)/V
 "Lift matrix"
 LIFT = M\(transpose(Vf)*diagm(wf))
 
-# sparsify
+"sparsify"
 Dr = droptol!(sparse(Dr), 1e-10)
 Ds = droptol!(sparse(Ds), 1e-10)
 LIFT = droptol!(sparse(LIFT),1e-10)
@@ -96,7 +91,6 @@ Nsteps = convert(Int,ceil(T/dt))
 "pack arguments into tuples"
 ops = (Dr,Ds,LIFT,Vf)
 geo = (rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ)
-mapM = reshape(mapM,Nfp*Nfaces,K)
 mapP = reshape(mapP,Nfp*Nfaces,K)
 nodemaps = (mapP,mapB)
 
@@ -152,7 +146,7 @@ for i = 1:Nsteps
     end
 
     if i%10==0 || i==Nsteps
-        println("Number of time steps: ", i, " out of ", Nsteps)
+        println("Number of time steps: $i out of $Nsteps")
     end
 end
 

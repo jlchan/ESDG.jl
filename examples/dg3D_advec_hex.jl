@@ -17,10 +17,8 @@ using UniformHexMesh
 N = 3
 K1D = 8
 VX,VY,VZ,EToV = uniform_hex_mesh(K1D,K1D,K1D)
-fv = hex_face_vertices()
-Nfaces = length(fv)
-EToE,EToF,FToF = connect_mesh(EToV,fv)
-K = size(EToV,1)
+FToF = connect_mesh(EToV,hex_face_vertices())
+Nfaces, K = size(FToF)
 
 r,s,t = nodes_3D(N)
 V = vandermonde_3D(N,r,s,t)
@@ -131,8 +129,8 @@ function rhs(Q,ops,geo,nodemaps,params...)
     uM = Vf*u
     uP = uM[mapP]
 
-    du = uP-uM
-    uflux = @. .5*(du*nxJ + abs(nxJ)*du)
+    du = uP-uM    
+    uflux = @. .5*(du*nxJ - abs(nxJ)*du)
 
     ur = Dr*u
     us = Ds*u
@@ -172,10 +170,7 @@ xp = Vp*x
 yp = Vp*y
 zp = Vp*z
 vv = Vp*u
-# vv = @. vv - sin(pi*(xp-T))
-ids = map(x->x[1],findall(@. (abs(yp[:]+1.0)<1e-10) | (abs(xp[:]+1.0)<1e-10) | (abs(zp[:]+1.0)<1e-10)))
-xp = xp[ids]
-yp = yp[ids]
-zp = zp[ids]
-vv = vv[ids]
-scatter(xp,yp,zp,zcolor=vv)
+
+ids = map(x->x[1],findall(@. abs(zp[:])<1e-10))
+(xp,yp,zp,vv) = (x->x[ids]).((xp,yp,zp,vv))
+scatter(xp,yp,vv,zcolor=vv,camera=(0,90))

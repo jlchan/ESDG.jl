@@ -18,11 +18,8 @@ K1D = 16
 
 "Mesh related variables"
 (VX,VY,EToV)   = uniform_tri_mesh(K1D,K1D)
-fv             = tri_face_vertices()
-Nfaces         = length(fv)  # number of faces per element
-K              = size(EToV,1); # number of element on the mesh we constructed
-Nv             = size(VX,1);   # number of vertex nodes
-EToE,EToF,FToF = connect_mesh(EToV,fv)
+FToF = connect_mesh(EToV,tri_face_vertices())
+Nfaces,K = size(FToF)
 
 "Construct matrices on reference elements"
 r, s = nodes_2D(N)

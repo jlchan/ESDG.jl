@@ -15,10 +15,10 @@ push!(LOAD_PATH, "./examples/EntropyStableEuler")
 using EntropyStableEuler
 
 "Approximation parameters"
-N = 3 # The order of approximation
+N = 4 # The order of approximation
 K1D = 12
-CFL = 1.0;
-T = .1*5.0 # endtime
+CFL = 2; # CFL goes up to 3 OK...
+T = 5.0 # endtime
 
 "Mesh related variables"
 Kx = convert(Int,4/3*K1D)
@@ -27,10 +27,8 @@ Ky = K1D
 @. VX = 15*(1+VX)/2
 @. VY = 5*VY
 
-Nfaces = 4  # number of faces per element
-K  = size(EToV, 1); # The number of element on the mesh we constructed
-Nv = size(VX, 1); # Total number of nodes on the mesh
-EToE, EToF, FToF = connect_mesh(EToV,quad_face_vertices())
+FToF = connect_mesh(EToV,quad_face_vertices())
+Nfaces, K = size(FToF)
 
 "Set up reference element nodes and operators"
 r, s = nodes_2D(N)
@@ -108,7 +106,6 @@ Q = primitive_to_conservative(rho,u,v,p)
 Vh = droptol!(sparse([diagm(ones(length(rq))); Ef]),1e-12)
 Ph = droptol!(sparse(2*diagm(@. 1/wq)*transpose(Vh)),1e-12)
 Lf = droptol!(sparse(diagm(@. 1/wq)*(transpose(Ef)*diagm(wf))),1e-12)
-
 Q = (x->Vq*x).(Q)
 
 "Pack arguments into tuples"
@@ -122,7 +119,8 @@ nodemaps = (mapP,mapB)
 "Time integration"
 rk4a,rk4b,rk4c = rk45_coeffs()
 CN = (N+1)*(N+2)/2  # estimated trace constant for CFL
-dt = CFL * 2 / (CN*K1D)
+h  = 2/K1D
+dt = CFL * h / CN
 Nsteps = convert(Int,ceil(T/dt))
 
 "dense version - speed up by prealloc + transpose for col major "
@@ -316,5 +314,5 @@ Vp = vandermonde_2D(N,rp,sp)/V
 # pyplot(size=(200,200),legend=false,markerstrokewidth=0,markersize=2)
 gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2,aspect_ratio=:equal)
 
-vv = Vp*rho
+vv = Vp*Q[1]
 scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90))

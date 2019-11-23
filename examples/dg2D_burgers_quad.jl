@@ -18,11 +18,8 @@ K1D = 16
 
 "Mesh related variables"
 (VX, VY, EToV) = uniform_quad_mesh(K1D, K1D)
-Nfaces = 4  # number of faces per element
-K  = size(EToV, 1); # The number of element on the mesh we constructed
-Nv = size(VX, 1); # Total number of nodes on the mesh
-# EToE, EToF = connect_2D(EToV)
-EToE, EToF, FToF = connect_mesh(EToV,quad_face_vertices())
+FToF = connect_mesh(EToV,quad_face_vertices())
+Nfaces, K = size(FToF)
 
 "Set up reference element nodes and operators"
 r, s = nodes_2D(N)

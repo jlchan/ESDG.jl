@@ -15,9 +15,9 @@ CFL = .5
 T   = 0.25 # endtime
 
 "Mesh related variables"
-(VX,VY,EToV)   = uniform_tri_mesh(K1D,K1D)
-EToE,EToF,FToF = connect_mesh(EToV,tri_face_vertices())
-K, Nfaces      = size(EToE)  # number of faces per element
+VX,VY,EToV = uniform_tri_mesh(K1D,K1D)
+FToF = connect_mesh(EToV,tri_face_vertices())
+Nfaces,K = size(FToF)
 
 "Construct matrices on reference elements"
 r, s = nodes_2D(N)

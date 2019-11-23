@@ -1,5 +1,6 @@
 using Revise # reduce need for recompile
 using Plots
+using LinearAlgebra
 
 push!(LOAD_PATH, "./src") # user defined modules
 using Utils, Basis1D

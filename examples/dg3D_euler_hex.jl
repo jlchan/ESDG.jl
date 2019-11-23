@@ -1,5 +1,3 @@
-push!(LOAD_PATH, "./src")
-
 # "Packages"
 using Revise # reduce need for recompile
 using Plots
@@ -8,6 +6,7 @@ using LinearAlgebra
 using SparseArrays
 
 # "User defined modules"
+push!(LOAD_PATH, "./src")
 using Utils
 using Basis1D
 using Basis2DQuad # face trace space
@@ -17,31 +16,28 @@ using UniformHexMesh
 push!(LOAD_PATH, "./examples/EntropyStableEuler")
 using EntropyStableEuler
 
-N = 2
+N = 3
 K1D = 4
-T = 2/3 # endtime
+T = 1/3 # endtime
 CFL = 1.0;
 
 VX,VY,VZ,EToV = uniform_hex_mesh(K1D,K1D,K1D)
-fv = hex_face_vertices()
-Nfaces = length(fv)
-EToE,EToF,FToF = connect_mesh(EToV,fv)
-K = size(EToV,1)
+FToF = connect_mesh(EToV,hex_face_vertices())
+Nfaces, K = size(FToF)
+
 
 r,s,t = nodes_3D(N)
 V = vandermonde_3D(N,r,s,t)
-Vr,Vs,Vt = grad_vandermonde_3D(N,r,s,t)
-Dr = Vr/V
-Ds = Vs/V
-Dt = Vt/V
+Dr,Ds,Dt = (A->A/V).(grad_vandermonde_3D(N,r,s,t))
 
 "quadrature"
 # rq,sq,tq,wq = quad_nodes_3D(N)
 r1D,w1D = gauss_lobatto_quad(0,0,N)
-r1D,w1D = gauss_quad(0,0,N)
+# r1D,w1D = gauss_quad(0,0,N)
 rq,sq,tq = meshgrid(r1D,r1D,r1D)
 wr,ws,wt = meshgrid(w1D,w1D,w1D)
 wq = wr.*ws.*wt
+
 Vq = vandermonde_3D(N,rq,sq,tq)/V
 M = transpose(Vq)*diagm(wq)*Vq
 Pq = M\(transpose(Vq)*diagm(wq))
@@ -92,9 +88,6 @@ Qthskew = .5*(Qth-transpose(Qth))
 Qrhskew_sparse = droptol!(sparse(Qrhskew),1e-12)
 Qshskew_sparse = droptol!(sparse(Qshskew),1e-12)
 Qthskew_sparse = droptol!(sparse(Qthskew),1e-12)
-Vh = droptol!(sparse(Vh),1e-12)
-Ph = droptol!(sparse(Ph),1e-12)
-Lf = droptol!(sparse(Lf),1e-12)
 
 # precompute union of sparse ids for Qr, Qs
 Qnzids = [unique([Qrhskew_sparse[i,:].nzind; Qshskew_sparse[i,:].nzind; Qthskew_sparse[i,:].nzind]) for i = 1:size(Qrhskew,1)]
@@ -180,6 +173,7 @@ function sparse_hadamard_sum(Qhe,ops,vgeo,flux_fun)
             Fs = @. sxJ*Fx + syJ*Fy + szJ*Fz
             Ft = @. txJ*Fx + tyJ*Fy + tzJ*Fz
 
+            # sum(Qx.*Fx + Qy.*Fy,2) = sum(Qr*rxJ*Fx + Qs*sxJ*Fx + Qr*ryJ*Fy ...)
             @. rhsi += Qr[i,j]*Fr + Qs[i,j]*Fs + Qt[i,j]*Ft
         end
 
@@ -223,7 +217,7 @@ function rhs(Qh,UM,ops,vgeo,fgeo,nodemaps,flux_fun)
         vgeo_elem = (x->x[1,e]).(vgeo) # assumes affine elements for now
 
         Qops = (Qrh_sparse,Qsh_sparse,Qth_sparse,Qnzids)
-        QFe = sparse_hadamard_sum(Qhe,Qops,vgeo_elem,flux_fun)
+        QFe = sparse_hadamard_sum(Qhe,Qops,vgeo_elem,flux_fun) # sum(Q.*F,dims=2)
 
         applyPh!(X,x,e) = X[:,e] += Ph*x
         applyPh!.(rhsQ,QFe,e)
