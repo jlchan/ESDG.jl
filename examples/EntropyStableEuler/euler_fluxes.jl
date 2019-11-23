@@ -10,12 +10,12 @@ function wavespeed(rho,rhou,E)
     cvel = @. sqrt(γ*pfun(rho,rhou,E)/rho)
     return @. sqrt(abs(rhou/rho)) + cvel
 end
-function wavespeed(rho,rhou,rhov,E)
-    return wavespeed(rho,(rhou,rhov),E)
-end
-function wavespeed(rho,rhou,rhov,rhow,E)
-    return wavespeed(rho,(rhou,rhov,rhow),E)
-end
+# function wavespeed(rho,rhou,rhov,E)
+#     return wavespeed(rho,(rhou,rhov),E)
+# end
+# function wavespeed(rho,rhou,rhov,rhow,E)
+#     return wavespeed(rho,(rhou,rhov,rhow),E)
+# end
 
 function euler_fluxes(UL,UR)
     # (rhoL,uL,...,betaL) = UL
