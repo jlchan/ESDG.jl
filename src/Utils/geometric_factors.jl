@@ -14,7 +14,7 @@ preservation using the curl-based construction of David Kopriva (2001).
 function geometric_factors(x, y, Dr, Ds)
     "Transformation and Jacobian"
 
-    xr = Dr*x;  xs = Ds*x;
+    xr = Dr*x;   xs = Ds*x;
     yr = Dr*y;   ys = Ds*y;
 
     J = -xs.*yr + xr.*ys;
