@@ -4,11 +4,13 @@ build_node_maps(Xf,FToF)
 Intialize the connectivity table along all edges and boundary node tables of all
 elements. mapM - map minus (interior). mapP - map plus (exterior).
 
-Xf = (xf,yf,zf) and FToF is size (Nfaces, K) and FToF[face] = face neighbor
+Xf = (xf,yf,zf) and FToF is size (Nfaces*K) and FToF[face] = face neighbor
+
+mapM,mapP are size Nfp x (Nfaces*K)
 
 # Examples
 ```jldoctest
-mapM,mapP,mapB = build_node_maps(Xf,FToF)
+mapM,mapP,mapB = build_node_maps((xf,yf),FToF)
 ```
 """
 function build_node_maps(xf,yf,FToF)
@@ -17,15 +19,16 @@ end
 function build_node_maps(xf,yf,zf,FToF)
     build_node_maps((xf,yf,zf),FToF)
 end
+
 function build_node_maps(Xf,FToF)
 
-    Nfaces, K = size(FToF)
+    NfacesK = length(FToF)
     NODETOL = 1e-10;
     dims = length(Xf)
 
     # number nodes consecutively
-    Nfp  = convert(Int,size(Xf[1],1) / Nfaces)
-    mapM = reshape(collect(1:K*Nfp*Nfaces), Nfp, Nfaces*K);
+    Nfp  = length(Xf[1][:]) ÷ NfacesK
+    mapM = reshape(collect(1:length(Xf[1][:])), Nfp, NfacesK);
     mapP = copy(mapM);
 
     ids = collect(1:Nfp)
@@ -34,7 +37,7 @@ function build_node_maps(Xf,FToF)
         # find find volume node numbers of left and right nodes
         D = zeros(Nfp,Nfp)
         for i = 1:dims
-            Xfi = reshape(Xf[i],Nfp,Nfaces*K)
+            Xfi = reshape(Xf[i],Nfp,NfacesK)
             X1i = repeat(Xfi[ids,f1],1,Nfp)
             X2i = repeat(Xfi[ids,f2],1,Nfp)
             # Compute distance matrix
@@ -48,7 +51,5 @@ function build_node_maps(Xf,FToF)
     end
 
     mapB = map(x->x[1],findall(@. mapM[:]==mapP[:]))
-    mapM = reshape(mapM,Nfp*Nfaces,K)
-    mapP = reshape(mapP,Nfp*Nfaces,K)
     return mapM,mapP,mapB
 end

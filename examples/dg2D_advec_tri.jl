@@ -49,6 +49,8 @@ y = V1*VY[transpose(EToV)]
 "Connectivity maps"
 xf,yf = (x->Vf*x).((x,y))
 mapM,mapP,mapB = build_node_maps((xf,yf),FToF)
+mapM = reshape(mapM,Nfp*Nfaces,K)
+mapP = reshape(mapP,Nfp*Nfaces,K)
 
 "Make periodic"
 LX,LY = (x->maximum(x)-minimum(x)).((VX,VY)) # find lengths of domain

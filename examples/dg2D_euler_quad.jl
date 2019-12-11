@@ -17,7 +17,7 @@ using EntropyStableEuler
 "Approximation parameters"
 N = 4 # The order of approximation
 K1D = 12
-CFL = 2; # CFL goes up to 3 OK...
+CFL = 2 # CFL goes up to 3 OK...
 T = 5.0 # endtime
 
 "Mesh related variables"
@@ -85,6 +85,8 @@ x,y = (x->V1*x[transpose(EToV)]).((VX,VY))
 "Face nodes and connectivity maps"
 xf,yf = (x->Vf*x).((x,y))
 mapM, mapP, mapB = build_node_maps((xf,yf), FToF)
+mapM = reshape(mapM,Nfp*Nfaces,K)
+mapP = reshape(mapP,Nfp*Nfaces,K)
 
 "Make node maps periodic"
 LX,LY = (x->maximum(x)-minimum(x)).((VX,VY))

@@ -62,6 +62,8 @@ xf = Vf*x
 yf = Vf*y
 zf = Vf*z
 mapM, mapP, mapB = build_node_maps((xf,yf,zf),FToF)
+mapM = reshape(mapM,Nfp*Nfaces,K)
+mapP = reshape(mapP,Nfp*Nfaces,K)
 
 "make periodic"
 LX = 2; LY = 2; LZ = 2
@@ -129,7 +131,7 @@ function rhs(Q,ops,geo,nodemaps,params...)
     uM = Vf*u
     uP = uM[mapP]
 
-    du = uP-uM    
+    du = uP-uM
     uflux = @. .5*(du*nxJ - abs(nxJ)*du)
 
     ur = Dr*u

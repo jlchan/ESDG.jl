@@ -61,6 +61,8 @@ y = V1*VY[transpose(EToV)]
 xf = Vf*x
 yf = Vf*y
 mapM, mapP, mapB = build_node_maps((xf,yf), FToF)
+mapM = reshape(mapM,Nfp*Nfaces,K)
+mapP = reshape(mapP,Nfp*Nfaces,K)
 
 "Make periodic"
 LX = maximum(VX)-minimum(VX)

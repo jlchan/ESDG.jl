@@ -6,8 +6,8 @@ push!(LOAD_PATH, "./src") # user defined modules
 using Utils, Basis1D
 
 "Approximation parameters"
-N   = 2 # The order of approximation
-K1D = 32
+N   = 3 # The order of approximation
+K1D = 16
 CFL = .75
 T   = 10.5 # endtime
 
@@ -77,6 +77,11 @@ function rhs(u,ops,vgeo,fgeo,mapP)
     return -rhsu./J
 end
 
+"plotting nodes"
+Vp = vandermonde_1D(N,LinRange(-1,1,10))/V
+gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2)
+plt = plot(Vp*x,Vp*u)
+
 resu = zeros(size(x))
 for i = 1:Nsteps
     for INTRK = 1:5
@@ -87,10 +92,9 @@ for i = 1:Nsteps
 
     if i%10==0 || i==Nsteps
         println("Number of time steps $i out of $Nsteps")
+        # display(plot(Vp*x,Vp*u,ylims=(-.1,1.1)))
+        # sleep(.0)
     end
 end
 
-"plotting nodes"
-Vp = vandermonde_1D(N,LinRange(-1,1,10))/V
-gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2)
-plot(Vp*x,Vp*u)
+plot(Vp*x,Vp*u,ylims=(-.1,1.1))

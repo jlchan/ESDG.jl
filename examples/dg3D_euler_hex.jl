@@ -102,6 +102,8 @@ z = V1*VZ[transpose(EToV)]
 "get physical face nodes"
 xf,yf,zf = (x->Vf*x).((x,y,z))
 mapM, mapP, mapB = build_node_maps((xf,yf,zf),FToF)
+mapM = reshape(mapM,length(rf),K)
+mapP = reshape(mapP,length(rf),K)
 
 "make periodic"
 LX = 2; LY = 2; LZ = 2
