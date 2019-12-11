@@ -67,7 +67,7 @@ mapP = reshape(mapP,Nfp*Nfaces,K)
 
 "make periodic"
 LX = 2; LY = 2; LZ = 2
-mapPB = build_periodic_boundary_maps(xf,yf,zf,LX,LY,LZ,Nfaces,mapM,mapP,mapB)
+mapPB = build_periodic_boundary_maps(xf,yf,zf,LX,LY,LZ,Nfaces*K,mapM,mapP,mapB)
 mapP[mapB] = mapPB
 
 "Geometry"

@@ -58,15 +58,13 @@ function build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces,mapM,mapP,mapB)
     return mapPB[:]
 end
 
-
-
-function build_periodic_boundary_maps(xf,yf,zf,LX,LY,LZ,Nfaces,mapM,mapP,mapB)
+function build_periodic_boundary_maps(xf,yf,zf,LX,LY,LZ,NfacesTotal,mapM,mapP,mapB)
 
     xb = xf[mapB]
     yb = yf[mapB]
     zb = zf[mapB]
-    Nfp = convert(Int,size(xf,1)/Nfaces)
-    Nbfaces = convert(Int,length(xb[:])/Nfp)
+    Nfp = convert(Int,length(xf)/NfacesTotal)
+    Nbfaces = convert(Int,length(xb)/Nfp)
     xb = reshape(xb,Nfp,Nbfaces)
     yb = reshape(yb,Nfp,Nbfaces)
     zb = reshape(zb,Nfp,Nbfaces)
