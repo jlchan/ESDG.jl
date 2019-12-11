@@ -85,12 +85,12 @@ x,y = (x->V1*x[transpose(EToV)]).((VX,VY))
 "Face nodes and connectivity maps"
 xf,yf = (x->Vf*x).((x,y))
 mapM, mapP, mapB = build_node_maps((xf,yf), FToF)
-mapM = reshape(mapM,Nfp*Nfaces,K)
-mapP = reshape(mapP,Nfp*Nfaces,K)
+mapM = reshape(mapM,length(rf),K)
+mapP = reshape(mapP,length(rf),K)
 
 "Make node maps periodic"
 LX,LY = (x->maximum(x)-minimum(x)).((VX,VY))
-mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces,mapM,mapP,mapB)
+mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces*K,mapM,mapP,mapB)
 mapP[mapB] = mapPB
 
 "Geometric factors and surface normals"

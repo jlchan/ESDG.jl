@@ -67,7 +67,7 @@ mapP = reshape(mapP,Nfp*Nfaces,K)
 "Make periodic"
 LX = maximum(VX)-minimum(VX)
 LY = maximum(VY)-minimum(VY)
-mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces,mapM,mapP,mapB)
+mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces*K,mapM,mapP,mapB)
 mapP[mapB] = mapPB
 
 "Geometric factors and surface normals"

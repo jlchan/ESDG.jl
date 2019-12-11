@@ -27,8 +27,8 @@ function build_node_maps(Xf,FToF)
     dims = length(Xf)
 
     # number nodes consecutively
-    Nfp  = length(Xf[1][:]) ÷ NfacesK
-    mapM = reshape(collect(1:length(Xf[1][:])), Nfp, NfacesK);
+    Nfp  = convert(Int,length(Xf[1]) / NfacesK)
+    mapM = reshape(collect(1:length(Xf[1])), Nfp, NfacesK);
     mapP = copy(mapM);
 
     ids = collect(1:Nfp)

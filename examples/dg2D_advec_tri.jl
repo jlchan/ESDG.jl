@@ -54,7 +54,7 @@ mapP = reshape(mapP,Nfp*Nfaces,K)
 
 "Make periodic"
 LX,LY = (x->maximum(x)-minimum(x)).((VX,VY)) # find lengths of domain
-mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces,mapM,mapP,mapB)
+mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces*K,mapM,mapP,mapB)
 mapP[mapB] = mapPB
 
 "Geometric factors and surface normals"
