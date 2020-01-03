@@ -4,5 +4,4 @@
 deps/deps.jl
 ./*/.DS_Store
 docs/build
-test.jl
-test_GPU.jl
+test*.jl

@@ -11,6 +11,7 @@ Geometric terms in 3D are constructed to ensure satisfaction of free-stream
 preservation using the curl-based construction of David Kopriva (2001).
 
 """
+
 function geometric_factors(x, y, Dr, Ds)
     "Transformation and Jacobian"
 
@@ -25,7 +26,7 @@ function geometric_factors(x, y, Dr, Ds)
 end
 
 
-function geometric_factors(x, y, z, Dr, Ds, Dt)
+function geometric_factors(x, y, z, Dr, Ds, Dt, Filters=(I,I,I))
 
     xr = Dr*x;  xs = Ds*x;  xt = Dt*x
     yr = Dr*y;  ys = Ds*y;  yt = Dt*y
@@ -34,6 +35,7 @@ function geometric_factors(x, y, z, Dr, Ds, Dt)
     Fr = (Dr*y).*z
     Fs = (Ds*y).*z
     Ft = (Dt*y).*z
+    Fr,Fs,Ft = ((A,x)->A*x).(Filters,(Fr,Fs,Ft))
     rxJ = Dt*(Fs) - Ds*(Ft)
     sxJ = Dr*(Ft) - Dt*(Fr)
     txJ = Ds*(Fr) - Dr*(Fs)
@@ -41,6 +43,7 @@ function geometric_factors(x, y, z, Dr, Ds, Dt)
     Fr = (Dr*x).*z
     Fs = (Ds*x).*z
     Ft = (Dt*x).*z
+    Fr,Fs,Ft = ((A,x)->A*x).(Filters,(Fr,Fs,Ft))
     ryJ = -(Dt*(Fs) - Ds*(Ft))
     syJ = -(Dr*(Ft) - Dt*(Fr))
     tyJ = -(Ds*(Fr) - Dr*(Fs))
@@ -48,6 +51,7 @@ function geometric_factors(x, y, z, Dr, Ds, Dt)
     Fr = (Dr*y).*x
     Fs = (Ds*y).*x
     Ft = (Dt*y).*x
+    Fr,Fs,Ft = ((A,x)->A*x).(Filters,(Fr,Fs,Ft))
     rzJ = -(Dt*(Fs) - Ds*(Ft))
     szJ = -(Dr*(Ft) - Dt*(Fr))
     tzJ = -(Ds*(Fr) - Dr*(Fs))

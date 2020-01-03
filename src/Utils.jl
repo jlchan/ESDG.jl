@@ -6,6 +6,7 @@ General purpose utilities usable by all element types
 """
 
 module Utils
+using LinearAlgebra # for I matrix in geometricFactors
 
 export meshgrid
 export geometric_factors
