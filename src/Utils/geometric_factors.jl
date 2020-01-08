@@ -25,7 +25,7 @@ function geometric_factors(x, y, Dr, Ds)
     return rxJ, sxJ, ryJ, syJ, J
 end
 
-
+# filters = tuple of filtering matrices. 
 function geometric_factors(x, y, z, Dr, Ds, Dt, Filters=(I,I,I))
 
     xr = Dr*x;  xs = Ds*x;  xt = Dt*x
