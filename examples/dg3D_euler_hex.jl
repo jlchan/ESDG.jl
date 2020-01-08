@@ -16,10 +16,10 @@ using UniformHexMesh
 push!(LOAD_PATH, "./examples/EntropyStableEuler")
 using EntropyStableEuler
 
-N = 3
-K1D = 4
-T = 1/3 # endtime
-CFL = 1.0;
+N = 2
+K1D = 8
+T = 2/3 # endtime
+CFL = 1.0
 
 VX,VY,VZ,EToV = uniform_hex_mesh(K1D,K1D,K1D)
 FToF = connect_mesh(EToV,hex_face_vertices())
@@ -33,7 +33,7 @@ Dr,Ds,Dt = (A->A/V).(grad_vandermonde_3D(N,r,s,t))
 "quadrature"
 # rq,sq,tq,wq = quad_nodes_3D(N)
 r1D,w1D = gauss_lobatto_quad(0,0,N)
-# r1D,w1D = gauss_quad(0,0,N)
+r1D,w1D = gauss_quad(0,0,N)
 rq,sq,tq = meshgrid(r1D,r1D,r1D)
 wr,ws,wt = meshgrid(w1D,w1D,w1D)
 wq = wr.*ws.*wt
@@ -151,7 +151,7 @@ Nsteps = convert(Int,ceil(T/dt))
 function sparse_hadamard_sum(Qhe,ops,vgeo,flux_fun)
 
     (Qr,Qs,Qt,Qnzids) = ops
-    (rxJ,sxJ,txJ,ryJ,syJ,tyJ,rzJ,szJ,tzJ,J) = vgeo
+    (rxJ,sxJ,txJ,ryJ,syJ,tyJ,rzJ,szJ,tzJ,Jscalar) = vgeo
     nrows = size(Qr,1)
     nfields = length(Qhe)
 
@@ -241,6 +241,7 @@ function rk_step!(Q,resQ,rka,rkb,compute_rhstest)
     Qh = (rho,rhou./rho,rhov./rho,rhow./rho,beta) # redefine Q = (rho,U,β)
 
     rhsQ = rhs(Qh,Uf,ops,vgeo,fgeo,nodemaps,euler_fluxes)
+    # rhsQ = [zeros(size(ops[5],1),size(Q[1],2)) for i = 1:5]
 
     rhstest = 0
     if compute_rhstest
@@ -256,7 +257,9 @@ function rk_step!(Q,resQ,rka,rkb,compute_rhstest)
 end
 
 wJq = diagm(wq)*J
-Q = collect(Q) # force Q = array of arrays for mutability
+
+# force Q to be an array of arrays for mutability
+Q = collect(Q)
 resQ = [zeros(size(x)) for i in eachindex(Q)]
 
 for i = 1:Nsteps
@@ -277,6 +280,7 @@ rq2,sq2,tq2,wq2 = quad_nodes_3D(N+2)
 Vq2 = vandermonde_3D(N,rq2,sq2,tq2)/V
 (xq2,yq2,zq2) = (x->Vq2*x).((x,y,z))
 wJq2 = abs.(diagm(wq2)*(Vq2*J))
+
 L2err = sum(wJq2.*(Vq2*rho - rhoex(xq2,yq2,zq2,T)).^2)
 
 @show L2err
@@ -289,10 +293,7 @@ Vp = vandermonde_3D(N,rp,sp,tp)/V
 gr(size=(200,200),legend=false,markerstrokewidth=0,markersize=2)
 
 (xp,yp,zp,vv) = (x->Vp*x).((x,y,z,rho))
-# vv = rhoex(xp,yp,zp,2*T)
 
-#ids = map(x->x[1],findall(@. (abs(yp[:]+1.0)<1e-10) | (abs(xp[:]+1.0)<1e-10) | (abs(zp[:]+1.0)<1e-10)))
 ids = map(x->x[1],findall(@. abs(zp[:])<1e-10))
 (xp,yp,zp,vv) = (x->x[ids]).((xp,yp,zp,vv))
 scatter(xp,yp,vv,zcolor=vv,camera=(0,90))
-# scatter(xp,yp,vv,zcolor=vv)
