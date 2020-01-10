@@ -78,9 +78,6 @@ nyJ = nrJ.*(Vf*ryJ) + nsJ.*(Vf*syJ) + ntJ.*(Vf*tyJ)
 nzJ = nrJ.*(Vf*rzJ) + nsJ.*(Vf*szJ) + ntJ.*(Vf*tzJ)
 sJ = @. sqrt(nxJ.^2 + nyJ.^2 + nzJ.^2)
 
-"initial conditions"
-u = @. sin(pi*x) #exp(-25*(x^2+y^2))
-
 "Time integration"
 rk4a = [            0.0 ...
 -567301805773.0/1357537059087.0 ...
@@ -105,18 +102,15 @@ dt = CFL * 2 / (CN*K1D)
 T = .5 # endtime
 Nsteps = convert(Int,ceil(T/dt))
 
-rhsu = zeros(size(x))
-resu = zeros(size(x))
 
 "sparsify"
 Dr = droptol!(sparse(Dr),1e-10)
 Ds = droptol!(sparse(Ds),1e-10)
 Dt = droptol!(sparse(Dt),1e-10)
+Vf = droptol!(sparse(Vf),1e-10)
+Lf = droptol!(sparse(Lf),1e-10)
 
 "pack arguments into tuples"
-Q = (u)
-rhsQ = (rhsu)
-resQ = (resu)
 ops = (Dr,Ds,Dt,Lf,Vf)
 geo = (rxJ,sxJ,txJ,ryJ,syJ,tyJ,rzJ,szJ,tzJ,J,nxJ,nyJ,nzJ,sJ)
 mapM = reshape(mapM,Nfp*Nfaces,K)
@@ -124,7 +118,7 @@ mapP = reshape(mapP,Nfp*Nfaces,K)
 nodemaps = (mapP,mapB)
 
 function rhs(Q,ops,geo,nodemaps,params...)
-    (u) = Q
+    u = Q
     (Dr,Ds,Dt,Lf,Vf)=ops # should make functions for these
     (rxJ,sxJ,txJ,ryJ,syJ,tyJ,rzJ,szJ,tzJ,J,nxJ,nyJ,nzJ,sJ)=geo
     (mapP,mapB) = nodemaps
@@ -145,13 +139,19 @@ function rhs(Q,ops,geo,nodemaps,params...)
     return (rhsu)
 end
 
+"initial conditions"
+u = @. sin(pi*x)
+u = @. exp(-25*(x^2+y^2))
+Q = u
+resQ = zeros(size(x))
+
 for i = 1:Nsteps
-    global Q, resQ # for scoping - these variables are updated
+    # global Q, resQ # for scoping - these variables are updated. TODO: remove
 
     for INTRK = 1:5
         rhsQ = rhs(Q,ops,geo,nodemaps)
-        resQ = @. rk4a[INTRK]*resQ + dt*rhsQ
-        Q    = @. Q + rk4b[INTRK]*resQ
+        @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
+        @. Q    = Q + rk4b[INTRK]*resQ
     end
 
     if i%10==0 || i==Nsteps
@@ -162,7 +162,7 @@ end
 (u) = Q
 
 "plotting nodes"
-rp, sp, tp = equi_nodes_3D(10)
+rp, sp, tp = equi_nodes_3D(15)
 Vp = vandermonde_3D(N,rp,sp,tp)/V
 
 # pyplot(size=(100,100),legend=false,markerstrokewidth=0,markersize=2)

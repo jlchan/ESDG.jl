@@ -12,8 +12,8 @@ using Basis2DQuad
 using UniformQuadMesh
 
 "Approximation parameters"
-N = 4  # The order of approximation
-K1D = 16
+N = 3  # The order of approximation
+K1D = 32
 
 "Mesh related variables"
 VX, VY, EToV = uniform_quad_mesh(K1D, K1D)
@@ -49,6 +49,7 @@ LIFT = M\(transpose(Vf)*diagm(wf))
 "sparsify"
 Dr = droptol!(sparse(Dr), 1e-10)
 Ds = droptol!(sparse(Ds), 1e-10)
+Vf = droptol!(sparse(Vf),1e-10)
 LIFT = droptol!(sparse(LIFT),1e-10)
 
 "Map to physical nodes"
@@ -85,7 +86,7 @@ v = zeros(size(x))
 rk4a, rk4b, rk4c = rk45_coeffs()
 
 CN = (N+1)*(N+2)  # estimated trace constant
-CFL = .75;
+CFL = 1.5;
 dt = CFL * 2 / (CN*K1D)
 T = .75 # endtime
 Nsteps = convert(Int,ceil(T/dt))

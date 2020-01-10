@@ -83,7 +83,7 @@ gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2)
 plt = plot(Vp*x,Vp*u)
 
 resu = zeros(size(x))
-for i = 1:Nsteps
+@gif for i = 1:Nsteps
     for INTRK = 1:5
         rhsu = rhs(u,ops,vgeo,fgeo,mapP)
         @. resu = rk4a[INTRK]*resu + dt*rhsu
@@ -93,8 +93,10 @@ for i = 1:Nsteps
     if i%10==0 || i==Nsteps
         println("Number of time steps $i out of $Nsteps")
         # display(plot(Vp*x,Vp*u,ylims=(-.1,1.1)))
+        # push!(plt, Vp*x,Vp*u,ylims=(-.1,1.1))
+        plot(Vp*x,Vp*u,ylims=(-.1,1.1))
         # sleep(.0)
     end
-end
+end every 5
 
-plot(Vp*x,Vp*u,ylims=(-.1,1.1))
+# plot(Vp*x,Vp*u,ylims=(-.1,1.1))
