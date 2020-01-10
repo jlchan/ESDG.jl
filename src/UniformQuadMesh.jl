@@ -63,8 +63,9 @@ element to face connectivity.
 ```jldoctest
 """
 
+# ordering matters...
 function quad_face_vertices()
-        return [1,2],[2,4],[3,4],[3,1]
+        return [1,2],[2,4],[3,4],[1,3]
 end
 
 
