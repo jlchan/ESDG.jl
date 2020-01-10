@@ -4,12 +4,12 @@
 These codes are inspired by the Matlab codes for the book Nodal Discontinuous Galerkin methods by Hesthaven and Warburton (2007).  All demos use simple uniform meshes, and the codebase is intended mainly for experimentation and method development.
 
 ## Demos for linear problems
-- The simplest demo is "dg1D_advec.jl", which solves the 1D advection equation on a uniform 1D mesh. The simplest multi-dimensional demo is "dg2D_advec_tri.jl", which simulates the advection equation on a triangular mesh.
-- The demos "dg2D_wave_tri.jl" and "dg2D_wave_quad.jl" compute solutions to the acoustic wave equation on triangular and quadrilateral meshes.
+- The simplest demo is "dg1D_advec.jl", which solves the 1D advection equation on a uniform 1D mesh.
+- The demo "dg2D_advec_tri.jl" simulates the advection equation on a triangular mesh.
+- The demo "dg2D_wave_quad.jl" computes solutions to the acoustic wave equation on quadrilateral meshes.
 - The demo "dg3D_advec_hex.jl" solves the advection equation on a hexahedral mesh.
 
 ## Demos for nonlinear problems
-- The file "dg2D_burgers_quad.jl" provides a demo of an entropy stable DG method for Burgers' equation on a quadrilateral mesh.
 - The file "dg2D_euler_quad.jl" and "dg3D_euler_hex.jl" provide entropy stable DG methods on quadrilateral and hexahedral meshes for the compressible Euler equations, with a sparsity-optimized implementation of the Hadamard sum step in flux differencing.
 
 ## References
