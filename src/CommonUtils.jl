@@ -1,11 +1,11 @@
 """
-    Module Utils
+    Module CommonUtils
 
 General purpose utilities usable by all element types
 
 """
 
-module Utils
+module CommonUtils
 using LinearAlgebra # for I matrix in geometricFactors
 
 export meshgrid
@@ -40,10 +40,10 @@ function rk45_coeffs()
     return rk4a,rk4b,rk4c
 end
 
-include("./Utils/meshgrid.jl")
-include("./Utils/geometric_factors.jl")
-include("./Utils/connect_mesh.jl")
-include("./Utils/build_node_maps.jl")
-include("./Utils/build_periodic_boundary_maps.jl")
+include("./CommonUtils/meshgrid.jl")
+include("./CommonUtils/geometric_factors.jl")
+include("./CommonUtils/connect_mesh.jl")
+include("./CommonUtils/build_node_maps.jl")
+include("./CommonUtils/build_periodic_boundary_maps.jl")
 
 end

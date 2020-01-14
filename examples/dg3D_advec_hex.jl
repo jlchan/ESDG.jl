@@ -8,7 +8,7 @@ using LinearAlgebra
 using SparseArrays
 
 # "User defined modules"
-using Utils
+using CommonUtils
 using Basis1D
 using Basis2DQuad
 using Basis3DHex

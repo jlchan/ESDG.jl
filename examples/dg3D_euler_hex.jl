@@ -7,7 +7,7 @@ using SparseArrays
 
 # "User defined modules"
 push!(LOAD_PATH, "./src")
-using Utils
+using CommonUtils
 using Basis1D
 using Basis2DQuad # face trace space
 using Basis3DHex

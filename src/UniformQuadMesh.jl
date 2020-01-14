@@ -7,7 +7,7 @@ Includes mesh related utility functions
 module UniformQuadMesh
 
 using SparseArrays
-using Utils # for meshgrid
+using CommonUtils # for meshgrid
 
 export uniform_quad_mesh
 export quad_face_vertices

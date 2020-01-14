@@ -7,7 +7,7 @@ Includes mesh related utility functions
 module UniformHexMesh
 
 using SparseArrays
-using Utils # for meshgrid
+using CommonUtils # for meshgrid
 
 export uniform_hex_mesh
 export hex_face_vertices

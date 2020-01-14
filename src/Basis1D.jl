@@ -28,7 +28,10 @@ function gauss_lobatto_quad(α, β, N)
     end
     x = zeros(N+1, 1)
     w = zeros(N+1, 1)
-    if N == 1
+    if N == 0
+        x[1] = 0
+        w[1] = 2
+    elseif N == 1
         x[1] = -1.0
         x[2] = 1.0
         w[1] = 1.0

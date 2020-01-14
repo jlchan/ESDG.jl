@@ -10,7 +10,7 @@ export vandermonde_2D, grad_vandermonde_2D
 export nodes_2D, equi_nodes_2D, quad_nodes_2D
 
 using Basis1D
-using Utils
+using CommonUtils
 using LinearAlgebra
 
 """

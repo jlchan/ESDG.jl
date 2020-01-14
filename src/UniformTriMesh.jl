@@ -7,7 +7,7 @@ Includes mesh related utility functions
 module UniformTriMesh
 
 using SparseArrays
-using Utils # for meshgrid
+using CommonUtils # for meshgrid
 
 export uniform_tri_mesh
 export tri_face_vertices

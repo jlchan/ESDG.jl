@@ -6,7 +6,7 @@ using SparseArrays
 
 # "User defined modules"
 push!(LOAD_PATH, "./src")
-using Utils
+using CommonUtils
 using Basis1D
 using Basis2DQuad
 using UniformQuadMesh

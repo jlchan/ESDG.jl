@@ -1,8 +1,8 @@
 push!(LOAD_PATH, "./src/")   # TODO: Refactor module into folder? Also path is
-push!(LOAD_PATH, "./src/Utils/")
+push!(LOAD_PATH, "./src/CommonUtils/")
 using Documenter
-using Utils
-using Basis1D,Basis2DTri,Basis2DQuad
-using UniformQuadMesh, UniformTriMesh
+using CommonUtils
+using Basis1D,Basis2DTri,Basis2DQuad,Basis3DHex
+using UniformQuadMesh,UniformTriMesh,UniformHexMesh
 
-makedocs(modules=[Utils,Basis1D,Basis2DTri,Basis2DQuad,UniformTriMesh], sitename="Documentation for JuliaDG")
+makedocs(modules=[CommonUtils,Basis1D,Basis2DTri,UniformTriMesh], sitename="Documentation for JuliaDG")

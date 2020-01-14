@@ -3,13 +3,13 @@ using Plots
 using LinearAlgebra
 
 push!(LOAD_PATH, "./src") # user defined modules
-using Utils, Basis1D
+using CommonUtils, Basis1D
 
 "Approximation parameters"
 N   = 3 # The order of approximation
 K1D = 16
-CFL = .75
-T   = 10.5 # endtime
+CFL = 2
+T   = 10 # endtime
 
 "Mesh related variables"
 VX = LinRange(-1,1,K1D+1)
@@ -79,7 +79,7 @@ end
 
 "plotting nodes"
 Vp = vandermonde_1D(N,LinRange(-1,1,10))/V
-gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2)
+gr(size=(300,300),legend=false,markerstrokewidth=1,markersize=2)
 plt = plot(Vp*x,Vp*u)
 
 resu = zeros(size(x))
@@ -94,7 +94,8 @@ resu = zeros(size(x))
         println("Number of time steps $i out of $Nsteps")
         # display(plot(Vp*x,Vp*u,ylims=(-.1,1.1)))
         # push!(plt, Vp*x,Vp*u,ylims=(-.1,1.1))
-        plot(Vp*x,Vp*u,ylims=(-.1,1.1))
+        plot(Vp*x,Vp*u,ylims=(-.1,1.1),title="Timestep $i out of $Nsteps",lw=2)
+        scatter!(x,u)
         # sleep(.0)
     end
 end every 5

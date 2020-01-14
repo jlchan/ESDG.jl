@@ -3,7 +3,7 @@ using Plots
 using LinearAlgebra
 
 push!(LOAD_PATH, "./src") # user defined modules
-using Utils
+using CommonUtils
 using Basis1D
 using Basis2DTri
 using UniformTriMesh
