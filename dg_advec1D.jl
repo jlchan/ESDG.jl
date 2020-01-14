@@ -6,8 +6,8 @@ push!(LOAD_PATH, "./src") # user defined modules
 using CommonUtils, Basis1D
 
 "Approximation parameters"
-N   = 3 # The order of approximation
-K1D = 16
+N   = 25 # The order of approximation
+K1D = 1
 CFL = 2
 T   = 10 # endtime
 
@@ -78,7 +78,7 @@ function rhs(u,ops,vgeo,fgeo,mapP)
 end
 
 "plotting nodes"
-Vp = vandermonde_1D(N,LinRange(-1,1,10))/V
+Vp = vandermonde_1D(N,LinRange(-1,1,100))/V
 gr(size=(300,300),legend=false,markerstrokewidth=1,markersize=2)
 plt = plot(Vp*x,Vp*u)
 
@@ -98,6 +98,6 @@ resu = zeros(size(x))
         scatter!(x,u)
         # sleep(.0)
     end
-end every 5
+end every 50
 
 # plot(Vp*x,Vp*u,ylims=(-.1,1.1))
