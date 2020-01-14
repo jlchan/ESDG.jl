@@ -9,9 +9,9 @@ module CommonUtils
 using LinearAlgebra # for I matrix in geometricFactors
 
 export meshgrid
-export geometric_factors
-export connect_mesh
-export build_node_maps, build_periodic_boundary_maps
+# export geometric_factors
+# export connect_mesh
+# export build_node_maps, build_periodic_boundary_maps
 export rk45_coeffs
 
 export unzip # convert array of tuples to tuples of arrays
