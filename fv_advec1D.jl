@@ -6,7 +6,7 @@ push!(LOAD_PATH, "./src") # user defined modules
 using CommonUtils, Basis1D
 
 "Approximation parameters"
-K   = 1024 # number of elements
+K   = 2048 # number of elements
 T   = 10  # endtime
 CFL = 1   # controls size of timestep
 
@@ -18,7 +18,7 @@ x = mean(VX[EToV],2) # cell centers
 
 "initial conditions"
 u0(x) = @. sin(2*pi*x)
-u0(x) = @. exp(-500*x^2)
+u0(x) = @. exp(-25*x^2)
 # u0(x) = Float64.(@. abs(x) < .5)
 u = u0(x)
 
@@ -39,7 +39,7 @@ for i = 1:Nsteps
     for INTRK = 1:5
         uL = vcat(u[end],u)
         uR = vcat(u,u[1])
-        alpha = .25
+        alpha = .1
         flux = @. .5*(uL+uR) - .5*alpha*(uR-uL) # central flux
         rhsu = -diff(flux,dims=1)./h
 
@@ -47,11 +47,11 @@ for i = 1:Nsteps
         @. u   += rk4b[INTRK]*resu
     end
 
-    if i%25==0 || i==Nsteps
+    if i%100==0 || i==Nsteps
         println("Number of time steps $i out of $Nsteps")
-        scatter(x,u,ylims=ulims,title="Timestep $i out of $Nsteps")
+        # scatter(x,u,ylims=ulims,title="Timestep $i out of $Nsteps")
     end
 end # every 25
 
-plot(x,u,ylims=ulims,linestyle=:dash)
-plot!(x,u0(x),ylims=ulims)
+# plot(x,u,ylims=ulims,linestyle=:dash)
+plot!(x,u-u0(x),ylims=ulims)

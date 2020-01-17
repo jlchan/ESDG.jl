@@ -6,14 +6,14 @@ push!(LOAD_PATH, "./src") # user defined modules
 using CommonUtils, Basis1D
 
 "Approximation parameters"
-N   = 25 # The order of approximation
-K1D = 1
-CFL = 2
+N   = 3 # The order of approximation
+K   = 8
 T   = 10 # endtime
+CFL = 1
 
 "Mesh related variables"
-VX = LinRange(-1,1,K1D+1)
-EToV = transpose(reshape(sort([1:K1D; 2:K1D+1]),2,K1D))
+VX = LinRange(-1,1,K+1)
+EToV = repeat([0 1],K,1) + repeat(1:K,1,2)
 
 "Construct matrices on reference elements"
 r,w = gauss_lobatto_quad(0,0,N)
@@ -32,7 +32,7 @@ x = V1*VX[transpose(EToV)]
 
 "Connectivity maps"
 xf = Vf*x
-mapM = reshape(1:2*K1D,2,K1D)
+mapM = reshape(1:2*K,2,K)
 mapP = copy(mapM)
 mapP[1,2:end] .= mapM[2,1:end-1]
 mapP[2,1:end-1] .= mapM[1,2:end]
@@ -43,16 +43,19 @@ mapP[end] = mapM[1]
 
 "Geometric factors and surface normals"
 J = repeat(transpose(diff(VX)/2),N+1,1)
-nxJ = repeat([-1;1],1,K1D)
+nxJ = repeat([-1;1],1,K)
 rxJ = 1
 
 "initial conditions"
-u = @. exp(-25*x^2)
+u0(x) = @. exp(-25*x^2)
+# u0(x) = @. sin(2*pi*x)
+# u0(x) = Float64.(@. abs(x) < .33)
+u = u0(x)
 
 "Time integration"
 rk4a,rk4b,rk4c = rk45_coeffs()
 CN = (N+1)*(N+2)/2  # estimated trace constant
-dt = CFL * 2 / (CN*K1D)
+dt = CFL * 2 / (CN*K)
 Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
@@ -83,21 +86,20 @@ gr(size=(300,300),legend=false,markerstrokewidth=1,markersize=2)
 plt = plot(Vp*x,Vp*u)
 
 resu = zeros(size(x))
-@gif for i = 1:Nsteps
+# @gif
+for i = 1:Nsteps
     for INTRK = 1:5
         rhsu = rhs(u,ops,vgeo,fgeo,mapP)
         @. resu = rk4a[INTRK]*resu + dt*rhsu
         @. u   += rk4b[INTRK]*resu
     end
 
-    if i%10==0 || i==Nsteps
+    if i%100==0 || i==Nsteps
         println("Number of time steps $i out of $Nsteps")
-        # display(plot(Vp*x,Vp*u,ylims=(-.1,1.1)))
-        # push!(plt, Vp*x,Vp*u,ylims=(-.1,1.1))
-        plot(Vp*x,Vp*u,ylims=(-.1,1.1),title="Timestep $i out of $Nsteps",lw=2)
-        scatter!(x,u)
-        # sleep(.0)
+        # plot(Vp*x,Vp*u,ylims=(-.1,1.1),title="Timestep $i out of $Nsteps",lw=2)
+        # scatter!(x,u)
     end
-end every 50
+end #every 50
 
-# plot(Vp*x,Vp*u,ylims=(-.1,1.1))
+scatter(x,u,ylims=ulims)
+plot!(Vp*x,u0(Vp*x),ylims=ulims)
