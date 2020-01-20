@@ -7,9 +7,10 @@ using CommonUtils, Basis1D
 
 "Approximation parameters"
 N   = 3 # The order of approximation
-K   = 8
+K   = 16
 T   = 10 # endtime
 CFL = 1
+const tau = 1 # upwind penalty parameter
 
 "Mesh related variables"
 VX = LinRange(-1,1,K+1)
@@ -37,7 +38,7 @@ mapP = copy(mapM)
 mapP[1,2:end] .= mapM[2,1:end-1]
 mapP[2,1:end-1] .= mapM[1,2:end]
 
-"Make periodic"
+"Make maps periodic"
 mapP[1] = mapM[end]
 mapP[end] = mapM[1]
 
@@ -62,19 +63,18 @@ dt = T/Nsteps
 "pack arguments into tuples"
 ops = (Dr,LIFT,Vf)
 vgeo = (rxJ,J)
-fgeo = (nxJ)
+fgeo = (nxJ,)
 
 function rhs(u,ops,vgeo,fgeo,mapP)
     # unpack args
     Dr,LIFT,Vf = ops
     rxJ,J = vgeo
-    nxJ = fgeo
+    nxJ, = fgeo
 
     uM = Vf*u # can replace with nodal extraction
     du = uM[mapP]-uM
 
     ux = rxJ*(Dr*u)
-    tau = 1 # upwind penalty parameter
     rhsu = ux + .5*LIFT*(@. du*nxJ - tau*abs(nxJ)*du)
 
     return -rhsu./J
