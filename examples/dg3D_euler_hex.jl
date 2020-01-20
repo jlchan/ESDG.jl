@@ -17,7 +17,7 @@ push!(LOAD_PATH, "./examples/EntropyStableEuler")
 using EntropyStableEuler
 
 N = 2
-K1D = 8
+K1D = 1
 T = 2/3 # endtime
 CFL = 1.0
 
@@ -110,6 +110,13 @@ LX = 2; LY = 2; LZ = 2
 mapPB = build_periodic_boundary_maps(xf,yf,zf,LX,LY,LZ,Nfaces*K,mapM,mapP,mapB)
 mapP[mapB] = mapPB
 
+"add curved mapping"
+a = .05
+dx = @. (x-1)*(x+1)*(y-1)*(y+1)*(z-1)*(z+1)
+x = x + a.*dx
+y = y + a.*dx
+z = z + a.*dx
+
 "Geometry"
 vgeo = geometric_factors(x,y,z,Dr,Ds,Dt)
 (rxJ, sxJ, txJ, ryJ, syJ, tyJ, rzJ, szJ, tzJ, J) = vgeo
@@ -127,19 +134,21 @@ w = zeros(size(x))
 p = ones(size(x))
 Q = primitive_to_conservative(rho,u,v,w,p)
 
-"convert to Gauss node basis"
-Vh = droptol!(sparse(vcat(diagm(ones(length(rq))), Ef)),1e-12)
-Ph = droptol!(sparse(2*diagm(@. 1/wq)*transpose(Vh)),1e-12)
-Lf = droptol!(sparse(diagm(@. 1/wq)*(transpose(Ef)*diagm(wf))),1e-12)
-Q = (x->Vq*x).(Q)
-
 "Pack arguments into tuples"
-ops = (Qrhskew_sparse,Qshskew_sparse,Qthskew_sparse,Qnzids,Ph,Lf)
 vgeo = (x->Vh*x).(vgeo)
 fgeo = (nxJ,nyJ,nzJ,sJ)
 Nfp = convert(Int,length(rf)/Nfaces)
 mapP = reshape(mapP,Nfp*Nfaces,K)
 nodemaps = (mapP,mapB)
+
+"convert to Gauss node basis"
+J = Vq*J
+wJq = diagm(wq)*J
+Q = (x->Vq*x).(Q)
+Vh = droptol!(sparse(vcat(diagm(ones(length(rq))), Ef)),1e-12)
+Ph = droptol!(sparse(2*diagm(@. 1/wq)*transpose(Vh)),1e-12)
+Lf = droptol!(sparse(diagm(@. 1/wq)*(transpose(Ef)*diagm(wf))),1e-12)
+ops = (Qrhskew_sparse,Qshskew_sparse,Qthskew_sparse,Qnzids,Ph,Lf)
 
 "timestepping"
 rk4a,rk4b,rk4c = rk45_coeffs()
@@ -151,7 +160,7 @@ Nsteps = convert(Int,ceil(T/dt))
 function sparse_hadamard_sum(Qhe,ops,vgeo,flux_fun)
 
     (Qr,Qs,Qt,Qnzids) = ops
-    (rxJ,sxJ,txJ,ryJ,syJ,tyJ,rzJ,szJ,tzJ,Jscalar) = vgeo
+    # (rxJ,sxJ,txJ,ryJ,syJ,tyJ,rzJ,szJ,tzJ,_) = vgeo
     nrows = size(Qr,1)
     nfields = length(Qhe)
 
@@ -164,16 +173,21 @@ function sparse_hadamard_sum(Qhe,ops,vgeo,flux_fun)
     for i = 1:nrows
         Qi = (x->x[i]).(Qhe)
         Qlogi = (x->x[i]).(Qlog)
+        vgeo_i = (x->x[i]).(vgeo)
 
         fill!(rhsi,0) # reset rhsi before accumulation
         for j = Qnzids[i] # nonzero row entries
             Qj = (x->x[j]).(Qhe)
             Qlogj = (x->x[j]).(Qlog)
+            vgeo_j = (x->x[j]).(vgeo)
+
+            avg(uL,uR) = .5*(uL+uR)
+            rxJa,sxJa,txJa,ryJa,syJa,tyJa,rzJa,szJa,tzJa,_ = avg.(vgeo_i,vgeo_j)
 
             Fx,Fy,Fz = flux_fun(Qi,Qj,Qlogi,Qlogj)
-            Fr = @. rxJ*Fx + ryJ*Fy + rzJ*Fz
-            Fs = @. sxJ*Fx + syJ*Fy + szJ*Fz
-            Ft = @. txJ*Fx + tyJ*Fy + tzJ*Fz
+            Fr = @. rxJa*Fx + ryJa*Fy + rzJa*Fz
+            Fs = @. sxJa*Fx + syJa*Fy + szJa*Fz
+            Ft = @. txJa*Fx + tyJa*Fy + tzJa*Fz
 
             # sum(Qx.*Fx + Qy.*Fy,2) = sum(Qr*rxJ*Fx + Qs*sxJ*Fx + Qr*ryJ*Fy ...)
             @. rhsi += Qr[i,j]*Fr + Qs[i,j]*Fs + Qt[i,j]*Ft
@@ -206,7 +220,7 @@ function rhs(Qh,UM,ops,vgeo,fgeo,nodemaps,flux_fun)
     (rho,rhou,rhov,rhow,E) = UM
     rhoU_n = @. (rhou*nxJ + rhov*nyJ + rhow*nzJ)/sJ
     lam = abs.(wavespeed(rho,rhoU_n,E))
-    LFc = .5*max.(lam,lam[mapP]).*sJ
+    LFc = 0*.5*max.(lam,lam[mapP]).*sJ
 
     fSx,fSy,fSz = flux_fun(QM,QP)
     normal_flux(fx,fy,fz,uM) = fx.*nxJ + fy.*nyJ + fz.*nzJ - LFc.*(uM[mapP]-uM)
@@ -216,7 +230,8 @@ function rhs(Qh,UM,ops,vgeo,fgeo,nodemaps,flux_fun)
     # compute volume contributions using flux differencing
     for e = 1:K
         Qhe = tuple((x->x[:,e]).(Qh)...)
-        vgeo_elem = (x->x[1,e]).(vgeo) # assumes affine elements for now
+        #vgeo_elem = (x->x[1,e]).(vgeo) # assumes affine elements for now
+        vgeo_elem = (x->x[:,e]).(vgeo) # assumes curved elements
 
         Qops = (Qrh_sparse,Qsh_sparse,Qth_sparse,Qnzids)
         QFe = sparse_hadamard_sum(Qhe,Qops,vgeo_elem,flux_fun) # sum(Q.*F,dims=2)
@@ -227,7 +242,6 @@ function rhs(Qh,UM,ops,vgeo,fgeo,nodemaps,flux_fun)
 
     return (x -> -x./J).(rhsQ) # scale by Jacobian
 end
-
 
 function rk_step!(Q,resQ,rka,rkb,compute_rhstest)
 
@@ -256,7 +270,6 @@ function rk_step!(Q,resQ,rka,rkb,compute_rhstest)
     return rhstest
 end
 
-wJq = diagm(wq)*J
 
 # force Q to be an array of arrays for mutability
 Q = collect(Q)
