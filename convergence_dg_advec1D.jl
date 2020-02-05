@@ -96,7 +96,7 @@ for kk = 1:length(Kvec) # number of elements
     end
 
     # compute L2 errors
-    rq,wq = gauss_quad(0,0,N+8)
+    rq,wq = gauss_quad(0,0,N+2)
     Vq = vandermonde_1D(N,rq)/V
     xq = Vq*x
     wJq = diagm(wq)*(Vq*J)
