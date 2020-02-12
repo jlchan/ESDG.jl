@@ -9,9 +9,10 @@ module CommonUtils
 using LinearAlgebra # for I matrix in geometricFactors
 
 export meshgrid
-# export geometric_factors
-# export connect_mesh
-# export build_node_maps, build_periodic_boundary_maps
+export geometric_factors
+export connect_mesh
+export build_node_maps
+export build_periodic_boundary_maps
 export rk45_coeffs
 
 export unzip # convert array of tuples to tuples of arrays
@@ -44,9 +45,9 @@ function rk45_coeffs()
 end
 
 include("./CommonUtils/meshgrid.jl")
-# include("./CommonUtils/geometric_factors.jl")
-# include("./CommonUtils/connect_mesh.jl")
-# include("./CommonUtils/build_node_maps.jl")
-# include("./CommonUtils/build_periodic_boundary_maps.jl")
+include("./CommonUtils/geometric_factors.jl")
+include("./CommonUtils/connect_mesh.jl")
+include("./CommonUtils/build_node_maps.jl")
+include("./CommonUtils/build_periodic_boundary_maps.jl")
 
 end
