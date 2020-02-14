@@ -25,8 +25,8 @@ Nfaces,K = size(FToF)
 - r,s are vectors of interpolation nodes
 - V is the matrix arising in polynomial interpolation, e.g. solving V*u = [f(x_1),...,f(x_Np)]
 - inv(V) transforms from a nodal basis to an orthonormal basis.
-- If Vr evaluates the orthonormal basis at nodal points
-- Thus, Vr*inv(V) = Vr/V transforms nodal values to orthonormal coefficients, then differentiates the orthonormal basis"
+- If Vr evaluates derivatives of the orthonormal basis at nodal points
+- then, Vr*inv(V) = Vr/V transforms nodal values to orthonormal coefficients, then differentiates the orthonormal basis"
 r, s = nodes_2D(N)
 V = vandermonde_2D(N, r, s)
 Vr, Vs = grad_vandermonde_2D(N, r, s)
@@ -96,6 +96,7 @@ fgeo = (nxJ,nyJ,sJ)
 mapP = reshape(mapP,Nfp*Nfaces,K)
 nodemaps = (mapP,mapB)
 
+"Define function to evaluate the RHS"
 function rhs(u,ops,vgeo,fgeo,nodemaps)
     # unpack arguments
     Dr,Ds,LIFT,Vf = ops
@@ -105,12 +106,12 @@ function rhs(u,ops,vgeo,fgeo,nodemaps)
 
     uM = Vf*u # interpolate solution to face nodes
     uP = uM[mapP]
-    flux = .5*(uP+uM)-uM
+    flux = @. nxJ*(.5*(uP+uM)-uM) - .5*abs(nxJ)*(uP-uM)
 
     ur = Dr*u
     us = Ds*u
     ux = @. rxJ*ur + sxJ*us;
-    rhsu = ux + LIFT*(@. flux*nxJ)
+    rhsu = ux + LIFT*flux
 
     return -rhsu./J
 end
@@ -131,11 +132,11 @@ for i = 1:Nsteps
 end
 
 "plotting nodes"
-gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=3)
+gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2)
 # pyplot(size=(300,300),legend=false,markerstrokewidth=0,markersize=2)
 # plotlyjs(size=(300,300),legend=false,markerstrokewidth=0,markersize=2)
 
-rp, sp = equi_nodes_2D(8)
+rp, sp = equi_nodes_2D(15)
 Vp = vandermonde_2D(N,rp,sp)/V
 vv = Vp*u
 scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90))
