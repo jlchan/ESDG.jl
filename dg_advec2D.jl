@@ -12,7 +12,7 @@ using UniformTriMesh
 N   = 3 # The order of approximation
 K1D = 16 # number of elements along each edge of a rectangle
 CFL = 1 # relative size of a time-step
-T   = 2 # final time
+T   = .5 # final time
 
 "Define mesh and compute connectivity
 - (VX,VY) are and EToV is a connectivity matrix
@@ -81,6 +81,7 @@ sJ = @. sqrt(nxJ^2 + nyJ^2)
 
 "Define the initial conditions by interpolation"
 u = @. exp(-25*(x^2+y^2))
+# u = @. convert(Float64,y .> 0)
 
 "Time integration coefficients"
 rk4a,rk4b,rk4c = rk45_coeffs()
@@ -106,7 +107,7 @@ function rhs(u,ops,vgeo,fgeo,nodemaps)
 
     uM = Vf*u # interpolate solution to face nodes
     uP = uM[mapP]
-    flux = @. nxJ*(.5*(uP+uM)-uM) - .5*abs(nxJ)*(uP-uM)
+    flux = @. nxJ*(.5*(uP+uM)-uM) - .5*(uP-uM).*abs(nxJ)
 
     ur = Dr*u
     us = Ds*u
@@ -139,4 +140,4 @@ gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2)
 rp, sp = equi_nodes_2D(15)
 Vp = vandermonde_2D(N,rp,sp)/V
 vv = Vp*u
-scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90))
+scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90),legend=false,markerstrokewidth=0,markersize=2)
