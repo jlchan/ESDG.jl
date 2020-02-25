@@ -9,8 +9,8 @@ using Basis2DTri
 using UniformTriMesh
 
 "Define approximation parameters"
-N   = 1 # The order of approximation
-Kvec = [4 8 16 32]
+N   = 3 # The order of approximation
+Kvec = [4 8 16]
 err = zeros(length(Kvec))
 for kk = 1:length(Kvec)
     K1D = Kvec[kk] # number of elements along each edge of a rectangle
@@ -83,7 +83,7 @@ for kk = 1:length(Kvec)
     sJ = @. sqrt(nxJ^2 + nyJ^2)
 
     "Define the initial conditions by interpolation"
-    u0(x,y) = @. exp(-25*(x^2+y^2))
+    # u0(x,y) = @. exp(-25*(x^2+y^2))
     u0(x,y) = @. sin(pi*x)*sin(pi*y)
     u = u0(x,y)
 
@@ -112,7 +112,7 @@ for kk = 1:length(Kvec)
         uM = Vf*u # interpolate solution to face nodes
         uP = uM[mapP]
         tau = 1
-        #flux = @. nxJ*(.5*(uP-uM)) - .5*tau*(uP-uM).*abs(nxJ)
+        flux = @. nxJ*(.5*(uP-uM)) - .5*tau*(uP-uM).*abs(nxJ)
         flux = @. nxJ*(.5*(uP-uM)) - .5*tau*(uP-uM)
 
         ur = Dr*u
@@ -143,6 +143,7 @@ for kk = 1:length(Kvec)
     xq,yq = (x->Vq*x).((x,y))
     wJq = diagm(wq)*(Vq*J)
 
+    # L2 error
     err[kk] = sqrt(sum(wJq.*(Vq*u - u0(xq,yq)).^2))
 end
 

@@ -12,9 +12,6 @@ using UniformTriMesh
 N   = 2 # The order of approximation
 K1D = 4 # number of elements along each edge of a rectangle
 
-CFL = 1 # relative size of a time-step
-T   = .5 # final time
-
 "Define mesh and compute connectivity
 - (VX,VY) are and EToV is a connectivity matrix
 - connect_mesh computes a vector FToF such that face i is connected to face j=FToF[i]"
@@ -80,17 +77,6 @@ nxJ = (Vf*rxJ).*nrJ + (Vf*sxJ).*nsJ;
 nyJ = (Vf*ryJ).*nrJ + (Vf*syJ).*nsJ;
 sJ = @. sqrt(nxJ^2 + nyJ^2)
 
-"Define the initial conditions by interpolation"
-u = @. exp(-25*(x^2+y^2))
-# u = @. convert(Float64,y .> 0)
-
-"Time integration coefficients"
-rk4a,rk4b,rk4c = rk45_coeffs()
-CN = (N+1)*(N+2)/2  # estimated trace constant
-dt = CFL * 2 / (CN*K1D)
-Nsteps = convert(Int,ceil(T/dt))
-dt = T/Nsteps
-
 "pack arguments into tuples"
 ops = (Dr,Ds,LIFT,Vf)
 vgeo = (rxJ,sxJ,ryJ,syJ,J)
@@ -108,7 +94,9 @@ function rhs(u,ops,vgeo,fgeo,nodemaps)
 
     uM = Vf*u # interpolate solution to face nodes
     uP = uM[mapP]
-    flux = @. nxJ*(.5*(uP-uM)) - .5*(uP-uM).*abs(nxJ)
+    tau = 1
+    flux = @. nxJ*(.5*(uP-uM)) - .5*tau*(uP-uM).*abs(nxJ)
+    # flux = @. nxJ*(.5*(uP-uM)) - .5*tau*(uP-uM)
 
     ur = Dr*u
     us = Ds*u
@@ -130,5 +118,5 @@ end
 lam = eigvals(A)
 
 gr(size=(300,300),legend=false,
-markerstrokewidth=2,markersize=4)
+markerstrokewidth=2,markersize=8)
 scatter!(lam)

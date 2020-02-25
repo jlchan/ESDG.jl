@@ -9,7 +9,7 @@ using Basis2DTri
 using UniformTriMesh
 
 "Define approximation parameters"
-N   = 2 # The order of approximation
+N   = 3 # The order of approximation
 Kvec = [4 8 16 32]
 err = zeros(length(Kvec))
 for kk = 1:length(Kvec)
@@ -52,141 +52,139 @@ for kk = 1:length(Kvec)
 
     "Construct global coordinates
     - vx = VX[EToV'] = a 3xK matrix of vertex values for each element
-        - V1*vx uses the linear polynomial defined by 3 vertex values to
-        interpolate nodal points on the reference element to physical elements"
-        r1,s1 = nodes_2D(1)
-        V1 = vandermonde_2D(1,r,s)/vandermonde_2D(1,r1,s1)
-        x = V1*VX[transpose(EToV)]
-        y = V1*VY[transpose(EToV)]
+    - V1*vx uses the linear polynomial defined by 3 vertex values to
+    interpolate nodal points on the reference element to physical elements"
+    r1,s1 = nodes_2D(1)
+    V1 = vandermonde_2D(1,r,s)/vandermonde_2D(1,r1,s1)
+    x = V1*VX[transpose(EToV)]
+    y = V1*VY[transpose(EToV)]
 
-        "Compute connectivity maps: uP = exterior value used in DG numerical fluxes"
-        xf,yf = (x->Vf*x).((x,y))
-        mapM,mapP,mapB = build_node_maps((xf,yf),FToF)
-        mapM = reshape(mapM,Nfp*Nfaces,K)
-        mapP = reshape(mapP,Nfp*Nfaces,K)
+    "Compute connectivity maps: uP = exterior value used in DG numerical fluxes"
+    xf,yf = (x->Vf*x).((x,y))
+    mapM,mapP,mapB = build_node_maps((xf,yf),FToF)
+    mapM = reshape(mapM,Nfp*Nfaces,K)
+    mapP = reshape(mapP,Nfp*Nfaces,K)
 
-        "Make boundary maps periodic"
-        LX,LY = (x->maximum(x)-minimum(x)).((VX,VY)) # find lengths of domain
-        mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces*K,mapM,mapP,mapB)
-        # mapP[mapB] = mapPB
+    "Make boundary maps periodic"
+    LX,LY = (x->maximum(x)-minimum(x)).((VX,VY)) # find lengths of domain
+    mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces*K,mapM,mapP,mapB)
+    mapP[mapB] = mapPB
 
-        "Compute geometric factors and surface normals"
-        rxJ, sxJ, ryJ, syJ, J = geometric_factors(x, y, Dr, Ds)
+    "Compute geometric factors and surface normals"
+    rxJ, sxJ, ryJ, syJ, J = geometric_factors(x, y, Dr, Ds)
 
-        "nhat = (nrJ,nsJ) are reference normals scaled by edge length
-        - physical normals are computed via G*nhat, G = matrix of geometric terms
-        - sJ is the normalization factor for (nx,ny) to be unit vectors"
-        nrJ = [z; e; -e]
-        nsJ = [-e; e; z]
-        nxJ = (Vf*rxJ).*nrJ + (Vf*sxJ).*nsJ;
-        nyJ = (Vf*ryJ).*nrJ + (Vf*syJ).*nsJ;
-        sJ = @. sqrt(nxJ^2 + nyJ^2)
+    "nhat = (nrJ,nsJ) are reference normals scaled by edge length
+    - physical normals are computed via G*nhat, G = matrix of geometric terms
+    - sJ is the normalization factor for (nx,ny) to be unit vectors"
+    nrJ = [z; e; -e]
+    nsJ = [-e; e; z]
+    nxJ = (Vf*rxJ).*nrJ + (Vf*sxJ).*nsJ;
+    nyJ = (Vf*ryJ).*nrJ + (Vf*syJ).*nsJ;
+    sJ = @. sqrt(nxJ^2 + nyJ^2)
 
-        "=========== Done defining geometry and mesh ============="
+    "=========== Done defining geometry and mesh ============="
 
-        "Define the initial conditions by interpolation"
-        k = 1
-        pex = (x,y,t)-> @. sin(pi*x)*sin(pi*y)*cos(sqrt(2)*pi*t)
-        uex = (x,y,t)-> @. -cos(pi*x)*sin(pi*y)*sin(sqrt(2)*pi*t)/sqrt(2)
-        vex = (x,y,t)-> @. -sin(pi*x)*cos(pi*y)*sin(sqrt(2)*pi*t)/sqrt(2)
+    "Define the initial conditions by interpolation"
+    k = 1
+    pex = (x,y,t)-> @. sin(pi*x)*sin(pi*y)*cos(sqrt(2)*pi*t)
+    uex = (x,y,t)-> @. -cos(pi*x)*sin(pi*y)*sin(sqrt(2)*pi*t)/sqrt(2)
+    vex = (x,y,t)-> @. -sin(pi*x)*cos(pi*y)*sin(sqrt(2)*pi*t)/sqrt(2)
 
-        p = pex(x,y,0)
-        # p = @. exp(-250*(x^2+y^2))
-        u = @. 0*x
-        v = @. 0*x
+    p = pex(x,y,0)
+    # p = @. exp(-250*(x^2+y^2))
+    u = @. 0*x
+    v = @. 0*x
 
-        "Time integration coefficients"
-        rk4a,rk4b,rk4c = rk45_coeffs()
-        CN = (N+1)*(N+2)/2  # estimated trace constant
-        dt = CFL * 2 / (CN*K1D)
-        Nsteps = convert(Int,ceil(T/dt))
-        dt = T/Nsteps
+    "Time integration coefficients"
+    rk4a,rk4b,rk4c = rk45_coeffs()
+    CN = (N+1)*(N+2)/2  # estimated trace constant
+    dt = CFL * 2 / (CN*K1D)
+    Nsteps = convert(Int,ceil(T/dt))
+    dt = T/Nsteps
 
-        "pack arguments into tuples"
-        ops = (Dr,Ds,LIFT,Vf)
-        vgeo = (rxJ,sxJ,ryJ,syJ,J)
-        fgeo = (nxJ,nyJ,sJ)
-        mapP = reshape(mapP,Nfp*Nfaces,K)
-        nodemaps = (mapP,mapB)
+    "pack arguments into tuples"
+    ops = (Dr,Ds,LIFT,Vf)
+    vgeo = (rxJ,sxJ,ryJ,syJ,J)
+    fgeo = (nxJ,nyJ,sJ)
+    mapP = reshape(mapP,Nfp*Nfaces,K)
+    nodemaps = (mapP,mapB)
 
-        "Define function to evaluate the RHS: Q = (p,u,v)"
-        function rhs(Q,ops,vgeo,fgeo,nodemaps)
-            # unpack arguments
-            Dr,Ds,LIFT,Vf = ops
-            rxJ,sxJ,ryJ,syJ,J = vgeo
-            nxJ,nyJ,sJ = fgeo
-            (mapP,mapB) = nodemaps
+    "Define function to evaluate the RHS: Q = (p,u,v)"
+    function rhs(Q,ops,vgeo,fgeo,nodemaps)
+        # unpack arguments
+        Dr,Ds,LIFT,Vf = ops
+        rxJ,sxJ,ryJ,syJ,J = vgeo
+        nxJ,nyJ,sJ = fgeo
+        (mapP,mapB) = nodemaps
 
-            Qf = (x->Vf*x).(Q)
-            QP = (x->x[mapP]).(Qf)
+        Qf = (x->Vf*x).(Q)
+        QP = (x->x[mapP]).(Qf)
 
-            # impose BCs
-            pM = Qf[1]
-            QP[1][mapB] = -pM[mapB]
+        # # impose BCs
+        # pM = Qf[1]
+        # QP[1][mapB] = -pM[mapB]
 
-            dp,du,dv = QP.-Qf
-            tau = .5
-            dun = @. (du*nxJ + dv*nyJ)/sJ
-            pflux = @. .5*(du*nxJ + dv*nyJ) - tau*dp*sJ
-            uflux = @. .5*dp*nxJ - tau*dun*nxJ
-            vflux = @. .5*dp*nyJ - tau*dun*nyJ
-            # uflux = @. .5*dp*nxJ - tau*du*sJ
-            # vflux = @. .5*dp*nyJ - tau*dv*sJ
+        dp,du,dv = QP.-Qf
+        tau = 0
+        dun = @. (du*nxJ + dv*nyJ)/sJ
+        pflux = @. .5*(du*nxJ + dv*nyJ) - tau*dp*sJ
+        uflux = @. .5*dp*nxJ - tau*dun*nxJ
+        vflux = @. .5*dp*nyJ - tau*dun*nyJ
 
-            pr,ur,vr = (x->Dr*x).(Q)
-            ps,us,vs = (x->Ds*x).(Q)
-            dudx = @. rxJ*ur + sxJ*us
-            dvdy = @. ryJ*vr + syJ*vs
-            dpdx = @. rxJ*pr + sxJ*ps
-            dpdy = @. ryJ*pr + syJ*ps
-            rhsp = dudx + dvdy + LIFT*pflux
-            rhsu = dpdx        + LIFT*uflux
-            rhsv = dpdy        + LIFT*vflux
+        pr,ur,vr = (x->Dr*x).(Q)
+        ps,us,vs = (x->Ds*x).(Q)
+        dudx = @. rxJ*ur + sxJ*us
+        dvdy = @. ryJ*vr + syJ*vs
+        dpdx = @. rxJ*pr + sxJ*ps
+        dpdy = @. ryJ*pr + syJ*ps
+        rhsp = dudx + dvdy + LIFT*pflux
+        rhsu = dpdx        + LIFT*uflux
+        rhsv = dpdy        + LIFT*vflux
 
-            return (x->-x./J).((rhsp,rhsu,rhsv))
-        end
-
-        "Perform time-stepping"
-        Q = [p,u,v]
-        resQ = [zeros(size(x)) for i in eachindex(Q)]
-        for i = 1:Nsteps
-            for INTRK = 1:5
-                rhsQ = rhs(Q,ops,vgeo,fgeo,nodemaps)
-                @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
-                @. Q    = Q + rk4b[INTRK]*resQ
-            end
-
-            if i%50==0 || i==Nsteps
-                println("Number of time steps $i out of $Nsteps")
-                #     p = Q[1]
-                #     display(scatter(x,y,p,zcolor=p,zlims=(-1,1)))
-            end
-        end
-
-        p,u,v = Q
-
-        rq,sq,wq = quad_nodes_2D(2*N+2)
-        Vq = vandermonde_2D(N,rq,sq)/V
-        xq,yq = (x->Vq*x).((x,y))
-        wJq = diagm(wq)*(Vq*J)
-
-        perr = Vq*p - pex(xq,yq,T)
-        uerr = Vq*u - uex(xq,yq,T)
-        verr = Vq*v - vex(xq,yq,T)
-        err[kk] = sqrt(sum(wJq.*(perr.^2+uerr.^2+verr.^2)))
-
+        return (x->-x./J).((rhsp,rhsu,rhsv))
     end
 
-    h = @. 2/Kvec[:]
+    "Perform time-stepping"
+    Q = [p,u,v]
+    resQ = [zeros(size(x)) for i in eachindex(Q)]
+    for i = 1:Nsteps
+        for INTRK = 1:5
+            rhsQ = rhs(Q,ops,vgeo,fgeo,nodemaps)
+            @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
+            @. Q    = Q + rk4b[INTRK]*resQ
+        end
 
-    gr(size=(300,300),legend=false,
-    xscale=:log10,yscale=:log10,
-    markerstrokewidth=2,markersize=4)
+        if i%50==0 || i==Nsteps
+            println("Number of time steps $i out of $Nsteps")
+            #     p = Q[1]
+            #     display(scatter(x,y,p,zcolor=p,zlims=(-1,1)))
+        end
+    end
 
-    plot(h,err,markershape=:circle)
-    scale = err[1]/h[1]^(N+1)
-    display(plot!(h,h.^(N+1)*scale,linestyle=:dash))
+    p,u,v = Q
 
-    C = [ones(length(h[end-1:end])) log.(h[end-1:end])] \ log.(err[end-1:end])
-    rate = C[2]
-    println("Computed rate of convergence = $rate")
+    rq,sq,wq = quad_nodes_2D(2*N+2)
+    Vq = vandermonde_2D(N,rq,sq)/V
+    xq,yq = (x->Vq*x).((x,y))
+    wJq = diagm(wq)*(Vq*J)
+
+    perr = Vq*p - pex(xq,yq,T)
+    uerr = Vq*u - uex(xq,yq,T)
+    verr = Vq*v - vex(xq,yq,T)
+    err[kk] = sqrt(sum(wJq.*(perr.^2+uerr.^2+verr.^2)))
+
+end
+
+h = @. 2/Kvec[:]
+
+gr(size=(300,300),legend=false,
+xscale=:log10,yscale=:log10,
+markerstrokewidth=2,markersize=4)
+
+plot(h,err,markershape=:circle)
+scale = err[1]/h[1]^(N+1)
+display(plot!(h,h.^(N+1)*scale,linestyle=:dash))
+
+C = [ones(length(h[end-1:end])) log.(h[end-1:end])] \ log.(err[end-1:end])
+rate = C[2]
+println("Computed rate of convergence = $rate")

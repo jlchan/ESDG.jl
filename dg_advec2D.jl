@@ -107,7 +107,8 @@ function rhs(u,ops,vgeo,fgeo,nodemaps)
 
     uM = Vf*u # interpolate solution to face nodes
     uP = uM[mapP]
-    flux = @. nxJ*(.5*(uP+uM)-uM) - .5*(uP-uM).*abs(nxJ)
+    tau = 1
+    flux = @. nxJ*(.5*(uP+uM)-uM) - .5*tau*(uP-uM).*abs(nxJ)
 
     ur = Dr*u
     us = Ds*u
