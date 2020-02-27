@@ -171,9 +171,9 @@ resQ = [zeros(size(x)) for i in eachindex(Q)]
     end
 
 
-    if i%2==0 || i==Nsteps
+    if i%5==0 || i==Nsteps
         println("Number of time steps $i out of $Nsteps")
         vv = Vp*Q[1]
         scatter(Vp*x,Vp*y,vv,zcolor=vv)
     end
-end every 2
+end every 5
