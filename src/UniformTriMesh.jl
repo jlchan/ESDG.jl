@@ -23,7 +23,7 @@ Matlab uniform triangular mesh.
 """
 
 function uniform_tri_mesh(Kx,Ky)
-        (VY, VX) = meshgrid(LinRange(-1,1,Kx+1),LinRange(-1,1,Ky+1))
+        (VY, VX) = meshgrid(LinRange(-1,1,Ky+1),LinRange(-1,1,Kx+1))
         sk = 1
         EToV = zeros(Int,2*Kx*Ky,3)
         for ey = 1:Ky
