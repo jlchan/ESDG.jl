@@ -9,17 +9,20 @@ using Basis2DTri
 using UniformTriMesh
 
 "Define approximation parameters"
-N   = 2 # The order of approximation
-K1D = 8 # number of elements along each edge of a rectangle
+N   = 3 # The order of approximation
+K1D = 16 # number of elements along each edge of a rectangle
 CFL = 1 # relative size of a time-step
-T   = 1 # final time
+T   = 4 # final time
 
 "Define mesh and compute connectivity
 - (VX,VY) are and EToV is a connectivity matrix
 - connect_mesh computes a vector FToF such that face i is connected to face j=FToF[i]"
-VX,VY,EToV = uniform_tri_mesh(K1D,K1D)
+VX,VY,EToV = uniform_tri_mesh(2*K1D,K1D)
 FToF = connect_mesh(EToV,tri_face_vertices())
 Nfaces,K = size(FToF)
+
+# elongate domain
+VX = @. -1 + 2*(1+VX)
 
 # iids = @. (abs(abs(VX)-1)>1e-10) & (abs(abs(VY)-1)>1e-10)
 # a = .2/K1D
@@ -70,7 +73,7 @@ mapP = reshape(mapP,Nfp*Nfaces,K)
 "Make boundary maps periodic"
 LX,LY = (x->maximum(x)-minimum(x)).((VX,VY)) # find lengths of domain
 mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces*K,mapM,mapP,mapB)
-mapP[mapB] = mapPB
+# mapP[mapB] = mapPB
 
 "Compute geometric factors and surface normals"
 rxJ, sxJ, ryJ, syJ, J = geometric_factors(x, y, Dr, Ds)
@@ -87,14 +90,12 @@ sJ = @. sqrt(nxJ^2 + nyJ^2)
 "=========== Done defining geometry and mesh ============="
 
 "Define the initial conditions by interpolation"
-#pex = (x,y,t)->@. cos(pi/2*x)*cos(pi/2*y)*cos(sqrt(2)/2*pi*t)
-k = 1
-pex = (x,y,t)->@. sin(k*pi*x)*sin(k*pi*y)*cos(sqrt(2)*k*pi*t)
-
-p = pex(x,y,0)
-# p = @. exp(-250*(x^2+y^2))
+p = @. 0*x
 u = @. 0*x
 v = @. 0*x
+
+xB,yB = (x->x[mapB]).((xf,yf))
+p_bc(time) = @. exp(-25*((xB+1)^2 + yB^2))*cos(4*pi*time)
 
 "Time integration coefficients"
 rk4a,rk4b,rk4c = rk45_coeffs()
@@ -111,16 +112,23 @@ mapP = reshape(mapP,Nfp*Nfaces,K)
 nodemaps = (mapP,mapB)
 
 "Define function to evaluate the RHS: Q = (p,u,v)"
-function rhs(Q,ops,vgeo,fgeo,nodemaps)
+function rhs(Q,ops,vgeo,fgeo,nodemaps,params...)
     # unpack arguments
     Dr,Ds,LIFT,Vf = ops
     rxJ,sxJ,ryJ,syJ,J = vgeo
     nxJ,nyJ,sJ = fgeo
     (mapP,mapB) = nodemaps
 
+    p_bc = params[1]
+
     Qf = (x->Vf*x).(Q)
     QP = (x->x[mapP]).(Qf)
     dp,du,dv = QP.-Qf
+
+    # apply non-zero BCs
+    pB = Qf[1][mapB]
+    dp[mapB] = 2*(p_bc - pB)
+
     tau = .5
     dun = @. (du*nxJ + dv*nyJ)/sJ
     pflux = @. .5*(du*nxJ + dv*nyJ) - tau*dp*sJ
@@ -142,35 +150,30 @@ function rhs(Q,ops,vgeo,fgeo,nodemaps)
     return (x->-x./J).((rhsp,rhsu,rhsv))
 end
 
+"plotting nodes"
+rp, sp = equi_nodes_2D(15)
+Vp = vandermonde_2D(N,rp,sp)/V
+vv = Vp*p
+gr(aspect_ratio = 1, legend=false,
+    markerstrokewidth=0,markersize=2,
+    camera=(0,90),zlims=(-1,1),clims=(-1,1),
+    axis=nothing,border=:none)
+
 "Perform time-stepping"
 Q = [p,u,v]
 resQ = [zeros(size(x)) for i in eachindex(Q)]
-for i = 1:Nsteps
+@gif for i = 1:Nsteps
     for INTRK = 1:5
-        rhsQ = rhs(Q,ops,vgeo,fgeo,nodemaps)
+        time = i*dt + rk4c[INTRK]*dt
+        rhsQ = rhs(Q,ops,vgeo,fgeo,nodemaps,p_bc(time))
         @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
         @. Q    = Q + rk4b[INTRK]*resQ
     end
 
-    if i%10==0 || i==Nsteps
+
+    if i%2==0 || i==Nsteps
         println("Number of time steps $i out of $Nsteps")
-    #     p = Q[1]
-    #     display(scatter(x,y,p,zcolor=p,zlims=(-1,1)))
+        vv = Vp*Q[1]
+        scatter(Vp*x,Vp*y,vv,zcolor=vv)
     end
-end
-
-p,u,v = Q
-
-rq,sq,wq = quad_nodes_2D(2*N+2)
-Vq = vandermonde_2D(N,rq,sq)/V
-xq,yq = (x->Vq*x).((x,y))
-wJq = diagm(wq)*(Vq*J)
-
-@show sum(wJq.*(Vq*p - pex(xq,yq,T)).^2)
-
-"plotting nodes"
-gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2)
-rp, sp = equi_nodes_2D(10)
-Vp = vandermonde_2D(N,rp,sp)/V
-vv = Vp*p
-display(scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90),zlims=(-1,1)))
+end every 2
