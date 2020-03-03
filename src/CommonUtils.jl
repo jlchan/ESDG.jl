@@ -16,6 +16,8 @@ export rk45_coeffs
 
 export unzip # convert array of tuples to tuples of arrays
 unzip(a) = map(x->getfield.(a, x), fieldnames(eltype(a)))
+export eye
+eye(n) = diagm(ones(n))
 
 function rk45_coeffs()
     "Time integration"
