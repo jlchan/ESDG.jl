@@ -11,7 +11,7 @@ using UniformTriMesh
 "Define approximation parameters"
 N   = 4 # The order of approximation
 K1D = 16 # number of elements along each edge of a rectangle
-CFL = .75 # relative size of a time-step
+CFL = .1 # relative size of a time-step
 T   = .5 # final time
 
 "Define mesh and compute connectivity
@@ -86,7 +86,7 @@ sJ = @. sqrt(nxJ^2 + nyJ^2)
 "=========== Done defining geometry and mesh ============="
 
 "Define the initial conditions by interpolation"
-p = @. exp(-500*(x^2+y^2))
+p = @. exp(-700*(x^2+y^2))
 pprev = copy(p) # 1st order accurate approximation to dp/dt = 0
 
 "Time integration coefficients"
@@ -102,7 +102,7 @@ fgeo = (nxJ,nyJ,sJ)
 mapP = reshape(mapP,Nfp*Nfaces,K)
 nodemaps = (mapP,mapB)
 
-"Define function to evaluate the RHS: Q = (p,u,v)"
+"Define function to evaluate the RHS"
 function rhs_2ndorder(p,ops,vgeo,fgeo,nodemaps)
     # unpack arguments
     Dr,Ds,LIFT,Vf = ops
@@ -111,8 +111,8 @@ function rhs_2ndorder(p,ops,vgeo,fgeo,nodemaps)
     (mapP,mapB) = nodemaps
 
     # construct sigma
-    pf = Vf*p
-    dp = pf[mapP]-pf
+    pf = Vf*p # eval pressure at face points
+    dp = pf[mapP]-pf # compute jumps of pressure
     pr = Dr*p
     ps = Ds*p
     dpdx = @. rxJ*pr + sxJ*ps
@@ -131,7 +131,7 @@ function rhs_2ndorder(p,ops,vgeo,fgeo,nodemaps)
     dσxdx = @. rxJ*σxr + sxJ*σxs
     dσydy = @. ryJ*σyr + syJ*σys
 
-    tau = .5
+    tau = 0
     rhsp = dσxdx + dσydy + LIFT*(pflux + tau*dp)
 
     return rhsp./J
@@ -145,12 +145,6 @@ gr(aspect_ratio=1, legend=false,
 markerstrokewidth=0,markersize=2,
 camera=(0,90),#zlims=(-1,1),clims=(-1,1),
 axis=nothing,border=:none)
-
-#testing
-# rhsQ = rhs(p,ops,vgeo,fgeo,nodemaps)
-# pnew = 2*p - pprev + dt^2 * rhsQ
-# @. pprev = p
-# @. p = pnew
 
 # Perform time-stepping
 for i = 2:Nsteps
@@ -168,4 +162,4 @@ for i = 2:Nsteps
 end
 
 vv = Vp*p
-scatter(Vp*x,Vp*y,vv,zcolor=vv)
+scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(45,45))

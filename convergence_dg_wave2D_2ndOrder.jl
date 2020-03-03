@@ -9,7 +9,7 @@ using Basis2DTri
 using UniformTriMesh
 
 "Define approximation parameters"
-N   = 1 # The order of approximation
+N   = 2 # The order of approximation
 Kvec = [4 8 16 32]
 err = zeros(length(Kvec))
 for kk = 1:length(Kvec)
@@ -23,11 +23,6 @@ for kk = 1:length(Kvec)
     VX,VY,EToV = uniform_tri_mesh(K1D,K1D)
     FToF = connect_mesh(EToV,tri_face_vertices())
     Nfaces,K = size(FToF)
-
-    # iids = @. (abs(abs(VX)-1)>1e-10) & (abs(abs(VY)-1)>1e-10)
-    # a = .2/K1D
-    # VX[iids] = @. VX[iids] + a*randn()
-    # VY[iids] = @. VY[iids] + a*randn()
 
     "Construct matrices on reference elements
     - r,s are vectors of interpolation nodes
@@ -136,17 +131,11 @@ for kk = 1:length(Kvec)
         dσxdx = @. rxJ*σxr + sxJ*σxs
         dσydy = @. ryJ*σyr + syJ*σys
 
-        tau = 1
+        tau = .5
         rhsp = dσxdx + dσydy + LIFT*(pflux + tau*dp)
 
         return rhsp./J
     end
-
-    #testing
-    # rhsQ = rhs(p,ops,vgeo,fgeo,nodemaps)
-    # pnew = 2*p - pprev + dt^2 * rhsQ
-    # @. pprev = p
-    # @. p = pnew
 
     # Perform time-stepping
     for i = 2:Nsteps
@@ -178,7 +167,7 @@ gr(size=(300,300),legend=false,
 xscale=:log10,yscale=:log10,
 markerstrokewidth=2,markersize=4)
 
-plot(h,err,markershape=:circle)
+plot!(h,err,markershape=:circle)
 scale = err[1]/h[1]^(N+1)
 display(plot!(h,h.^(N+1)*scale,linestyle=:dash))
 
