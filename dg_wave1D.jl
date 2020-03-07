@@ -10,7 +10,6 @@ N   = 3 # The order of approximation
 K   = 16
 T   = 1 # endtime
 CFL = 1
-const tau = 1 # upwind penalty parameter
 
 "Mesh related variables"
 VX = LinRange(-1,1,K+1)
@@ -80,6 +79,7 @@ function rhs(p,u,ops,vgeo,fgeo,mapP)
 
     px = rxJ*(Dr*p)
     ux = rxJ*(Dr*u)
+    tau = 1 # upwind penalty parameter
     rhsp = ux + .5*LIFT*(@. du*nxJ - tau*dp)
     rhsu = px + .5*LIFT*(@. dp*nxJ - tau*du)
 
@@ -114,6 +114,6 @@ Vq = vandermonde_1D(N,rq)/V
 xq = Vq*x
 wJq = diagm(wq)*(Vq*J)
 err = sqrt(sum(wJq.*(Vq*p - (@. sin(pi*xq)*cos(pi*T))).^2))
-@show err
+@show err, err^2
 # scatter(x,u,ylims=ulims)
 # plot!(Vp*x,u0(Vp*x),ylims=ulims)
