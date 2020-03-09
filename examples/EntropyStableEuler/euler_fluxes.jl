@@ -34,7 +34,8 @@ function euler_fluxes(UL,UR,logL,logR)
 end
 
 "2d version"
-function euler_fluxes(rhoL,uL,vL,betaL,rhoR,uR,vR,betaR,rhologL,betalogL,rhologR,betalogR)
+function euler_fluxes(rhoL,uL,vL,betaL,rhoR,uR,vR,betaR,
+                      rhologL,betalogL,rhologR,betalogR)
 
     rholog = logmean.(rhoL,rhoR,rhologL,rhologR)
     betalog = logmean.(betaL,betaR,betalogL,betalogR)
@@ -61,7 +62,8 @@ function euler_fluxes(rhoL,uL,vL,betaL,rhoR,uR,vR,betaR,rhologL,betalogL,rhologR
 end
 
 "3d version"
-function euler_fluxes(rhoL,uL,vL,wL,betaL,rhoR,uR,vR,wR,betaR,rhologL,betalogL,rhologR,betalogR)
+function euler_fluxes(rhoL,uL,vL,wL,betaL,rhoR,uR,vR,wR,betaR,
+                      rhologL,betalogL,rhologR,betalogR)
 
     rholog = logmean.(rhoL,rhoR,rhologL,rhologR)
     betalog = logmean.(betaL,betaR,betalogL,betalogR)
