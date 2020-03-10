@@ -56,7 +56,7 @@ dt = CFL * 2 / (CN*K1D)
 Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
-"pack arguments into tuples"
+"pack arguments into tuples - will "
 ops = (Dr,LIFT,Vf)
 vgeo = (rxJ,J)
 fgeo = (nxJ)

@@ -16,6 +16,9 @@ using UniformHexMesh
 
 N = 3
 K1D = 8
+CFL = .75;
+T = .5 # endtime
+
 VX,VY,VZ,EToV = uniform_hex_mesh(K1D,K1D,K1D)
 FToF = connect_mesh(EToV,hex_face_vertices())
 Nfaces, K = size(FToF)
@@ -97,11 +100,9 @@ rk4c = [ 0.0  ...
 1.0];
 
 CN = (N+1)*(N+2)*3/2  # estimated trace constant
-CFL = .75;
 dt = CFL * 2 / (CN*K1D)
-T = .5 # endtime
 Nsteps = convert(Int,ceil(T/dt))
-
+dt = T/Nsteps
 
 "sparsify"
 Dr = droptol!(sparse(Dr),1e-10)

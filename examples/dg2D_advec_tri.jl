@@ -12,7 +12,7 @@ using UniformTriMesh
 N   = 3 # The order of approximation
 K1D = 16
 CFL = .5
-T   = 0.25 # endtime
+T   = 2.0 # endtime
 
 "Mesh related variables"
 VX,VY,EToV = uniform_tri_mesh(K1D,K1D)
@@ -68,7 +68,6 @@ u = @. exp(-25*(x^2+y^2))
 
 "Time integration"
 rk4a,rk4b,rk4c = rk45_coeffs()
-
 CN = (N+1)*(N+2)/2  # estimated trace constant
 dt = CFL * 2 / (CN*K1D)
 Nsteps = convert(Int,ceil(T/dt))
@@ -78,7 +77,6 @@ dt = T/Nsteps
 ops = (Dr,Ds,LIFT,Vf)
 vgeo = (rxJ,sxJ,ryJ,syJ,J)
 fgeo = (nxJ,nyJ,sJ)
-mapP = reshape(mapP,Nfp*Nfaces,K)
 nodemaps = (mapP,mapB)
 
 function rhs(u,ops,vgeo,fgeo,nodemaps)
@@ -101,7 +99,6 @@ function rhs(u,ops,vgeo,fgeo,nodemaps)
 end
 
 resu = zeros(size(x))
-
 for i = 1:Nsteps
     global u, resu # for scoping - these variables are updated
 
@@ -117,11 +114,11 @@ for i = 1:Nsteps
 end
 
 "plotting nodes"
+
+gr(aspect_ratio=1,legend=false,
+   markerstrokewidth=0,markersize=2)
+
 rp, sp = equi_nodes_2D(10)
 Vp = vandermonde_2D(N,rp,sp)/V
-
-# pyplot(size=(500,500),legend=false,markerstrokewidth=0)
-gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2)
-
 vv = Vp*u
 scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90))

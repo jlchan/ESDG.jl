@@ -1,15 +1,18 @@
 using Revise # reduce recompilation time
 using Plots
-using Documenter
+# using Documenter
 using LinearAlgebra
 using SparseArrays
 using BenchmarkTools
+using UnPack
 
 push!(LOAD_PATH, "./src")
 using CommonUtils
 using Basis1D
 using Basis2DQuad
 using UniformQuadMesh
+
+using SetupDG
 
 push!(LOAD_PATH, "./examples/EntropyStableEuler")
 using EntropyStableEuler
@@ -27,33 +30,21 @@ Ky = K1D
 @. VX = 15*(1+VX)/2
 @. VY = 5*VY
 
-FToF = connect_mesh(EToV,quad_face_vertices())
-Nfaces, K = size(FToF)
+# initialize ref element and mesh
+# specify lobatto nodes to automatically get DG-SEM mass lumping
+rd = init_reference_quad(N,gauss_quad(0,0,N))
+md = init_mesh_2D((VX,VY),EToV,rd)
 
-"Set up reference element nodes and operators"
-r, s = nodes_2D(N)
-V = vandermonde_2D(N, r, s)
-Dr, Ds = (A->A/V).(grad_vandermonde_2D(N, r, s))
+# Make domain periodic
+@unpack Nfaces,Vf = rd
+@unpack xf,yf,K,mapM,mapP,mapB = md
+LX,LY = (x->maximum(x)-minimum(x)).((VX,VY)) # find lengths of domain
+mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces*K,mapM,mapP,mapB)
+mapP[mapB] = mapPB
+@pack! md = mapP
 
-"Quadrature operators"
-rq,sq,wq = quad_nodes_2D(N)
-Vq = vandermonde_2D(N,rq,sq)/V
-M = transpose(Vq)*diagm(wq)*Vq
-Pq = M\(transpose(Vq)*diagm(wq))
-
-"Reference face nodes and normals"
-r1D,w1D = gauss_quad(0,0,N)
-e = ones(size(r1D))
-rf = [r1D; e; -r1D; -e]
-sf = [-e; r1D; e; -r1D]
-wf = vec(repeat(w1D,Nfaces,1));
-z = zeros(size(r1D))
-nrJ = [z; e; z; -e]
-nsJ = [-e; z; e; z]
-Vf = vandermonde_2D(N,rf,sf)/V
-Lf = M\(transpose(Vf)*diagm(wf)) # lift matrix
-
-"Make hybridized SBP operators"
+#Make hybridized SBP operators
+@unpack M,Dr,Ds,Vq,Pq,Vf,wf,nrJ,nsJ = rd
 Qr = Pq'*M*Dr*Pq
 Qs = Pq'*M*Ds*Pq
 Ef = Vf*Pq
@@ -64,11 +55,7 @@ Qrh = .5*[Qr-Qr' Ef'*Br;
 Qsh = .5*[Qs-Qs' Ef'*Bs;
 -Bs*Ef Bs]
 
-"operators to and from hybridized quad points"
-Vh = [Vq; Vf]
-Ph = 2*(M\transpose(Vh))
-
-"sparse skew symmetric versions of the operators"
+# make sparse skew symmetric versions of the operators"
 Qrhskew = .5*(Qrh-transpose(Qrh))
 Qshskew = .5*(Qsh-transpose(Qsh))
 Qrh_sparse = droptol!(sparse(Qrhskew),1e-12)
@@ -77,45 +64,29 @@ Qsh_sparse = droptol!(sparse(Qshskew),1e-12)
 # precompute union of sparse ids for Qr, Qs
 Qrsids = [unique([Qrh_sparse[i,:].nzind; Qsh_sparse[i,:].nzind]) for i = 1:size(Qrhskew,1)]
 
-"Map physical nodes"
-r1,s1 = nodes_2D(1)
-V1 = vandermonde_2D(1,r,s)/vandermonde_2D(1,r1,s1)
-x,y = (x->V1*x[transpose(EToV)]).((VX,VY))
-
-"Face nodes and connectivity maps"
-xf,yf = (x->Vf*x).((x,y))
-mapM, mapP, mapB = build_node_maps((xf,yf), FToF)
-mapM = reshape(mapM,length(rf),K)
-mapP = reshape(mapP,length(rf),K)
-
-"Make node maps periodic"
+# Make node maps periodic
+@unpack Nfaces = rd
+@unpack x,y,xf,yf,K,mapM,mapP,mapP = md
 LX,LY = (x->maximum(x)-minimum(x)).((VX,VY))
 mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces*K,mapM,mapP,mapB)
 mapP[mapB] = mapPB
 
-"Geometric factors and surface normals"
-vgeo = geometric_factors(x, y, Dr, Ds)
-rxJ, sxJ, ryJ, syJ, J = vgeo
-nxJ = (Vf*rxJ).*nrJ + (Vf*sxJ).*nsJ
-nyJ = (Vf*ryJ).*nrJ + (Vf*syJ).*nsJ
-sJ = @. sqrt(nxJ^2 + nyJ^2)
-
-"initial conditions"
+# define initial conditions by interpolation
 rho,u,v,p = vortex(x,y,0)
 Q = primitive_to_conservative(rho,u,v,p)
 
-"convert to Gauss node basis"
-Vh = droptol!(sparse([diagm(ones(length(rq))); Ef]),1e-12)
+# convert operators to a quadrature-node basis
+@unpack wq = rd
+Vh = droptol!(sparse([eye(length(wq)); Ef]),1e-12)
 Ph = droptol!(sparse(2*diagm(@. 1/wq)*transpose(Vh)),1e-12)
 Lf = droptol!(sparse(diagm(@. 1/wq)*(transpose(Ef)*diagm(wf))),1e-12)
 Q = (x->Vq*x).(Q)
 
-"Pack arguments into tuples"
+# Pack arguments into tuples
 ops = (Qrhskew,Qshskew,Qrh_sparse,Qsh_sparse,Qrsids,Ph,Lf)
-vgeo = (x->Vh*x).(vgeo) # interp to hybridized points
+@unpack rxJ, sxJ, ryJ, syJ, J, nxJ, nyJ, sJ = md
+vgeo = (x->Vh*x).((rxJ, sxJ, ryJ, syJ, J)) # interp to hybridized points
 fgeo = (nxJ,nyJ,sJ)
-Nfp = length(r1D)
-mapP = reshape(mapP,Nfp*Nfaces,K)
 nodemaps = (mapP,mapB)
 
 "Time integration"
@@ -124,6 +95,7 @@ CN = (N+1)*(N+2)/2  # estimated trace constant for CFL
 h  = 2/K1D
 dt = CFL * h / CN
 Nsteps = convert(Int,ceil(T/dt))
+dt = T/Nsteps
 
 "dense version - speed up by prealloc + transpose for col major "
 function dense_hadamard_sum(Qhe,ops,vgeo,flux_fun)
@@ -248,41 +220,33 @@ function rhs(Qh,UM,ops,vgeo,fgeo,nodemaps,flux_fun)
     return (x -> -x./J).(rhsQ) # scale by Jacobian
 end
 
-function rk_step!(Q,resQ,rka,rkb,compute_rhstest=false)
-
-    VU = v_ufun(Q...)
-    Uf = u_vfun((x->Ef*x).(VU)...)
-    (rho,rhou,rhov,E) = vcat.(Q,Uf)
-
-    # convert to rho,u,v,beta vars
-    beta = betafun(rho,rhou,rhov,E)
-    Qh = (rho,rhou./rho,rhov./rho,beta) # redefine Q = (rho,u,v,β)
-
-    rhsQ = rhs(Qh,Uf,ops,vgeo,fgeo,nodemaps,euler_fluxes)
-
-    rhstest = 0
-    if compute_rhstest
-        for fld in eachindex(rhsQ)
-            rhstest += sum(wJq.*VU[fld].*rhsQ[fld])
-        end
-    end
-
-    @. resQ = rka*resQ + dt*rhsQ
-    @. Q += rkb*resQ
-
-    return rhstest
-end
-
-wJq = diagm(wq)*J
+@unpack wJq = md
 Q = collect(Q) # make Q,resQ arrays of arrays for mutability
 resQ = [zeros(size(x)) for i in eachindex(Q)]
-
 for i = 1:Nsteps
 
     rhstest = 0
     for INTRK = 1:5
         compute_rhstest = INTRK==5
-        rhstest = rk_step!(Q,resQ,rk4a[INTRK],rk4b[INTRK],compute_rhstest)
+
+        VU = v_ufun(Q...)
+        Uf = u_vfun((x->Ef*x).(VU)...)
+        (rho,rhou,rhov,E) = vcat.(Q,Uf) # assume volume nodes are collocated
+
+        # convert to rho,u,v,beta vars
+        beta = betafun(rho,rhou,rhov,E)
+        Qh = (rho,rhou./rho,rhov./rho,beta) # redefine Q = (rho,u,v,β)
+
+        rhsQ = rhs(Qh,Uf,ops,vgeo,fgeo,nodemaps,euler_fluxes)
+
+        if compute_rhstest
+            for fld in eachindex(rhsQ)
+                rhstest += sum(wJq.*VU[fld].*rhsQ[fld])
+            end
+        end
+
+        @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
+        @. Q += rk4b[INTRK]*resQ
     end
 
     if i%10==0 || i==Nsteps
@@ -294,8 +258,10 @@ end
 Q = (x->Pq*x).(Q)
 
 "higher degree quadrature for error evaluation"
+
+@unpack VDM = rd
 rq2,sq2,wq2 = quad_nodes_2D(N+2)
-Vq2 = vandermonde_2D(N,rq2,sq2)/V
+Vq2 = vandermonde_2D(N,rq2,sq2)/VDM
 wJq2 = diagm(wq2)*(Vq2*J)
 xq2,yq2 = (x->Vq2*x).((x,y))
 
@@ -309,12 +275,12 @@ end
 L2err = sqrt(L2err)
 println("L2err at final time T = $T is $L2err\n")
 
-"plotting nodes"
-rp, sp = equi_nodes_2D(15)
-Vp = vandermonde_2D(N,rp,sp)/V
+#plotting nodes
+@unpack Vp = rd
 
 # pyplot(size=(200,200),legend=false,markerstrokewidth=0,markersize=2)
-gr(size=(300,300),legend=false,markerstrokewidth=0,markersize=2,aspect_ratio=:equal)
+gr(aspect_ratio=:equal,legend=false,
+   markerstrokewidth=0,markersize=2)
 
 vv = Vp*Q[1]
 scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90))

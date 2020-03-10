@@ -155,6 +155,7 @@ rk4a,rk4b,rk4c = rk45_coeffs()
 CN = (N+1)*(N+2)*3/2  # estimated trace constant
 dt = CFL * 2 / (CN*K1D)
 Nsteps = convert(Int,ceil(T/dt))
+dt = T/Nsteps
 
 "sparse version - precompute sparse row ids for speed"
 function sparse_hadamard_sum(Qhe,ops,vgeo,flux_fun)
