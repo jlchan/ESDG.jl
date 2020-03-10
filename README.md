@@ -20,6 +20,8 @@ The discretizations used are based on the following references:
 - [Skew-Symmetric Entropy Stable Modal DG Formulations](https://doi.org/10.1007/s10915-019-01026-w)
 - [Efficient Entropy Stable Gauss Collocation Methods](https://doi.org/10.1137/18M1209234)
 
+Special thanks to [Yimin Lin](mailto:yiminlin@rice.edu) for providing initial routines which produced this codebase.
+
 <!-- - [On discretely entropy stable weight-adjusted DG methods: curvilinear meshes](https://doi.org/10.1016/j.jcp.2018.11.010)-->
 <!-- using Pkg
 Pkg.add("Revise")
