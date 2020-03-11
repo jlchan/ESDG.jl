@@ -20,8 +20,8 @@ using EntropyStableEuler
 using SetupDG
 
 N = 2
-K1D = 4
-T = 0/3 # endtime
+K1D = 8
+T = 2/3 # endtime
 CFL = .75
 
 VX,VY,VZ,EToV = uniform_hex_mesh(K1D,K1D,K1D)
@@ -72,6 +72,11 @@ x = x + a.*dx
 y = y + a.*dx
 z = z + a.*dx
 
+# recompute phys nodes, geofacs, etc
+@unpack xq,yq,zq = md
+xq,yq,zq = (x->Vq*x).((x,y,z))
+@pack! md = xq,yq,zq
+
 vgeo = geometric_factors(x,y,z,Dr,Ds,Dt)
 rxJ,sxJ,txJ,ryJ,syJ,tyJ,rzJ,szJ,tzJ,J = vgeo
 nxJ = nrJ.*(Vf*rxJ) + nsJ.*(Vf*sxJ) + ntJ.*(Vf*txJ)
@@ -96,7 +101,6 @@ wJq = diagm(wq)*J # recompute for curved
 
 # initial conditions
 rhoex(x,y,z,t) = @. 2 + .5*sin(pi*(x-t))
-@unpack xq,yq,zq = md
 rho = rhoex(xq,yq,zq,0)
 u = ones(size(x))
 v = zeros(size(x))
@@ -123,7 +127,7 @@ function sparse_hadamard_sum(Qhe,ops,vgeo,flux_fun)
     Qlog = (log.(rho), log.(beta))
 
     rhsQe = ntuple(x->zeros(nrows),nfields)
-    rhsi = zeros(nfields) # prealloc a small array
+    rhsi = zeros(nfields) # prealloc a small array for accumulation
     for i = 1:nrows
         Qi = (x->x[i]).(Qhe)
         Qlogi = (x->x[i]).(Qlog)
@@ -238,7 +242,7 @@ end
 rq2,sq2,tq2,wq2 = quad_nodes_3D(N+2)
 Vq2 = vandermonde_3D(N,rq2,sq2,tq2)/VDM
 (xq2,yq2,zq2) = (x->Vq2*x).((x,y,z))
-wJq2 = abs.(diagm(wq2)*(Vq2*Pq*J)) # recall J = converted to quad nodes
+wJq2 = abs.(diagm(wq2)*(Vq2*Pq*J)) # recall J = converted to quad node basis
 L2err = sqrt(sum(wJq2.*(Vq2*rho - rhoex(xq2,yq2,zq2,T)).^2))
 # L2err = sqrt(sum(wJq.*(Vq*rho - rhoex(xq,yq,zq,T)).^2))
 @show L2err
