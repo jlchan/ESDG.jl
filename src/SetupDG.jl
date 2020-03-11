@@ -1,7 +1,7 @@
 """
-    Module Setup2DTri
+    Module Setup2D
 
-Module to aid in setting up 2D meshes, reference operators, geofacs, etc
+Module to aid in setting up reference operators, meshes, geometric terms
 
 """
 
@@ -12,7 +12,7 @@ using LinearAlgebra # for diagm
 using SparseArrays # for sparse, droptol
 using UnPack # for easy setting/getting in mutable structs
 
-# DG-specific modules
+# matlab-like modules
 using CommonUtils # for I matrix in geometricFactors
 using Basis1D
 
@@ -194,6 +194,7 @@ function init_reference_quad(N,quad_nodes_1D = gauss_quad(0,0,N))
     return rd
 end
 
+# dispatch to 2D or 3D version if tuple called
 function init_mesh(VXYZ,EToV,rd::RefElemData)
     return init_mesh(VXYZ...,EToV,rd)
 end
@@ -242,55 +243,11 @@ function init_mesh(VX,VY,EToV,rd::RefElemData)
 
     return md
 end
-function init_mesh(VX,VY,VZ,EToV,rd::RefElemData)
-
-    # initialize a new mesh data struct
-    md = MeshData()
-
-    @unpack fv = rd
-    FToF = connect_mesh(EToV,fv)
-    Nfaces,K = size(FToF)
-    @pack! md = FToF,K,VX,VY,VZ,EToV
-
-    #Construct global coordinates
-    @unpack V1 = rd
-    x = V1*VX[transpose(EToV)]
-    y = V1*VY[transpose(EToV)]
-    z = V1*VZ[transpose(EToV)]
-    @pack! md = x,y,z
-
-    #Compute connectivity maps: uP = exterior value used in DG numerical fluxes
-    @unpack r,s,t,Vf = rd
-    xf,yf,zf = (x->Vf*x).((x,y,z))
-    mapM,mapP,mapB = build_node_maps((xf,yf,zf),FToF)
-    Nfp = convert(Int,size(Vf,1)/Nfaces)
-    mapM = reshape(mapM,Nfp*Nfaces,K)
-    mapP = reshape(mapP,Nfp*Nfaces,K)
-    @pack! md = xf,yf,zf,mapM,mapP,mapB
-
-    #Compute geometric factors and surface normals
-    @unpack Dr,Ds,Dt = rd
-    rxJ,sxJ,txJ,ryJ,syJ,tyJ,rzJ,szJ,tzJ,J = geometric_factors(x,y,z,Dr,Ds,Dt)
-    @pack! md = rxJ,sxJ,txJ,ryJ,syJ,tyJ,rzJ,szJ,tzJ,J
-
-    @unpack Vq,wq = rd
-    xq,yq,zq = (x->Vq*x).((x,y,z))
-    wJq = diagm(wq)*(Vq*J)
-    @pack! md = xq,yq,zq,wJq
-
-    #physical normals are computed via G*nhatJ, G = matrix of geometric terms
-    @unpack nrJ,nsJ,ntJ = rd
-    nxJ = nrJ.*(Vf*rxJ) + nsJ.*(Vf*sxJ) + ntJ.*(Vf*txJ)
-    nyJ = nrJ.*(Vf*ryJ) + nsJ.*(Vf*syJ) + ntJ.*(Vf*tyJ)
-    nzJ = nrJ.*(Vf*rzJ) + nsJ.*(Vf*szJ) + ntJ.*(Vf*tzJ)
-    sJ = @. sqrt(nxJ.^2 + nyJ.^2 + nzJ.^2)
-    @pack! md = nxJ,nyJ,nzJ,sJ
-
-    return md
-end
 
 
-function init_reference_hex(N,quad_nodes_1D = gauss_quad(0,0,N))
+"========== 3D routines ============="
+
+function init_reference_hex(N,quad_nodes_1D=gauss_quad(0,0,N))
 
     # initialize a new reference element data struct
     rd = RefElemData()
@@ -354,6 +311,53 @@ function init_reference_hex(N,quad_nodes_1D = gauss_quad(0,0,N))
     @pack! rd = rp,sp,tp,Vp
 
     return rd
+end
+
+function init_mesh(VX,VY,VZ,EToV,rd::RefElemData)
+
+    # initialize a new mesh data struct
+    md = MeshData()
+
+    @unpack fv = rd
+    FToF = connect_mesh(EToV,fv)
+    Nfaces,K = size(FToF)
+    @pack! md = FToF,K,VX,VY,VZ,EToV
+
+    #Construct global coordinates
+    @unpack V1 = rd
+    x = V1*VX[transpose(EToV)]
+    y = V1*VY[transpose(EToV)]
+    z = V1*VZ[transpose(EToV)]
+    @pack! md = x,y,z
+
+    #Compute connectivity maps: uP = exterior value used in DG numerical fluxes
+    @unpack r,s,t,Vf = rd
+    xf,yf,zf = (x->Vf*x).((x,y,z))
+    mapM,mapP,mapB = build_node_maps((xf,yf,zf),FToF)
+    Nfp = convert(Int,size(Vf,1)/Nfaces)
+    mapM = reshape(mapM,Nfp*Nfaces,K)
+    mapP = reshape(mapP,Nfp*Nfaces,K)
+    @pack! md = xf,yf,zf,mapM,mapP,mapB
+
+    #Compute geometric factors and surface normals
+    @unpack Dr,Ds,Dt = rd
+    rxJ,sxJ,txJ,ryJ,syJ,tyJ,rzJ,szJ,tzJ,J = geometric_factors(x,y,z,Dr,Ds,Dt)
+    @pack! md = rxJ,sxJ,txJ,ryJ,syJ,tyJ,rzJ,szJ,tzJ,J
+
+    @unpack Vq,wq = rd
+    xq,yq,zq = (x->Vq*x).((x,y,z))
+    wJq = diagm(wq)*(Vq*J)
+    @pack! md = xq,yq,zq,wJq
+
+    #physical normals are computed via G*nhatJ, G = matrix of geometric terms
+    @unpack nrJ,nsJ,ntJ = rd
+    nxJ = nrJ.*(Vf*rxJ) + nsJ.*(Vf*sxJ) + ntJ.*(Vf*txJ)
+    nyJ = nrJ.*(Vf*ryJ) + nsJ.*(Vf*syJ) + ntJ.*(Vf*tyJ)
+    nzJ = nrJ.*(Vf*rzJ) + nsJ.*(Vf*szJ) + ntJ.*(Vf*tzJ)
+    sJ = @. sqrt(nxJ.^2 + nyJ.^2 + nzJ.^2)
+    @pack! md = nxJ,nyJ,nzJ,sJ
+
+    return md
 end
 
 
