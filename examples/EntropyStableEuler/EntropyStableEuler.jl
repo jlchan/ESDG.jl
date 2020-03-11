@@ -12,8 +12,6 @@ export u_vfun, v_ufun, betafun
 export euler_fluxes, wavespeed
 export vortex, primitive_to_conservative
 
-using SpecialFunctions
-
 include("./logmean.jl")
 include("./euler_fluxes.jl")
 include("./euler_variables.jl")
