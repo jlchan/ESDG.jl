@@ -24,7 +24,7 @@ T = .5 # endtime
 
 VX,VY,VZ,EToV = uniform_hex_mesh(K1D,K1D,K1D)
 
-rd = init_reference_hex(N)
+rd = init_reference_hex(N,gauss_lobatto_quad(0,0,N))
 md = init_mesh((VX,VY,VZ),EToV,rd)
 
 # make domain periodic
