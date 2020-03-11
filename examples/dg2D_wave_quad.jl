@@ -26,7 +26,7 @@ T   = .75
 rd = init_reference_quad(N,gauss_lobatto_quad(0,0,N))
 
 VX, VY, EToV = uniform_quad_mesh(K1D, K1D)
-md = init_mesh_2D((VX,VY),EToV,rd)
+md = init_mesh((VX,VY),EToV,rd)
 
 # Make domain periodic
 @unpack Nfaces,Vf = rd
@@ -38,7 +38,7 @@ mapP[mapB] = mapPB
 
 " ====== set up initial conditions ====== "
 
-"initial conditions"
+@unpack x,y = md
 p = @. exp(-100*(x^2+(y-.25)^2))
 u = zeros(size(x))
 v = zeros(size(x))

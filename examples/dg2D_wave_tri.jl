@@ -25,7 +25,7 @@ VX,VY,EToV = uniform_tri_mesh(K1D,K1D)
 rd = init_reference_tri(N)
 
 # initialize physical mesh data
-md = init_mesh_2D((VX,VY),EToV,rd)
+md = init_mesh((VX,VY),EToV,rd)
 
 #Make boundary maps periodic
 @unpack Nfaces,Vf = rd

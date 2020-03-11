@@ -24,8 +24,12 @@ import UniformTriMesh # for face vertices
 import Basis2DQuad
 import UniformQuadMesh # for face vertices
 
-export init_reference_tri, init_reference_quad
-export init_mesh_2D
+# hex routines
+import Basis3DHex
+import UniformHexMesh # for face vertices
+
+export init_reference_tri, init_reference_quad, init_reference_hex
+export init_mesh
 export MeshData, RefElemData
 
 mutable struct MeshData
@@ -190,13 +194,16 @@ function init_reference_quad(N,quad_nodes_1D = gauss_quad(0,0,N))
     return rd
 end
 
-function init_mesh_2D(VXYZ,EToV,rd::RefElemData)
+function init_mesh(VXYZ,EToV,rd::RefElemData)
+    return init_mesh(VXYZ...,EToV,rd)
+end
+
+function init_mesh(VX,VY,EToV,rd::RefElemData)
 
     # initialize a new mesh data struct
     md = MeshData()
 
     @unpack fv = rd
-    VX,VY = VXYZ
     FToF = connect_mesh(EToV,fv)
     Nfaces,K = size(FToF)
     @pack! md = FToF,K,VX,VY,EToV
@@ -235,5 +242,122 @@ function init_mesh_2D(VXYZ,EToV,rd::RefElemData)
 
     return md
 end
+function init_mesh(VX,VY,VZ,EToV,rd::RefElemData)
+
+    # initialize a new mesh data struct
+    md = MeshData()
+
+    @unpack fv = rd
+    FToF = connect_mesh(EToV,fv)
+    Nfaces,K = size(FToF)
+    @pack! md = FToF,K,VX,VY,VZ,EToV
+
+    #Construct global coordinates
+    @unpack V1 = rd
+    x = V1*VX[transpose(EToV)]
+    y = V1*VY[transpose(EToV)]
+    z = V1*VZ[transpose(EToV)]
+    @pack! md = x,y,z
+
+    #Compute connectivity maps: uP = exterior value used in DG numerical fluxes
+    @unpack r,s,t,Vf = rd
+    xf,yf,zf = (x->Vf*x).((x,y,z))
+    mapM,mapP,mapB = build_node_maps((xf,yf,zf),FToF)
+    Nfp = convert(Int,size(Vf,1)/Nfaces)
+    mapM = reshape(mapM,Nfp*Nfaces,K)
+    mapP = reshape(mapP,Nfp*Nfaces,K)
+    @pack! md = xf,yf,zf,mapM,mapP,mapB
+
+    #Compute geometric factors and surface normals
+    @unpack Dr,Ds,Dt = rd
+    rxJ,sxJ,txJ,ryJ,syJ,tyJ,rzJ,szJ,tzJ,J = geometric_factors(x,y,z,Dr,Ds,Dt)
+    @pack! md = rxJ,sxJ,txJ,ryJ,syJ,tyJ,rzJ,szJ,tzJ,J
+
+    @unpack Vq,wq = rd
+    xq,yq,zq = (x->Vq*x).((x,y,z))
+    wJq = diagm(wq)*(Vq*J)
+    @pack! md = xq,yq,zq,wJq
+
+    #physical normals are computed via G*nhatJ, G = matrix of geometric terms
+    @unpack nrJ,nsJ,ntJ = rd
+    nxJ = nrJ.*(Vf*rxJ) + nsJ.*(Vf*sxJ) + ntJ.*(Vf*txJ)
+    nyJ = nrJ.*(Vf*ryJ) + nsJ.*(Vf*syJ) + ntJ.*(Vf*tyJ)
+    nzJ = nrJ.*(Vf*rzJ) + nsJ.*(Vf*szJ) + ntJ.*(Vf*tzJ)
+    sJ = @. sqrt(nxJ.^2 + nyJ.^2 + nzJ.^2)
+    @pack! md = nxJ,nyJ,nzJ,sJ
+
+    return md
+end
+
+
+function init_reference_hex(N,quad_nodes_1D = gauss_quad(0,0,N))
+
+    # initialize a new reference element data struct
+    rd = RefElemData()
+
+    fv = UniformHexMesh.hex_face_vertices() # set faces for triangle
+    Nfaces = length(fv)
+    @pack! rd = fv, Nfaces
+
+    # Construct matrices on reference elements
+    r,s,t = Basis3DHex.nodes_3D(N)
+    VDM = Basis3DHex.vandermonde_3D(N,r,s,t)
+    Vr,Vs,Vt = Basis3DHex.grad_vandermonde_3D(N,r,s,t)
+    Dr,Ds,Dt = (A->A/VDM).(Basis3DHex.grad_vandermonde_3D(N,r,s,t))
+    @pack! rd = r,s,t,VDM
+
+    # low order interpolation nodes
+    r1,s1,t1 = Basis3DHex.nodes_3D(1)
+    V1 = Basis3DHex.vandermonde_3D(1,r,s,t)/Basis3DHex.vandermonde_3D(1,r1,s1,t1)
+    @pack! rd = V1
+
+    #Nodes on faces, and face node coordinate
+    r1D,w1D = quad_nodes_1D
+    rquad,squad = (x->x[:]).(meshgrid(r1D,r1D))
+    wr,ws = (x->x[:]).(meshgrid(w1D,w1D))
+    wquad = wr.*ws
+    e = ones(size(rquad))
+    zz = zeros(size(rquad))
+    rf = [-e; e; rquad; rquad; rquad; rquad]
+    sf = [rquad; rquad; -e; e; squad; squad]
+    tf = [squad; squad; squad; squad; -e; e]
+    wf = vec(repeat(wquad,Nfaces,1));
+    nrJ = [-e; e; zz;zz; zz;zz]
+    nsJ = [zz;zz; -e; e; zz;zz]
+    ntJ = [zz;zz; zz;zz; -e; e]
+
+    @pack! rd = rf,sf,tf,wf,nrJ,nsJ,ntJ
+
+    # quadrature nodes - build from 1D nodes.
+    rq,sq,tq = meshgrid(r1D,r1D,r1D)
+    wr,ws,wt = meshgrid(w1D,w1D,w1D)
+    wq = wr.*ws.*wt
+    Vq = Basis3DHex.vandermonde_3D(N,rq,sq,tq)/VDM
+    M = transpose(Vq)*diagm(wq)*Vq
+    Pq = M\(transpose(Vq)*diagm(wq))
+    @pack! rd = rq,sq,tq,wq,Vq,M,Pq
+
+    Vf = Basis3DHex.vandermonde_3D(N,rf,sf,tf)/VDM
+    LIFT = M\(transpose(Vf)*diagm(wf))
+
+    # expose kronecker product sparsity
+    Dr = droptol!(sparse(Dr),1e-12)
+    Ds = droptol!(sparse(Ds),1e-12)
+    Dt = droptol!(sparse(Dt),1e-12)
+    Vf = droptol!(sparse(Vf),1e-12)
+    LIFT = droptol!(sparse(LIFT),1e-12)
+    @pack! rd = Dr,Ds,Dt,Vf,LIFT
+
+    # plotting nodes
+    rp,sp,tp = Basis3DHex.equi_nodes_3D(15)
+    Vp = Basis3DHex.vandermonde_3D(N,rp,sp,tp)/VDM
+    @pack! rd = rp,sp,tp,Vp
+
+    return rd
+end
+
+
+
+
 
 end
