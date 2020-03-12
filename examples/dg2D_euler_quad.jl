@@ -26,7 +26,7 @@ T = 1.0 # endtime
 "Mesh related variables"
 Kx = convert(Int,4/3*K1D)
 Ky = K1D
-(VX, VY, EToV) = uniform_quad_mesh(Kx, Ky)
+VX, VY, EToV = uniform_quad_mesh(Kx, Ky)
 @. VX = 15*(1+VX)/2
 @. VY = 5*VY
 
