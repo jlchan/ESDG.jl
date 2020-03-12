@@ -1,5 +1,5 @@
 # ESDG (energy/entropy stable discontinuous Galerkin)
-## A set of codes for solving 1D/2D/3D time-dependent hyperbolic PDEs using energy or entropy stable high order DG methods on conforming unstructured meshes of triangular, quadrilateral, or hexahedral elements.
+## A Julia codebase for solving 1D/2D/3D time-dependent hyperbolic PDEs using energy or entropy stable high order DG methods on conforming unstructured meshes of triangular, quadrilateral, or hexahedral elements.
 
 These codes are inspired by the Matlab codes for the book Nodal Discontinuous Galerkin methods by Hesthaven and Warburton (2007).  While unstructured meshes are supported, all demos use uniform meshes, and the codebase is intended mainly for experimentation and method development.
 
