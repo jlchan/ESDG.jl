@@ -190,6 +190,14 @@ function rhs(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
     fSx,fSy,fSz = flux_fun(QM,QP)
     normal_flux(fx,fy,fz,uM) = fx.*nxJ + fy.*nyJ + fz.*nzJ - LFc.*(uM[mapP]-uM)
     flux = normal_flux.(fSx,fSy,fSz,Uf)
+    # flux = ntuple(x->zeros(size(mapP)),length(QM))
+    # for i = 1:length(mapP)
+    #     QMi = (x->x[i]).(QM)
+    #     QPi = (x->x[i]).(QP)
+    #     fSx,fSy,fSz = flux_fun(QMi,QPi)
+    #     normal_flux!(f,fx,fy,fz,u) = f[i] = fx*nxJ[i] + fy*nyJ[i] + fz*nzJ[i] - LFc[i]*(u[mapP[i]]-u[i])
+    #     normal_flux!.(flux,fSx,fSy,fSz,Uf)
+    # end
     rhsQ = (x->Lf*x).(flux)
 
     # compute volume contributions using flux differencing

@@ -11,6 +11,7 @@ export logmean
 export u_vfun, v_ufun, betafun
 export euler_fluxes, wavespeed
 export vortex, primitive_to_conservative
+export euler_fluxes_nd
 
 include("./logmean.jl")
 include("./euler_fluxes.jl")
