@@ -9,85 +9,32 @@ using Basis2DTri
 using UniformTriMesh
 
 "Define approximation parameters"
-N   = 4 # The order of approximation
+N   = 3 # The order of approximation
 K1D = 16 # number of elements along each edge of a rectangle
-CFL = .1 # relative size of a time-step
-T   = .5 # final time
+CFL = .5 # relative size of a time-step
+T   = 1 # final time
 
-"Define mesh and compute connectivity
-- (VX,VY) are and EToV is a connectivity matrix
-- connect_mesh computes a vector FToF such that face i is connected to face j=FToF[i]"
+"=========== Setup code ============="
+
+# construct mesh
 VX,VY,EToV = uniform_tri_mesh(K1D,K1D)
-FToF = connect_mesh(EToV,tri_face_vertices())
-Nfaces,K = size(FToF)
 
-# iids = @. (abs(abs(VX)-1)>1e-10) & (abs(abs(VY)-1)>1e-10)
-# a = .2/K1D
-# VX[iids] = @. VX[iids] + a*randn()
-# VY[iids] = @. VY[iids] + a*randn()
+# intialize reference operators
+rd = init_reference_tri(N)
 
-"Construct matrices on reference elements
-- r,s are vectors of interpolation nodes
-- V is the matrix arising in polynomial interpolation, e.g. solving V*u = [f(x_1),...,f(x_Np)]
-- inv(V) transforms from a nodal basis to an orthonormal basis.
-- If Vr evaluates derivatives of the orthonormal basis at nodal points
-- then, Vr*inv(V) = Vr/V transforms nodal values to orthonormal coefficients, then differentiates the orthonormal basis"
-r, s = nodes_2D(N)
-V = vandermonde_2D(N, r, s)
-Vr, Vs = grad_vandermonde_2D(N, r, s)
-invM = (V*V')
-Dr = Vr/V
-Ds = Vs/V
+# initialize physical mesh data
+md = init_tri_mesh((VX,VY),EToV,rd)
 
-"Nodes on faces, and face node coordinate
-- r1D,w1D are quadrature nodes and weights
-- rf,sf = mapping 1D quad nodes to the faces of a triangle"
-r1D, w1D = gauss_quad(0,0,N)
-Nfp = length(r1D) # number of points per face
-e = ones(Nfp,1) # vector of all ones
-z = zeros(Nfp,1) # vector of all zeros
-rf = [r1D; -r1D; -e];
-sf = [-e; r1D; -r1D];
-wf = vec(repeat(w1D,3,1));
-Vf = vandermonde_2D(N,rf,sf)/V # interpolates from nodes to face nodes
-LIFT = invM*(transpose(Vf)*diagm(wf)) # lift matrix used in rhs evaluation
-
-"Construct global coordinates"
-#- vx = VX[EToV'] = a 3xK matrix of vertex values for each element
-#- V1*vx uses the linear polynomial defined by 3 vertex values to interpolate nodal points on the reference element to physical elements"
-r1,s1 = nodes_2D(1)
-V1 = vandermonde_2D(1,r,s)/vandermonde_2D(1,r1,s1)
-x = V1*VX[transpose(EToV)]
-y = V1*VY[transpose(EToV)]
-
-"Compute connectivity maps: uP = exterior value used in DG numerical fluxes"
+#Make boundary maps periodic
+@unpack Nfaces,Vf = rd
+@unpack x,y,K,mapM,mapP,mapB = md
 xf,yf = (x->Vf*x).((x,y))
-mapM,mapP,mapB = build_node_maps((xf,yf),FToF)
-mapM = reshape(mapM,Nfp*Nfaces,K)
-mapP = reshape(mapP,Nfp*Nfaces,K)
-
-"Make boundary maps periodic"
 LX,LY = (x->maximum(x)-minimum(x)).((VX,VY)) # find lengths of domain
 mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces*K,mapM,mapP,mapB)
-mapP[mapB] = mapPB
-
-"Compute geometric factors and surface normals"
-rxJ, sxJ, ryJ, syJ, J = geometric_factors(x, y, Dr, Ds)
-
-"nhat = (nrJ,nsJ) are reference normals scaled by edge length
-- physical normals are computed via G*nhat, G = matrix of geometric terms
-- sJ is the normalization factor for (nx,ny) to be unit vectors"
-nrJ = [z; e; -e]
-nsJ = [-e; e; z]
-nxJ = (Vf*rxJ).*nrJ + (Vf*sxJ).*nsJ;
-nyJ = (Vf*ryJ).*nrJ + (Vf*syJ).*nsJ;
-sJ = @. sqrt(nxJ^2 + nyJ^2)
+# mapP[mapB] = mapPB
+# @pack! md = mapP
 
 "=========== Done defining geometry and mesh ============="
-
-"Define the initial conditions by interpolation"
-p = @. exp(-700*(x^2+y^2))
-pprev = copy(p) # 1st order accurate approximation to dp/dt = 0
 
 "Time integration coefficients"
 CN = (N+1)*(N+2)/2  # estimated trace constant
@@ -95,24 +42,24 @@ dt = CFL * 2 / (CN*K1D)
 Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
-"pack arguments into tuples"
-ops = (Dr,Ds,LIFT,Vf)
-vgeo = (rxJ,sxJ,ryJ,syJ,J)
-fgeo = (nxJ,nyJ,sJ)
-mapP = reshape(mapP,Nfp*Nfaces,K)
-nodemaps = (mapP,mapB)
+"Define the initial conditions by interpolation"
+pex(x,y,t) = @. sin(pi*x)*sin(pi*y)*cos(sqrt(2)*pi*t)
+# p = @. exp(-700*(x^2+y^2))
+pprev = copy(p) # 1st order accurate approximation to dp/dt = 0
+p = pex(x,y,dt)
+pprev = pex(x,y,0)
 
 "Define function to evaluate the RHS"
-function rhs_2ndorder(p,ops,vgeo,fgeo,nodemaps)
+function rhs_2ndorder(p,rd::RefElemData,md::MeshData)
     # unpack arguments
-    Dr,Ds,LIFT,Vf = ops
-    rxJ,sxJ,ryJ,syJ,J = vgeo
-    nxJ,nyJ,sJ = fgeo
-    (mapP,mapB) = nodemaps
+    @unpack Dr,Ds,LIFT,Vf = rd
+    @unpack rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ = md
+    @unpack mapP,mapB = md
 
     # construct sigma
     pf = Vf*p # eval pressure at face points
     dp = pf[mapP]-pf # compute jumps of pressure
+    dp[mapB] = -2*pf[mapB]
     pr = Dr*p
     ps = Ds*p
     dpdx = @. rxJ*pr + sxJ*ps
@@ -131,25 +78,22 @@ function rhs_2ndorder(p,ops,vgeo,fgeo,nodemaps)
     dσxdx = @. rxJ*σxr + sxJ*σxs
     dσydy = @. ryJ*σyr + syJ*σys
 
-    tau = 0
+    tau = 1/2
     rhsp = dσxdx + dσydy + LIFT*(pflux + tau*dp)
 
     return rhsp./J
 end
 
 #plotting nodes
-rp, sp = equi_nodes_2D(15)
-Vp = vandermonde_2D(N,rp,sp)/V
-vv = Vp*p
 gr(aspect_ratio=1, legend=false,
-markerstrokewidth=0,markersize=2,
-camera=(0,90),#zlims=(-1,1),clims=(-1,1),
-axis=nothing,border=:none)
+   markerstrokewidth=0,markersize=2,
+   camera=(0,90),#zlims=(-1,1),clims=(-1,1),
+   axis=nothing,border=:none)
 
 # Perform time-stepping
 for i = 2:Nsteps
 
-    rhsQ = rhs_2ndorder(p,ops,vgeo,fgeo,nodemaps)
+    rhsQ = rhs_2ndorder(p,rd,md)
     pnew = 2*p - pprev + dt^2 * rhsQ
     @. pprev = p
     @. p = pnew
@@ -161,5 +105,7 @@ for i = 2:Nsteps
     end
 end
 
+@unpack Vp = rd
 vv = Vp*p
-scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(45,45))
+scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90))
+@show maximum(abs.(p-pex(x,y,T)))

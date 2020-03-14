@@ -46,11 +46,13 @@ mutable struct RefElemData
     r; s; t # interpolation nodes
     rq; sq; tq; wq # volume quadrature
     rf; sf; tf; wf # surface quadrature
+    rp; sp # plotting nodes
 
     V # Vandermonde matrix
     Dr; Ds; Dt # differentiation matrices
     Vq; Vf # quadrature interpolation matrix
     LIFT # quadrature-based lift matrix
+    Vp # plotting interp matrix
 
     nrJ; nsJ; ntJ # reference normals
 
@@ -99,6 +101,10 @@ function init_reference_tri(N)
     rq,sq,wq = quad_nodes_2D(2*N)
     Vq = vandermonde_2D(N,rq,sq)/V
     @pack! rd = rq,sq,wq,Vq
+
+    rp, sp = equi_nodes_2D(15)
+    Vp = vandermonde_2D(N,rp,sp)/V
+    @pack! rd = rp,sp,Vp
     return rd
 end
 
