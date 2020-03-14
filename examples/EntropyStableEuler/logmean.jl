@@ -1,6 +1,14 @@
 """
-function logmean(aL,aR,logL,logR)
+function logmean(aL,aR)
+"""
 
+function logmean(aL,aR)
+    return logmean(aL,aR,log(aL),log(aR))
+end
+
+"""
+function logmean(aL,aR,logL,logR)
+    Compute logarithmic mean using pre-computed log values
 """
 
 function logmean(aL,aR,logL,logR)
@@ -16,12 +24,4 @@ function logmean(aL,aR,logL,logR)
     else
         return -da/(logL-logR)
     end
-end
-
-"""
-function logmean(aL,aR)
-"""
-
-function logmean(aL,aR)
-    return logmean(aL,aR,log(aL),log(aR))
 end
