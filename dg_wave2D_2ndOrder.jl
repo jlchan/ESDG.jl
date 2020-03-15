@@ -59,7 +59,6 @@ function rhs_2ndorder(p,rd::RefElemData,md::MeshData)
     # construct sigma
     pf = Vf*p # eval pressure at face points
     dp = pf[mapP]-pf # compute jumps of pressure
-    dp[mapB] = -2*pf[mapB]
     pr = Dr*p
     ps = Ds*p
     dpdx = @. rxJ*pr + sxJ*ps
