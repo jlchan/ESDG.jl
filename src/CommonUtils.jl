@@ -19,8 +19,8 @@ unzip(a) = map(x->getfield.(a, x), fieldnames(eltype(a)))
 export eye
 eye(n) = diagm(ones(n))
 
+# 4th order 5-stage low storage Runge Kutta from Carpenter/Kennedy.
 function rk45_coeffs()
-    "Time integration"
     rk4a = [            0.0 ...
     -567301805773.0/1357537059087.0 ...
     -2404267990393.0/2016746695238.0 ...
