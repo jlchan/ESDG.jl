@@ -43,11 +43,8 @@ Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
 "Define the initial conditions by interpolation"
-pex(x,y,t) = @. sin(pi*x)*sin(pi*y)*cos(sqrt(2)*pi*t)
-# p = @. exp(-700*(x^2+y^2))
+p = @. exp(-700*(x^2+y^2))
 pprev = copy(p) # 1st order accurate approximation to dp/dt = 0
-p = pex(x,y,dt)
-pprev = pex(x,y,0)
 
 "Define function to evaluate the RHS"
 function rhs_2ndorder(p,rd::RefElemData,md::MeshData)

@@ -39,9 +39,7 @@ mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces*K,mapM,mapP,mapB)
 "======== Define initial coefficients and time-stepping =========="
 
 "Define the initial conditions by interpolation"
-#p = @. exp(-10*(x^2+y^2))
-pex(x,y,t) = @. sin(pi*x)*sin(pi*y)*cos(sqrt(2)*pi*t)
-p = pex(x,y,0)
+p = @. exp(-10*(x^2+y^2))
 u = @. 0*x
 v = @. 0*x
 
@@ -63,7 +61,7 @@ function rhs(Q, rd::RefElemData, md::MeshData)
     Qf = (x->Vf*x).(Q)
     QP = (x->x[mapP]).(Qf)
     dp,du,dv = QP.-Qf
-    
+
     tau = .5
     dun = @. (du*nxJ + dv*nyJ)/sJ
     pflux = @. .5*(du*nxJ + dv*nyJ) - tau*dp*sJ
@@ -108,4 +106,3 @@ gr(aspect_ratio=1, legend=false,
 xp,yp = (x->Vp*x).((x,y))
 vv = Vp*Q[1]
 scatter(xp,yp,vv,zcolor=vv)
-@show maximum(abs.(Q[1]-pex(x,y,T)))
