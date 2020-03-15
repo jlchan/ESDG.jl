@@ -63,9 +63,7 @@ function rhs(Q, rd::RefElemData, md::MeshData)
     Qf = (x->Vf*x).(Q)
     QP = (x->x[mapP]).(Qf)
     dp,du,dv = QP.-Qf
-
-    dp[mapB] = -2*Qf[1][mapB]
-
+    
     tau = .5
     dun = @. (du*nxJ + dv*nyJ)/sJ
     pflux = @. .5*(du*nxJ + dv*nyJ) - tau*dp*sJ
