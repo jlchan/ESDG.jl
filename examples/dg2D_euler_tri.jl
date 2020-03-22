@@ -1,6 +1,5 @@
 using Revise # reduce recompilation time
 using Plots
-# using Documenter
 using LinearAlgebra
 using SparseArrays
 using BenchmarkTools
@@ -9,8 +8,8 @@ using UnPack
 push!(LOAD_PATH, "./src")
 using CommonUtils
 using Basis1D
-using Basis2DQuad
-using UniformQuadMesh
+using Basis2DTri
+using UniformTriMesh
 
 using SetupDG
 
@@ -20,19 +19,19 @@ using EntropyStableEuler
 "Approximation parameters"
 N = 4 # The order of approximation
 K1D = 12
-CFL = 2 # CFL goes up to 3 OK...
+CFL = 2 # CFL goes up to 2.5ish 
 T = 1.0 # endtime
 
 "Mesh related variables"
 Kx = convert(Int,4/3*K1D)
 Ky = K1D
-VX, VY, EToV = uniform_quad_mesh(Kx, Ky)
+VX, VY, EToV = uniform_tri_mesh(Kx, Ky)
 @. VX = 15*(1+VX)/2
 @. VY = 5*VY
 
 # initialize ref element and mesh
 # specify lobatto nodes to automatically get DG-SEM mass lumping
-rd = init_reference_quad(N,gauss_quad(0,0,N))
+rd = init_reference_tri(N)
 md = init_mesh((VX,VY),EToV,rd)
 
 # Make domain periodic
@@ -55,31 +54,22 @@ Qrh = .5*[Qr-Qr' Ef'*Br;
 Qsh = .5*[Qs-Qs' Ef'*Bs;
          -Bs*Ef  Bs]
 
+Vh = [Vq;Vf]
+Ph = M\transpose(Vh)
+VhP = Vh*Pq
+
 # make sparse skew symmetric versions of the operators"
 # precompute union of sparse ids for Qr, Qs
 Qrhskew = .5*(Qrh-transpose(Qrh))
 Qshskew = .5*(Qsh-transpose(Qsh))
-Qrh_sparse = droptol!(sparse(Qrhskew),1e-12)
-Qsh_sparse = droptol!(sparse(Qshskew),1e-12)
-Qrsids = [unique([Qrh_sparse[i,:].nzind; Qsh_sparse[i,:].nzind]) for i = 1:size(Qrhskew,1)]
 
-# Make node maps periodic
-@unpack Nfaces = rd
-@unpack x,y,xf,yf,K,mapM,mapP,mapB = md
-LX,LY = (x->maximum(x)-minimum(x)).((VX,VY))
-mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces*K,mapM,mapP,mapB)
-mapP[mapB] = mapPB
-@pack! md = mapP
-
-# convert operators to a quadrature-node basis
-@unpack wq = rd
-Vh = droptol!(sparse([eye(length(wq)); Ef]),1e-12)
-Ph = droptol!(sparse(diagm(@. 1/wq)*transpose(Vh)),1e-12)
-Lf = droptol!(sparse(diagm(@. 1/wq)*(transpose(Ef)*diagm(wf))),1e-12)
-
-# define initial conditions at quadrature nodes
-@unpack xq,yq = md
-rho,u,v,p = vortex(xq,yq,0)
+# define initial conditions at nodes
+@unpack x,y = md
+rho,u,v,p = vortex(x,y,0)
+# rho = ones(size(rho))
+# u = .1*ones(size(u))
+# v = .1*ones(size(u))
+# p = ones(size(u))
 Q = primitive_to_conservative(rho,u,v,p)
 
 # interpolate geofacs to both vol/surf nodes
@@ -88,7 +78,8 @@ rxJ, sxJ, ryJ, syJ = (x->Vh*x).((rxJ, sxJ, ryJ, syJ)) # interp to hybridized poi
 @pack! md = rxJ, sxJ, ryJ, syJ
 
 # pack SBP operators into tuple
-ops = (Qrhskew,Qshskew,Qrh_sparse,Qsh_sparse,Qrsids,Ph,Lf)
+@unpack LIFT = rd
+ops = (Qrhskew,Qshskew,VhP,Ph,LIFT,Vq)
 
 "Time integration"
 rk4a,rk4b,rk4c = rk45_coeffs()
@@ -98,59 +89,63 @@ dt = CFL * h / CN
 Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
-"sparse version - precompute sparse row ids for speed"
-function sparse_hadamard_sum(Qhe,ops,vgeo,flux_fun)
+"dense version - speed up by prealloc + transpose for col major "
+function dense_hadamard_sum(Qhe,ops,vgeo,flux_fun)
 
-    (Qr,Qs,Qnzids) = ops
+    (Qr,Qs) = ops
     (rxJ,sxJ,ryJ,syJ) = vgeo
-    nrows = size(Qr,1)
-    nfields = length(Qhe)
+    # transpose for column-major evals
+    QxTr = transpose(rxJ*Qr + sxJ*Qs)
+    QyTr = transpose(ryJ*Qr + syJ*Qs)
 
     # precompute logs for logmean
     (rho,u,v,beta) = Qhe
     Qlog = (log.(rho), log.(beta))
+    Qlogi = zeros(length(Qlog))
+    Qlogj = zeros(length(Qlog))
 
-    rhsQe = ntuple(x->zeros(nrows),nfields)
-    rhsi = zeros(nfields) # prealloc a small array
-    for i = 1:nrows
+    n = size(Qr,1)
+    nfields = length(Qhe)
+
+    QF = ntuple(x->zeros(n),nfields)
+    QFi = zeros(nfields)
+    for i = 1:n
         Qi = (x->x[i]).(Qhe)
         Qlogi = (x->x[i]).(Qlog)
 
-        fill!(rhsi,0) # reset rhsi before accumulation
-        for j = Qnzids[i] # nonzero row entries
+        fill!(QFi,0)
+        for j = 1:n
             Qj = (x->x[j]).(Qhe)
             Qlogj = (x->x[j]).(Qlog)
 
-            # assumes affine meshes here!
             Fx,Fy = flux_fun(Qi,Qj,Qlogi,Qlogj)
-            Fr = @. rxJ*Fx + ryJ*Fy
-            Fs = @. sxJ*Fx + syJ*Fy
-
-            @. rhsi += Qr[i,j]*Fr + Qs[i,j]*Fs
+            @. QFi += QxTr[j,i]*Fx + QyTr[j,i]*Fy
         end
 
-        # faster than one-line fixes (no return args)
-        for fld in eachindex(rhsQe)
-            rhsQe[fld][i] = rhsi[fld]
+        for fld in eachindex(Qhe)
+            QF[fld][i] = QFi[fld]
         end
     end
-    return rhsQe
+
+    return QF
 end
+
 
 "Qh = (rho,u,v,beta), while Uh = conservative vars"
 function rhs(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
 
     @unpack rxJ,sxJ,ryJ,syJ,J,wJq = md
     @unpack nxJ,nyJ,sJ,mapP,mapB,K = md
-    Qrh,Qsh,Qrh_sparse,Qsh_sparse,Qrsids,Ph,Lf = ops
-    Nq,Nh = size(Ph)
+    Qrh,Qsh,VhP,Ph,Lf,Vq = ops
+    Nh,Nq = size(VhP)
 
     # entropy var projection
-    VU = v_ufun(Q...)
-    Uf = u_vfun((x->Ef*x).(VU)...)
-    (rho,rhou,rhov,E) = vcat.(Q,Uf) # assume volume nodes are collocated
+    VU = v_ufun((x->Vq*x).(Q)...)
+    VU = (x->VhP*x).(VU)
+    Uh = u_vfun(VU...)
 
     # convert to rho,u,v,beta vars
+    (rho,rhou,rhov,E) = Uh
     beta = betafun(rho,rhou,rhov,E)
     Qh = (rho, rhou./rho, rhov./rho, beta) # redefine Q = (rho,u,v,β)
 
@@ -159,6 +154,7 @@ function rhs(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
     QP = (x->x[mapP]).(QM)
 
     # simple lax friedrichs dissipation
+    Uf =  (x->x[Nq+1:end,:]).(Uh)
     (rhoM,rhouM,rhovM,EM) = Uf
     rhoUM_n = @. (rhouM*nxJ + rhovM*nyJ)/sJ
     lam = abs.(wavespeed(rhoM,rhoUM_n,EM))
@@ -174,8 +170,8 @@ function rhs(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
         Qhe = tuple((x->x[:,e]).(Qh)...) # force tuples for fast splatting
         vgeo_local = (x->x[1,e]).((rxJ,sxJ,ryJ,syJ)) # assumes affine elements for now
 
-        Qops = (Qrh_sparse,Qsh_sparse,Qrsids)
-        QFe = sparse_hadamard_sum(Qhe,Qops,vgeo_local,flux_fun)
+        Qops = (Qrh,Qsh)
+        QFe = dense_hadamard_sum(Qhe,Qops,vgeo_local,flux_fun)
 
         mxm_accum!(X,x) = X[:,e] += 2*Ph*x
         mxm_accum!.(rhsQ,QFe)
@@ -186,7 +182,8 @@ function rhs(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
     rhstest = 0
     if compute_rhstest
         for fld in eachindex(rhsQ)
-            rhstest += sum(wJq.*VU[fld].*rhsQ[fld])
+            VUq = VU[fld][1:Nq,:]
+            rhstest += sum(wJq.*VUq.*(Vq*rhsQ[fld]))
         end
     end
 
@@ -195,11 +192,17 @@ end
 
 Q = collect(Q) # make Q,resQ arrays of arrays for mutability
 resQ = [zeros(size(x)) for i in eachindex(Q)]
+
+# # testing
+# rhsQ,rhstest = rhs(Q,md,ops,euler_fluxes,true)
+# println("Testing: rhstest = $rhstest")
+
+
 for i = 1:Nsteps
 
     rhstest = 0
     for INTRK = 1:5
-        compute_rhstest = INTRK==5
+        compute_rhstest = true # INTRK==5
         rhsQ,rhstest = rhs(Q,md,ops,euler_fluxes,compute_rhstest)
 
         @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
@@ -211,8 +214,8 @@ for i = 1:Nsteps
     end
 end
 
-"project solution back to GLL nodes"
-Q = (x->Pq*x).(Q)
+# "project solution back to GLL nodes"
+# Q = (x->Pq*x).(Q)
 
 # use a higher degree quadrature for error evaluation
 @unpack VDM = rd
