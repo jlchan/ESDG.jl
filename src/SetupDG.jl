@@ -28,7 +28,8 @@ import UniformQuadMesh # for face vertices
 import Basis3DHex
 import UniformHexMesh # for face vertices
 
-export init_reference_tri, init_reference_quad, init_reference_hex
+export init_reference_interval, init_reference_tri
+export init_reference_quad, init_reference_hex
 export init_mesh
 export MeshData, RefElemData
 
@@ -73,6 +74,40 @@ mutable struct RefElemData
     nrJ; nsJ; ntJ # reference normals
 
     RefElemData() = new() # empty initializer
+end
+
+function init_reference_interval(N)
+    # initialize a new reference element data struct
+    rd = RefElemData()
+
+    # Construct matrices on reference elements
+    r,_ = gauss_lobatto_quad(0,0,N)
+    VDM = vandermonde_1D(N, r)
+    Dr = grad_vandermonde_1D(N, r)/VDM
+    @pack! rd = r,VDM,Dr
+
+    V1 = vandermonde_1D(1,r)/vandermonde_1D(1,[-1;1])
+    @pack! rd = V1
+
+    rq,wq = gauss_quad(0,0,N+1)
+    Vq = vandermonde_1D(N, rq)/VDM
+    M = Vq'*diagm(wq)*Vq
+    Pq = M\(Vq'*diagm(wq))
+    @pack! rd = rq,wq,Vq,M,Pq
+
+    rf = [-1;1]
+    nrJ = [-1;1]
+    Vf = vandermonde_1D(N,rf)/VDM
+    LIFT = M\(transpose(Vf)) # lift matrix
+    @pack! rd = rf,nrJ,Vf,LIFT
+
+    # plotting nodes
+    rp = LinRange(-1,1,50)
+    Vp = vandermonde_1D(N,rp)/VDM
+    @pack! rd = rp,Vp
+
+    return rd
+
 end
 
 function init_reference_tri(N)
