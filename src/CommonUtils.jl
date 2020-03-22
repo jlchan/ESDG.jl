@@ -7,6 +7,7 @@ General purpose utilities usable by all element types
 
 module CommonUtils
 using LinearAlgebra # for I matrix in geometricFactors
+using SparseArrays  # for spdiagm
 
 export meshgrid
 export geometric_factors
@@ -16,8 +17,9 @@ export rk45_coeffs
 
 export unzip # convert array of tuples to tuples of arrays
 unzip(a) = map(x->getfield.(a, x), fieldnames(eltype(a)))
-export eye
+export eye,speye
 eye(n) = diagm(ones(n))
+speye(n) = spdiagm(0 => ones(n))
 
 # 4th order 5-stage low storage Runge Kutta from Carpenter/Kennedy.
 function rk45_coeffs()
