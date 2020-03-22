@@ -72,7 +72,7 @@ x = x + a.*dx
 y = y + a.*dx
 z = z + a.*dx
 
-# recompute phys nodes, geofacs, etc
+# recompute phys nodes, geofacs, etc for a curved mesh
 @unpack xq,yq,zq = md
 xq,yq,zq = (x->Vq*x).((x,y,z))
 @pack! md = xq,yq,zq
