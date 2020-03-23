@@ -1,7 +1,6 @@
 using Revise # reduce recompilation time
 using Plots
 using LinearAlgebra
-using SparseArrays
 using BenchmarkTools
 using UnPack
 
@@ -17,9 +16,9 @@ push!(LOAD_PATH, "./examples/EntropyStableEuler")
 using EntropyStableEuler
 
 "Approximation parameters"
-N = 4 # The order of approximation
+N = 2 # The order of approximation
 K1D = 12
-CFL = 2 # CFL goes up to 2.5ish 
+CFL = 2 # CFL goes up to 2.5ish
 T = 1.0 # endtime
 
 "Mesh related variables"
@@ -66,10 +65,6 @@ Qshskew = .5*(Qsh-transpose(Qsh))
 # define initial conditions at nodes
 @unpack x,y = md
 rho,u,v,p = vortex(x,y,0)
-# rho = ones(size(rho))
-# u = .1*ones(size(u))
-# v = .1*ones(size(u))
-# p = ones(size(u))
 Q = primitive_to_conservative(rho,u,v,p)
 
 # interpolate geofacs to both vol/surf nodes

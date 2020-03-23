@@ -18,7 +18,7 @@ push!(LOAD_PATH, "./examples/EntropyStableEuler")
 using EntropyStableEuler
 
 "Approximation parameters"
-N = 4 # The order of approximation
+N = 2 # The order of approximation
 K1D = 12
 CFL = 2 # CFL goes up to 3 OK...
 T = 1.0 # endtime
