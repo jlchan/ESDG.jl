@@ -42,7 +42,7 @@ function uniform_tri_mesh(Kx,Ky)
 end
 
 function uniform_tri_mesh(Kx)
-        return uniform_tri_mesh(Kx,Ky)
+        return uniform_tri_mesh(Kx,Kx)
 end
 
 
