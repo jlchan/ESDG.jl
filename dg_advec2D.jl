@@ -112,7 +112,7 @@ function rhs(u,ops,vgeo,fgeo,nodemaps)
 
     ur = Dr*u
     us = Ds*u
-    ux = @. rxJ*ur + sxJ*us;
+    ux = @. rxJ*ur + sxJ*us
     rhsu = ux + LIFT*flux
 
     return -rhsu./J
