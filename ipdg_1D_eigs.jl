@@ -9,8 +9,6 @@ using CommonUtils, Basis1D
 "Approximation parameters"
 N   = 4 # The order of approximation
 K   = 8
-CFL = 1
-T   = 2
 
 "Mesh related variables"
 VX = LinRange(-1,1,K+1)
@@ -80,9 +78,9 @@ function rhs(u,ops,vgeo,fgeo,mapP)
     uxf   = Vf*(dudxJ./J)
 
     # compute sigma flux
-    tau = 100
-    σhat  = .5*(σxf[mapP]+σxf) - tau*(uP-uf).*nxJ
-    σhat  = -.5*(uxf[mapP]+uxf) - tau*(uP-uf).*nxJ
+    tau = (4+1)*(4+2)/2*16 / 2
+    # σhat  = .5*(σxf[mapP]+σxf) - tau*(uP-uf).*nxJ   # LDG flux
+    σhat  = -.5*(uxf[mapP]+uxf) - tau*(uP-uf).*nxJ  # IP flux
 
     dsig  = σhat-σxf
     σflux = @. (dsig*nxJ)
@@ -103,10 +101,10 @@ end
 Mglobal = kron(diagm(J[1,:]),M)
 A = droptol!(sparse(Mglobal*A),1e-10)
 A = Matrix(A)
-lam = eigvals(Symmetric(A),Symmetric(Mglobal))
+lam = eigvals(Symmetric(A),Symmetric(Mglobal)) # solve gen eig problem A*v = lambda*M*v
 
-@show norm(A-A')
-@show minimum(lam)
+@show norm(A-A') # is it symmetric
+@show minimum(lam) # smallest eigenvalue is
 
 j = vec(1:size(A,2))
 scatter(j,j.^2*pi^2/4) # min eigvalue
