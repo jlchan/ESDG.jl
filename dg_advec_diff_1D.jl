@@ -7,10 +7,10 @@ push!(LOAD_PATH, "./src") # user defined modules
 using CommonUtils, Basis1D
 
 "Approximation parameters"
-N   = 6 # The order of approximation
-K   = 8
-CFL = 1
-T   = 2
+N   = 3 # The order of approximation
+K   = 16
+CFL = 1 # .5
+T   = 2.25
 ϵ   = 0.01
 
 "Mesh related variables"
@@ -68,6 +68,7 @@ function rhs(u,ops,vgeo,fgeo,mapP,params...)
     dudx = rxJ.*(Dr*u)
     σx = (dudx + LIFT*σxflux)./J
 
+    # define viscosity, penalization parameters
     ϵ = params[1]
     tau = 1
 
@@ -82,6 +83,7 @@ function rhs(u,ops,vgeo,fgeo,mapP,params...)
     uflux = @. .5*(du*nxJ - tau*du*abs(nxJ))
     rhsu = dudx + LIFT*uflux
 
+    # combine advection and viscous terms
     rhsu = rhsu - ϵ*rhsσ
     return -rhsu./J
 end
@@ -101,20 +103,20 @@ gr(aspect_ratio=1,legend=false,markerstrokewidth=1,markersize=2)
 "Perform time-stepping"
 u = @. exp(-100*x^2)
 resu = zeros(size(x)) # Storage for the Runge kutta residual storageu
-# @gif
-for i = 1:Nsteps
+interval = 2
+@gif for i = 1:Nsteps
     for INTRK = 1:5
         rhsu = rhs(u,ops,vgeo,fgeo,mapP,ϵ)
         @. resu = rk4a[INTRK]*resu + dt*rhsu
         @. u   += rk4b[INTRK]*resu
     end
 
-    if i%100==0 || i==Nsteps
+    if i%interval==0 || i==Nsteps
         println("Number of time steps $i out of $Nsteps")
-        # plot(Vp*x,Vp*u,ylims=(-.1,1.1),title="Timestep $i out of $Nsteps",lw=2)
-        # scatter!(x,u)
+        plot(Vp*x,Vp*u,ylims=(-.1,1.1),title="Timestep $i out of $Nsteps",lw=2)
+        scatter!(x,u)
     end
-end #every 50
+end every interval
 
-scatter!(x,u,markersize=4) # plot nodal values
-plot!(Vp*x,Vp*u) # plot interpolated solution at fine points
+# scatter!(x,u,markersize=4) # plot nodal values
+# plot!(Vp*x,Vp*u) # plot interpolated solution at fine points
