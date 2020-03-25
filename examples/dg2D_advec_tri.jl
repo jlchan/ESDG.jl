@@ -92,8 +92,10 @@ function rhs(u,ops,vgeo,fgeo,nodemaps)
 
     ur = Dr*u
     us = Ds*u
-    ux = @. rxJ*ur + sxJ*us;
-    rhsu = ux + .5*LIFT*(@. du*nxJ)
+    ux = @. rxJ*ur + sxJ*us
+
+    tau = .5
+    rhsu = ux + LIFT*(@. .5*du*nxJ - tau*du*abs(nxJ))
 
     return -rhsu./J
 end
