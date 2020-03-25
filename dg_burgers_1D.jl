@@ -7,12 +7,11 @@ push!(LOAD_PATH, "./src") # user defined modules
 using CommonUtils, Basis1D
 
 "Approximation parameters"
-N   = 3 # The order of approximation
-K   = 16
-CFL = .5
+N   = 5 # The order of approximation
+K   = 8
+CFL = 1
 T   = 2.25
-ϵ   = 1/100
-a   = 1
+ϵ   = 0/1000
 
 "Mesh related variables"
 VX = LinRange(-1,1,K+1)
@@ -71,8 +70,7 @@ function rhs(u,ops,vgeo,fgeo,mapP,params...)
 
     # define viscosity, penalization parameters
     ϵ = params[1]
-    a = params[2]
-    tau = 1
+    tau = .5
 
     # compute dσ/dx
     σxf = Vf*σx
@@ -82,8 +80,10 @@ function rhs(u,ops,vgeo,fgeo,mapP,params...)
     rhsσ = dσxdx + LIFT*(σflux)
 
     # compute du/dx
-    uflux = @. .5*(a*du*nxJ - tau*du*abs(a*nxJ))
-    rhsu = a*dudx + LIFT*uflux
+    flux = u.^2/2
+    df   = uf[mapP].^2/2 - uf.^2/2
+    uflux = @. (.5*df*nxJ - tau*du*abs(uf*nxJ))
+    rhsu = rxJ.*(Dr*flux) + LIFT*uflux
 
     # combine advection and viscous terms
     rhsu = rhsu - ϵ*rhsσ
@@ -98,6 +98,10 @@ dt = CFL * 2 / (CN*K)
 Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
+filter_weights = ones(N+1)
+filter_weights[end] = .1
+Filter = V*(diagm(filter_weights)/V)
+
 "plotting nodes"
 Vp = vandermonde_1D(N,LinRange(-1,1,100))/V
 gr(aspect_ratio=1,legend=false,markerstrokewidth=1,markersize=2)
@@ -108,9 +112,12 @@ resu = zeros(size(x)) # Storage for the Runge kutta residual storageu
 interval = 5
 @gif for i = 1:Nsteps
     for INTRK = 1:5
-        rhsu = rhs(u,ops,vgeo,fgeo,mapP,ϵ,a)
+        rhsu = rhs(u,ops,vgeo,fgeo,mapP,ϵ)
         @. resu = rk4a[INTRK]*resu + dt*rhsu
         @. u   += rk4b[INTRK]*resu
+
+        # filter solution
+        u .= (Filter*u)
     end
 
     if i%interval==0 || i==Nsteps
