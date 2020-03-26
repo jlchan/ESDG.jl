@@ -7,11 +7,14 @@ push!(LOAD_PATH, "./src") # user defined modules
 using CommonUtils, Basis1D
 
 "Approximation parameters"
-N   = 5 # The order of approximation
-K   = 8
-CFL = 1
+N   = 3 # The order of approximation
+K   = 32
+CFL = .5
 T   = 2.25
-ϵ   = 0/1000
+
+# viscosity, wave speed
+ϵ   = .0001
+a   = 1
 
 "Mesh related variables"
 VX = LinRange(-1,1,K+1)
@@ -68,9 +71,10 @@ function rhs(u,ops,vgeo,fgeo,mapP,params...)
     dudx = rxJ.*(Dr*u)
     σx = (dudx + LIFT*σxflux)./J
 
-    # define viscosity, penalization parameters
+    # define viscosity, wavespeed parameters
     ϵ = params[1]
-    tau = .5
+    a = params[2]
+    tau = 1
 
     # compute dσ/dx
     σxf = Vf*σx
@@ -79,11 +83,13 @@ function rhs(u,ops,vgeo,fgeo,mapP,params...)
     dσxdx = rxJ.*(Dr*σx)
     rhsσ = dσxdx + LIFT*(σflux)
 
-    # compute du/dx
-    flux = u.^2/2
-    df   = uf[mapP].^2/2 - uf.^2/2
-    uflux = @. (.5*df*nxJ - tau*du*abs(uf*nxJ))
-    rhsu = rxJ.*(Dr*flux) + LIFT*uflux
+    # compute df(u)/dx (or u*(du/dx))
+    flux = @. u^2/2
+    dfdx = rxJ.*(Dr*flux)
+    flux_f = Vf*flux
+    df = flux_f[mapP] - flux_f
+    uflux = @. .5*(df*nxJ - tau*du*abs(.5*(uf[mapP]+uf))*abs(nxJ))
+    rhsu = dfdx + LIFT*uflux
 
     # combine advection and viscous terms
     rhsu = rhsu - ϵ*rhsσ
@@ -98,25 +104,34 @@ dt = CFL * 2 / (CN*K)
 Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
+"Perform time-stepping"
+u = @. exp(-100*x^2)
+# for e = 1:K
+#     xavg = sum(x[:,e])/size(x,1)
+#     if abs(xavg) < 1/3
+#         u[:,e] .= 1
+#     else
+#         u[:,e] .= 0
+#     end
+# end
+
 filter_weights = ones(N+1)
-filter_weights[end] = .1
+# filter_weights[2:end] = exp.(-collect(2:N+1))
+filter_weights[end] = 0
 Filter = V*(diagm(filter_weights)/V)
 
 "plotting nodes"
 Vp = vandermonde_1D(N,LinRange(-1,1,100))/V
 gr(aspect_ratio=1,legend=false,markerstrokewidth=1,markersize=2)
 
-"Perform time-stepping"
-u = @. exp(-100*x^2)
-resu = zeros(size(x)) # Storage for the Runge kutta residual storageu
-interval = 5
+resu = zeros(size(x)) # Storage for the Runge kutta residual storage
+interval = 10
 @gif for i = 1:Nsteps
     for INTRK = 1:5
-        rhsu = rhs(u,ops,vgeo,fgeo,mapP,ϵ)
+        rhsu = rhs(u,ops,vgeo,fgeo,mapP,ϵ,a)
         @. resu = rk4a[INTRK]*resu + dt*rhsu
         @. u   += rk4b[INTRK]*resu
 
-        # filter solution
         u .= (Filter*u)
     end
 

@@ -11,7 +11,9 @@ N   = 3 # The order of approximation
 K   = 16
 CFL = .5
 T   = 2.25
-ϵ   = 1/100
+
+# viscosity, wave speed
+ϵ   = .05
 a   = 1
 
 "Mesh related variables"
@@ -69,7 +71,7 @@ function rhs(u,ops,vgeo,fgeo,mapP,params...)
     dudx = rxJ.*(Dr*u)
     σx = (dudx + LIFT*σxflux)./J
 
-    # define viscosity, penalization parameters
+    # define viscosity, wavespeed parameters
     ϵ = params[1]
     a = params[2]
     tau = 1
@@ -81,7 +83,7 @@ function rhs(u,ops,vgeo,fgeo,mapP,params...)
     dσxdx = rxJ.*(Dr*σx)
     rhsσ = dσxdx + LIFT*(σflux)
 
-    # compute du/dx
+    # compute a*du/dx
     uflux = @. .5*(a*du*nxJ - tau*du*abs(a*nxJ))
     rhsu = a*dudx + LIFT*uflux
 
@@ -98,13 +100,22 @@ dt = CFL * 2 / (CN*K)
 Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
+"Perform time-stepping"
+u = @. exp(-100*x^2)
+for e = 1:K
+    xavg = sum(x[:,e])/size(x,1)
+    if abs(xavg) < 1/3
+        u[:,e] .= 1
+    else
+        u[:,e] .= 0
+    end
+end
+
 "plotting nodes"
 Vp = vandermonde_1D(N,LinRange(-1,1,100))/V
 gr(aspect_ratio=1,legend=false,markerstrokewidth=1,markersize=2)
 
-"Perform time-stepping"
-u = @. exp(-100*x^2)
-resu = zeros(size(x)) # Storage for the Runge kutta residual storageu
+resu = zeros(size(x)) # Storage for the Runge kutta residual storage
 interval = 5
 @gif for i = 1:Nsteps
     for INTRK = 1:5
