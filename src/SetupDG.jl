@@ -425,7 +425,7 @@ end
 # inputs = ref elem and mesh data
 # Qrhskew,Qshskew = skew symmetric hybridized SBP operators
 # note that md::MeshData needs FToF to also be periodic
-function assemble_global_SBP_matrices(rd::RefElemData,md::MeshData,Qrhskew,Qshskew)
+function assemble_global_SBP_matrices_2D(rd::RefElemData,md::MeshData,Qrhskew,Qshskew)
 
         @unpack rxJ,sxJ,ryJ,syJ,nxJ,nyJ,mapP,FToF = md
         @unpack Nfaces,wf,wq = rd
