@@ -10,7 +10,9 @@ module SetupDG
 # non-DG modules
 using LinearAlgebra # for diagm
 using SparseArrays # for sparse, droptol
+using BlockArrays # for easier assembly of DG matrices
 using UnPack # for easy setting/getting in mutable structs
+
 
 # matlab-like modules
 using CommonUtils # for I matrix in geometricFactors
@@ -28,11 +30,17 @@ import UniformQuadMesh # for face vertices
 import Basis3DHex
 import UniformHexMesh # for face vertices
 
+# initialization of mesh/reference element data
 export init_reference_interval, init_reference_tri
 export init_reference_quad, init_reference_hex
 export init_mesh
 export MeshData, RefElemData
 
+# for constructing DG matrices
+export build_rhs_matrix, assemble_global_SBP_matrices
+
+
+# do we realy need mutable here?  I think we can remove it
 mutable struct MeshData
 
     VX;VY;VZ # vertex coordinates
@@ -396,7 +404,67 @@ function init_mesh(VX,VY,VZ,EToV,rd::RefElemData)
 end
 
 
+# ============== Constructing DG matrices =================
 
+
+# flexible but slow function to construct
+# Np,K = number dofs and elements
+# vargs = other args for applyRHS
+function build_rhs_matrix(applyRHS,Np,K,vargs...)
+        u = zeros(Np,K)
+        A = spzeros(Np*K,Np*K)
+        for i in eachindex(u)
+                u[i] = 1
+                r_i = applyRHS(u,vargs...)
+                A[:,i] = droptol!(sparse(r_i[:]),1e-12)
+                u[i] = 0
+        end
+        return A
+end
+
+# inputs = ref elem and mesh data
+# Qrhskew,Qshskew = skew symmetric hybridized SBP operators
+# note that md::MeshData needs FToF to also be periodic
+function assemble_global_SBP_matrices(rd::RefElemData,md::MeshData,Qrhskew,Qshskew)
+
+        @unpack rxJ,sxJ,ryJ,syJ,nxJ,nyJ,mapP,FToF = md
+        @unpack Nfaces,wf,wq = rd
+
+        EToE = @. (FToF.-1) ÷ Nfaces + 1
+
+        # Qrhskew,Qshskew,Vh = ops
+        Nh = size(Qrhskew,1)
+        NfqNfaces,K = size(nxJ)
+        Nfq = convert(Int,NfqNfaces/Nfaces)
+        fids = length(wq)+1:Nh # last indices correspond to face nodes
+
+        blockIds = repeat([Nh],K)
+        Ax = BlockArray(spzeros(Nh*K,Nh*K),blockIds,blockIds) # BlockArray faster than PseudoBlockArray
+        Ay = BlockArray(spzeros(Nh*K,Nh*K),blockIds,blockIds)
+        for e = 1:K # loop over elements
+
+                # self-contributions - assume affine for now
+                Ax_local = rxJ[1,e]*Qrhskew + sxJ[1,e]*Qshskew
+                Ay_local = ryJ[1,e]*Qrhskew + syJ[1,e]*Qshskew
+                Ax[Block(e,e)] = droptol!(sparse(Ax_local),1e-12)
+                Ay[Block(e,e)] = droptol!(sparse(Ay_local),1e-12)
+
+                # neighboring contributions (ignore self-neighbors)
+                face_ids = (x,f)->reshape(x,Nfq,Nfaces)[:,f]
+                for (f,enbr) in enumerate(EToE[:,e])
+                        if enbr!=e
+                                local_perm = ((mapP[:,e].-1) .% NfqNfaces) .+ 1 # mod out offsets
+                                local_perm = reshape(local_perm,Nfq,Nfaces)
+                                Axnbr = spdiagm(0 => face_ids(.5*wf.*nxJ[:,e],f))
+                                Aynbr = spdiagm(0 => face_ids(.5*wf.*nyJ[:,e],f))
+                                fperm = face_ids(local_perm,f)
+                                Ax[Block(e,enbr)][face_ids(fids,f),fids[fperm]] .= Axnbr
+                                Ay[Block(e,enbr)][face_ids(fids,f),fids[fperm]] .= Aynbr
+                        end
+                end
+        end
+        return droptol!(Array(Ax),1e-12),droptol!(Array(Ay),1e-12)
+end
 
 
 end
