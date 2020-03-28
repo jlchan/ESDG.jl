@@ -61,7 +61,7 @@ function hadamard_jacobian!(A::SparseMatrixCSC,Q::SparseMatrixCSC,
     # add diagonal entry assuming Q = +/- Q^T
     for m = 1:Nfields, n = 1:Nfields
         #Asum = scale * vec(sum(A[Block(m,n)],dims=1))
-        Asum = scale * vec(sum(A[ids(m),ids(n)],dims=1))
+        Asum = scale * vec(sum(A[ids(m),ids(n)],dims=1)) # hack since CartesianIndices seems broken?
         for i = 1:num_pts
             A[Block(m,n)[i,i]] += Asum[i] # can't index all at once - bug?
         end
