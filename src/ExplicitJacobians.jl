@@ -10,7 +10,6 @@ module ExplicitJacobians
 using LinearAlgebra # for I matrix in geometricFactors
 using ForwardDiff
 using StaticArrays
-using BlockArrays
 using SparseArrays
 
 export hadamard_jacobian,hadamard_jacobian!
@@ -29,38 +28,12 @@ function hadamard_jacobian(Q::SparseMatrixCSC,F,U::AbstractArray,scale = -1)
     NpK = size(Q,2)
     blockIds = repeat([NpK],Nfields)
     A = spzeros(NpK*Nfields,NpK*Nfields)
-    # A = BlockArray(A,blockIds,blockIds) # BlockArray = slow
 
     dF(uL,uR) = ForwardDiff.jacobian(uR->F(uL,uR),uR)
 
     hadamard_jacobian!(A,Q,dF,U,scale)
 
-    return A #Array(A)
-end
-
-# dF = function evaluating the Jacobian of a bivariate flux
-function hadamard_jacobian!(A::AbstractBlockArray,Q::SparseMatrixCSC,
-                            dF,U::AbstractArray,scale = -1)
-
-    fill!(A,0.0) # should zero sparse entries but keep sparsity pattern
-
-    Nfields = length(U)
-
-    # loop over non-zero indices in Q
-    Qnz = zip(findnz(Q)...)
-    for (i,j,Qij) in Qnz
-        Ui = getindex.(U,i)
-        Uj = getindex.(U,j)
-        dFdU = dF(Ui,Uj)
-        for n = 1:length(U), m=1:length(U)
-            A[BlockIndex((m,n),(i,j))] = dFdU[m,n]*Qij
-        end
-    end
-
-    # add diagonal entry assuming Q = +/- Q^T
-    for m = 1:Nfields, n = 1:Nfields
-        A[Block(m,n)] += scale*spdiagm(0=>vec(sum(A[Block(m,n)],dims=1)))
-    end
+    return A
 end
 
 function hadamard_jacobian!(A::SparseMatrixCSC,Q::SparseMatrixCSC,
