@@ -11,35 +11,39 @@ using LinearAlgebra # for I matrix in geometricFactors
 using ForwardDiff
 using StaticArrays
 using SparseArrays
+using UnPack
+using SetupDG
 
-export hadamard_jacobian,hadamard_jacobian!
+export hadamard_jacobian,accum_hadamard_jacobian!
 export hadamard_sum, hadamard_sum!
 export banded_matrix_function
 export columnize
+
+# for constructing DG matrices
+export build_rhs_matrix, assemble_global_SBP_matrices_2D
 
 # use w/reshape to convert from matrices to arrays of arrays
 columnize(A) = SVector{size(A,2)}([A[:,i] for i in 1:size(A,2)])
 
 # sparse matrix assembly version
 # can only deal with one coordinate component at a time in higher dimensions
-function hadamard_jacobian(Q::SparseMatrixCSC,F,U::AbstractArray,scale = -1)
+function hadamard_jacobian(Q::SparseMatrixCSC,dF,U::AbstractArray,scale = -1)
 
     Nfields = length(U)
     NpK = size(Q,2)
     blockIds = repeat([NpK],Nfields)
     A = spzeros(NpK*Nfields,NpK*Nfields)
 
-    dF(uL,uR) = ForwardDiff.jacobian(uR->F(uL,uR),uR)
-
-    hadamard_jacobian!(A,Q,dF,U,scale)
+    accum_hadamard_jacobian!(A,Q,dF,U,scale)
 
     return A
 end
 
-function hadamard_jacobian!(A::SparseMatrixCSC,Q::SparseMatrixCSC,
-                            dF,U::AbstractArray,scale = -1)
+# compute and accumulate
+function accum_hadamard_jacobian!(A::SparseMatrixCSC,Q::SparseMatrixCSC,
+    dF,U::AbstractArray,scale = -1)
 
-    fill!(A,0.0) # should zero sparse entries but keep sparsity pattern
+    #fill!(A,0.0) # should zero sparse entries but keep sparsity pattern
 
     Nfields = length(U)
 
@@ -54,14 +58,14 @@ function hadamard_jacobian!(A::SparseMatrixCSC,Q::SparseMatrixCSC,
         Uj = getindex.(U,j)
         dFdU = dF(Ui,Uj)
         for n = 1:length(U), m=1:length(U)
-            A[Block(m,n)[i,j]] = dFdU[m,n]*Qij
+            A[Block(m,n)[i,j]] += dFdU[m,n]*Qij
         end
     end
 
     # add diagonal entry assuming Q = +/- Q^T
     for m = 1:Nfields, n = 1:Nfields
-        #Asum = scale * vec(sum(A[Block(m,n)],dims=1))
-        Asum = scale * vec(sum(A[ids(m),ids(n)],dims=1)) # hack since CartesianIndices seems broken?
+        #Asum = scale * vec(sum(A[Block(m,n)],dims=1)) # CartesianIndices broken :(
+        Asum = scale * vec(sum(A[ids(m),ids(n)],dims=1)) # TODO: fix slowness (maybe just alloc issue?)
         for i = 1:num_pts
             A[Block(m,n)[i,i]] += Asum[i] # can't index all at once - bug?
         end
@@ -114,5 +118,67 @@ function hadamard_sum!(ATr::SparseMatrixCSC,F,u::AbstractArray,rhs::AbstractArra
     end
 end
 
+
+# ============== Constructing DG matrices =================
+
+# flexible but slow function to construct global matrices based on rhs evals
+# Np,K = number dofs and elements
+# vargs = other args for applyRHS
+function build_rhs_matrix(applyRHS,Np,K,vargs...)
+    u = zeros(Np,K)
+    A = spzeros(Np*K,Np*K)
+    for i in eachindex(u)
+        u[i] = 1
+        r_i = applyRHS(u,vargs...)
+        A[:,i] = droptol!(sparse(r_i[:]),1e-12)
+        u[i] = 0
+    end
+    return A
+end
+
+# inputs = ref elem and mesh data
+# Qrhskew,Qshskew = skew symmetric hybridized SBP operators
+# note that md::MeshData needs FToF to also be periodic
+function assemble_global_SBP_matrices_2D(rd::RefElemData, md::MeshData,
+    Qrhskew, Qshskew, dtol=1e-12)
+
+    @unpack rxJ,sxJ,ryJ,syJ,nxJ,nyJ,mapP,FToF = md
+    @unpack Nfaces,wf,wq = rd
+    Nh = size(Qrhskew,1)
+    NfqNfaces,K = size(nxJ)
+    Nfq = convert(Int,NfqNfaces/Nfaces)
+
+    EToE = @. (FToF.-1) ÷ Nfaces + 1
+    mapPerm = ((mapP.-1) .% NfqNfaces) .+ 1 # mod out face offset
+    fids = length(wq)+1:Nh # last indices correspond to face nodes
+
+    ids(e) = (1:Nh) .+ (e-1)*Nh # block offsets
+    Block(e1,e2) = CartesianIndices((ids(e1),ids(e2))) # emulating BlockArrays, but faster
+    face_ids = (x,f)->reshape(x,Nfq,Nfaces)[:,f]
+
+    Ax,Ay,Bx,By = ntuple(x->spzeros(Nh*K,Nh*K),4)
+    for e = 1:K # loop over elements
+
+        # self-contributions - assume affine for now
+        Ax_local = rxJ[1,e]*Qrhskew + sxJ[1,e]*Qshskew
+        Ay_local = ryJ[1,e]*Qrhskew + syJ[1,e]*Qshskew
+        Ax[Block(e,e)] .= sparse(Ax_local)
+        Ay[Block(e,e)] .= sparse(Ay_local)
+
+        # neighboring contributions (ignore self-neighbors)
+        for (f,enbr) in enumerate(EToE[:,e])
+            if enbr!=e
+                fperm = face_ids(reshape(mapPerm[:,e],Nfq,Nfaces),f)
+                Axnbr = spdiagm(0 => face_ids(.5*wf.*nxJ[:,e],f))
+                Aynbr = spdiagm(0 => face_ids(.5*wf.*nyJ[:,e],f))
+                Ax[Block(e,enbr)[face_ids(fids,f),fids[fperm]]] .= Axnbr
+                Ay[Block(e,enbr)[face_ids(fids,f),fids[fperm]]] .= Aynbr
+                Bx[Block(e,enbr)[face_ids(fids,f),fids[fperm]]] .= Axnbr
+                By[Block(e,enbr)[face_ids(fids,f),fids[fperm]]] .= Aynbr
+            end
+        end
+    end
+    return droptol!.((Ax,Ay,Bx,By),dtol)
+end
 
 end
