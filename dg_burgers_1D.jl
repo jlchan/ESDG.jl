@@ -7,13 +7,13 @@ push!(LOAD_PATH, "./src") # user defined modules
 using CommonUtils, Basis1D
 
 "Approximation parameters"
-N   = 3 # The order of approximation
-K   = 32
+N   = 4 # The order of approximation
+K   = 9
 CFL = .5
 T   = 2.25
 
 # viscosity, wave speed
-ϵ   = .0001
+ϵ   = .00
 a   = 1
 
 "Mesh related variables"
@@ -51,16 +51,21 @@ J = repeat(transpose(diff(VX)/2),N+1,1)
 nxJ = repeat([-1;1],1,K)
 rxJ = 1
 
+"Quadrature operators"
+rq,wq = gauss_quad(0,0,2*N)
+Vq = vandermonde_1D(N,rq)/V
+Pq = (Vq'*diagm(wq)*Vq)\(Vq'*diagm(wq))
+
 "=========== done with mesh setup here ============ "
 
 "pack arguments into tuples"
-ops = (Dr,LIFT,Vf)
+ops = (Dr,LIFT,Vf,Vq,Pq)
 vgeo = (rxJ,J)
 fgeo = (nxJ,)
 
 function rhs(u,ops,vgeo,fgeo,mapP,params...)
     # unpack arguments
-    Dr,LIFT,Vf = ops
+    Dr,LIFT,Vf,Vq,Pq = ops
     rxJ,J = vgeo
     nxJ, = fgeo
 
@@ -84,10 +89,19 @@ function rhs(u,ops,vgeo,fgeo,mapP,params...)
     rhsσ = dσxdx + LIFT*(σflux)
 
     # compute df(u)/dx (or u*(du/dx))
-    flux = @. u^2/2
+
+    # # nodal collocation
+    # flux = @. u^2/2
+    # dfdx = rxJ.*(Dr*flux)
+    # flux_f = Vf*flux
+    # df = flux_f[mapP] - flux_f
+
+    # over-integration
+    flux = .5*Pq*((Vq*u).^2)
     dfdx = rxJ.*(Dr*flux)
     flux_f = Vf*flux
-    df = flux_f[mapP] - flux_f
+    df = @. .5*(flux_f[mapP]-flux_f) # an educated guess
+
     uflux = @. .5*(df*nxJ - tau*du*abs(.5*(uf[mapP]+uf))*abs(nxJ))
     rhsu = dfdx + LIFT*uflux
 
@@ -106,23 +120,18 @@ dt = T/Nsteps
 
 "Perform time-stepping"
 u = @. exp(-100*x^2)
-# for e = 1:K
-#     xavg = sum(x[:,e])/size(x,1)
-#     if abs(xavg) < 1/3
-#         u[:,e] .= 1
-#     else
-#         u[:,e] .= 0
-#     end
-# end
+u = @. -sin(pi*x)
 
-filter_weights = ones(N+1)
-# filter_weights[2:end] = exp.(-collect(2:N+1))
-filter_weights[end] = 0
-Filter = V*(diagm(filter_weights)/V)
+ulims = 1.25 .* (minimum(u),maximum(u))
+
+# filter_weights = ones(N+1)
+# filter_weights[end] = 1
+# Filter = V*(diagm(filter_weights)/V)
 
 "plotting nodes"
 Vp = vandermonde_1D(N,LinRange(-1,1,100))/V
 gr(aspect_ratio=1,legend=false,markerstrokewidth=1,markersize=2)
+# plot()
 
 resu = zeros(size(x)) # Storage for the Runge kutta residual storage
 interval = 10
@@ -132,13 +141,13 @@ interval = 10
         @. resu = rk4a[INTRK]*resu + dt*rhsu
         @. u   += rk4b[INTRK]*resu
 
-        u .= (Filter*u)
+        # u .= (Filter*u)
     end
 
     if i%interval==0 || i==Nsteps
         println("Number of time steps $i out of $Nsteps")
-        plot(Vp*x,Vp*u,ylims=(-.1,1.1),title="Timestep $i out of $Nsteps",lw=2)
-        scatter!(x,u)
+        plot(Vp*x,Vp*u,ylims=ulims,title="Timestep $i out of $Nsteps",lw=2)
+        scatter!(x,u,xlims=(-1,1),ylims=ulims)
     end
 end every interval
 
