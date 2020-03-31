@@ -14,7 +14,9 @@ using SparseArrays
 using UnPack
 using SetupDG
 
+export init_jacobian_matrices
 export hadamard_jacobian,accum_hadamard_jacobian!
+export reduce_jacobian!
 export hadamard_sum, hadamard_sum!
 export banded_matrix_function
 export columnize
@@ -39,7 +41,7 @@ function hadamard_jacobian(Q::SparseMatrixCSC,dF,U::AbstractArray,scale = -1)
     return A
 end
 
-# compute and accumulate
+# compute and accumulate contributions from a Jacobian function dF
 function accum_hadamard_jacobian!(A::SparseMatrixCSC,Q::SparseMatrixCSC,
     dF,U::AbstractArray,scale = -1)
 
@@ -90,6 +92,59 @@ function banded_matrix_function(mat_fun,U::AbstractArray)
     end
     return A
 end
+
+# init sparse matrices based on elem-to-elem connectivity
+# dims = tuple of matrix dimensions for each matrix (assumes square matrices)
+function init_jacobian_matrices(md::MeshData, dims, Nfields=1)
+    @unpack FToF = md
+    Nfaces,K = size(FToF)
+    EToE = @. (FToF.-1) ÷ Nfaces + 1
+    A = spzeros.(K.*dims,K.*dims)
+
+    ids(e,block_size) = (@. (1:block_size) + (e-1)*block_size)
+
+    for e = 1:K, f = 1:Nfaces
+        enbr = EToE[f,e]
+
+        for (i,block_size) = enumerate(dims)
+            id,id_nbr = ids.((e,enbr), block_size)
+
+            # init to non-zeros to retain sparsity pattern
+            A[i][id, id]     .= 1e-16*ones(block_size,block_size)
+            A[i][id, id_nbr] .= 1e-16*ones(block_size,block_size)
+        end
+    end
+
+    return repeat.(A,Nfields,Nfields)
+end
+
+# accumulate VhTr*A*Vh on-the-fly
+function reduce_jacobian!(A_reduced::SparseMatrixCSC,A::SparseMatrixCSC,
+                          md::MeshData, Vh, Nfields=1)
+
+    @unpack FToF = md
+    Nfaces,K = size(FToF)
+    EToE = @. (FToF.-1) ÷ Nfaces + 1
+    Nh,Np = size(Vh)
+
+    ids(e,npts) = (@. (1:npts) + (e-1)*npts)
+
+    for i = 1:Nfields, j = 1:Nfields
+        for e = 1:K, f = 1:Nfaces
+            enbr = EToE[f,e]
+            id,id_nbr   = ids.((e,enbr), Nh)
+            idr,idr_nbr = ids.((e,enbr), Np)
+
+            offset(i,num_pts) = (i-1)*num_pts*K
+
+            # convert to matrix for fast NLA
+            A_reduced[idr .+ offset(i,Np),idr .+ offset(j,Np)]     .= transpose(Vh)*Matrix(A[id.+offset(i,Nh),id.+offset(j,Nh)])*Vh
+            A_reduced[idr .+ offset(i,Np),idr_nbr .+ offset(j,Np)] .= transpose(Vh)*Matrix(A[id.+offset(i,Nh),id_nbr.+offset(j,Nh)])*Vh
+        end
+    end
+end
+
+# =============== for residual evaluation ================
 
 # use ATr for faster col access of sparse CSC matrices
 function hadamard_sum(ATr::SparseMatrixCSC,F,u::AbstractArray)
