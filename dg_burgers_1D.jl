@@ -90,17 +90,17 @@ function rhs(u,ops,vgeo,fgeo,mapP,params...)
 
     # compute df(u)/dx (or u*(du/dx))
 
-    # # nodal collocation
-    # flux = @. u^2/2
-    # dfdx = rxJ.*(Dr*flux)
-    # flux_f = Vf*flux
-    # df = flux_f[mapP] - flux_f
-
-    # over-integration
-    flux = .5*Pq*((Vq*u).^2)
+    # nodal collocation
+    flux = @. u^2/2
     dfdx = rxJ.*(Dr*flux)
     flux_f = Vf*flux
-    df = @. .5*(flux_f[mapP]-flux_f) # an educated guess
+    df = flux_f[mapP] - flux_f
+
+    # # over-integration
+    # flux = .5*Pq*((Vq*u).^2)
+    # dfdx = rxJ.*(Dr*flux)
+    # flux_f = Vf*flux
+    # df = @. .5*(flux_f[mapP]-flux_f) # an educated guess
 
     uflux = @. .5*(df*nxJ - tau*du*abs(.5*(uf[mapP]+uf))*abs(nxJ))
     rhsu = dfdx + LIFT*uflux

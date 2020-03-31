@@ -7,7 +7,7 @@ using CommonUtils, Basis1D
 
 "Approximation parameters"
 K   = 1024 # number of elements
-T   = 2  # endtime
+T   = .25  # endtime
 CFL = 1   # controls size of timestep
 
 "Grid related variables"
@@ -40,15 +40,15 @@ interval = 25
         uL = vcat(u[end],u)
         uR = vcat(u,u[1])
 
-        # # conservative version
-        # tau = @. max(abs(uL),abs(uR))
-        # flux = @. .5*(uL^2+uR^2)/2 - .5*tau*(uR-uL) # central flux
-        # rhsu = -diff(flux,dims=1)./h
+        # conservative version
+        tau = @. max(abs(uL),abs(uR)) # local lax-Friedrichs penalization
+        flux = @. .5*(uL^2+uR^2)/2 - .5*tau*(uR-uL) # central flux
+        rhsu = -diff(flux,dims=1)./h
 
-        # non-conservative version
-        tau = 1
-        flux = @. .5*(uL+uR) - .5*tau*(uR-uL) # flux for advection
-        rhsu = -u.*diff(flux,dims=1)./h
+        # # non-conservative version
+        # tau = 1
+        # flux = @. .5*(uL+uR) - .5*tau*(uR-uL) # flux for advection
+        # rhsu = -u.*diff(flux,dims=1)./h
 
         @. resu = rk4a[INTRK]*resu + dt*rhsu
         @. u   += rk4b[INTRK]*resu
@@ -59,3 +59,5 @@ interval = 25
         scatter(x,u,ylims=ulims)
     end
 end every interval
+
+scatter(x,u,ylims=ulims)
