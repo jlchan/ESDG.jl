@@ -7,13 +7,13 @@ push!(LOAD_PATH, "./src") # user defined modules
 using CommonUtils, Basis1D
 
 "Approximation parameters"
-N   = 4 # The order of approximation
-K   = 9
+N   = 3 # The order of approximation
+K   = 16
 CFL = .5
-T   = 2.25
+T   = .25 #2.25
 
 # viscosity, wave speed
-ϵ   = .00
+ϵ   = .0
 a   = 1
 
 "Mesh related variables"
@@ -90,20 +90,29 @@ function rhs(u,ops,vgeo,fgeo,mapP,params...)
 
     # compute df(u)/dx (or u*(du/dx))
 
-    # nodal collocation
-    flux = @. u^2/2
-    dfdx = rxJ.*(Dr*flux)
-    flux_f = Vf*flux
-    df = flux_f[mapP] - flux_f
+    # # nodal collocation
+    # flux = @. u^2/2
+    # dfdx = rxJ.*(Dr*flux)
+    # flux_f = Vf*flux
+    # df = flux_f[mapP] - flux_f
 
-    # # over-integration
+    # # over-integration - version 2
     # flux = .5*Pq*((Vq*u).^2)
     # dfdx = rxJ.*(Dr*flux)
     # flux_f = Vf*flux
     # df = @. .5*(flux_f[mapP]-flux_f) # an educated guess
 
-    uflux = @. .5*(df*nxJ - tau*du*abs(.5*(uf[mapP]+uf))*abs(nxJ))
-    rhsu = dfdx + LIFT*uflux
+    # uflux = @. .5*(df*nxJ - tau*du*abs(.5*(uf[mapP]+uf))*abs(nxJ))
+    # rhsu = dfdx + LIFT*uflux
+
+    # over-integration - version 1
+    f_u = (Vq*u).^2/2
+    vol_rhs = rxJ.*(M\(-Dr'*Vq'*diagm(wq)*f_u))
+    uf   = Vf*u
+    uP   = uf[mapP]
+    f_uf = @. (uf).^2/2
+    flux = @. .5*(f_uf[mapP]+f_uf)*nxJ - .5*tau*max(abs(uP),abs(uf))*(uP - uf)
+    rhsu = vol_rhs + LIFT*flux
 
     # combine advection and viscous terms
     rhsu = rhsu - ϵ*rhsσ
@@ -119,14 +128,16 @@ Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
 "Perform time-stepping"
-u = @. exp(-100*x^2)
+u = @. exp(-100*(x+.5)^2)
 u = @. -sin(pi*x)
 
 ulims = 1.25 .* (minimum(u),maximum(u))
 
-# filter_weights = ones(N+1)
-# filter_weights[end] = 1
-# Filter = V*(diagm(filter_weights)/V)
+filter_weights = ones(N+1)
+filter_weights[end-2] = .5
+filter_weights[end-1] = .1
+filter_weights[end] = .0
+Filter = V*(diagm(filter_weights)/V)
 
 "plotting nodes"
 Vp = vandermonde_1D(N,LinRange(-1,1,100))/V
@@ -138,6 +149,7 @@ interval = 10
 @gif for i = 1:Nsteps
     for INTRK = 1:5
         rhsu = rhs(u,ops,vgeo,fgeo,mapP,ϵ,a)
+        # rhsu .= (Filter*rhsu)
         @. resu = rk4a[INTRK]*resu + dt*rhsu
         @. u   += rk4b[INTRK]*resu
 
@@ -151,5 +163,5 @@ interval = 10
     end
 end every interval
 
-# scatter!(x,u,markersize=4) # plot nodal values
-# plot!(Vp*x,Vp*u) # plot interpolated solution at fine points
+scatter!(x,u,markersize=4) # plot nodal values
+plot!(Vp*x,Vp*u) # plot interpolated solution at fine points
