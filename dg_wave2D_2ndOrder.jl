@@ -7,12 +7,14 @@ using CommonUtils
 using Basis1D
 using Basis2DTri
 using UniformTriMesh
+using Setup2DTri
+using UnPack
 
 "Define approximation parameters"
 N   = 3 # The order of approximation
 K1D = 16 # number of elements along each edge of a rectangle
 CFL = .5 # relative size of a time-step
-T   = 1 # final time
+T   = 1.5 # final time
 
 "=========== Setup code ============="
 
@@ -43,7 +45,7 @@ Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
 "Define the initial conditions by interpolation"
-p = @. exp(-700*(x^2+y^2))
+p = @. exp(-100*(x^2+y^2))
 pprev = copy(p) # 1st order accurate approximation to dp/dt = 0
 
 "Define function to evaluate the RHS"
@@ -55,7 +57,12 @@ function rhs_2ndorder(p,rd::RefElemData,md::MeshData)
 
     # construct sigma
     pf = Vf*p # eval pressure at face points
-    dp = pf[mapP]-pf # compute jumps of pressure
+
+    # imposing zero Dirichlet BCs
+    pP = pf[mapP]
+    pP[mapB] = -pf[mapB]
+    dp = pP-pf # compute jumps of pressure
+
     pr = Dr*p
     ps = Ds*p
     dpdx = @. rxJ*pr + sxJ*ps
@@ -104,4 +111,4 @@ end
 @unpack Vp = rd
 vv = Vp*p
 scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90))
-@show maximum(abs.(p-pex(x,y,T)))
+#@show maximum(abs.(p-pex(x,y,T)))
