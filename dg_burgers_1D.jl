@@ -7,10 +7,10 @@ push!(LOAD_PATH, "./src") # user defined modules
 using CommonUtils, Basis1D
 
 "Approximation parameters"
-N   = 2 # The order of approximation
-K   = 32
+N   = 7 # The order of approximation
+K   = 8
 CFL = .75
-T   = 2.25
+T   = 1
 
 # viscosity, wave speed
 ϵ   = .0
@@ -98,33 +98,33 @@ function rhs(u,ops,vgeo,fgeo,mapP,params...)
     # uflux = @. .5*(df*nxJ - tau*du*abs(.5*(uf[mapP]+uf))*abs(nxJ))
     # rhsu = dfdx + LIFT*uflux
 
-    # # over-integration - version 1
-    # f_u = (Vq*u).^2/2
-    # vol_rhs = rxJ.*(M\(-Dr'*Vq'*diagm(wq)*f_u))
-    # uf   = Vf*u
-    # uP   = uf[mapP]
-    # f_uf = @. (uf).^2/2
-    # flux = @. .5*(f_uf[mapP]+f_uf)*nxJ - tau*abs(.5*(uP+uf))*(uP - uf) # an educated guess for the flux
-    # rhsu = vol_rhs + LIFT*flux
+    # over-integration - version 1
+    f_u = .5*(Vq*u).^2
+    vol_rhs = rxJ.*(M\(-Dr'*Vq'*diagm(wq)*f_u))
+    uf   = Vf*u
+    uP   = uf[mapP]
+    f_uf = @. (uf).^2/2
+    flux = @. .5*(f_uf[mapP]+f_uf)*nxJ - tau*abs(.5*(uP+uf))*du # an educated guess for the flux
+    rhsu = vol_rhs + LIFT*flux
 
-    # # over-integration - version 2
-    # flux = .5*Pq*((Vq*u).^2)
-    # dfdx = rxJ.*(Dr*flux)
-    # flux_f = Vf*flux
-    # df = @. .5*(flux_f[mapP]+f_uf)-flux_f
-    # uflux = @. (df*nxJ - tau*du*abs(.5*(uf[mapP]+uf))*abs(nxJ))
-    # rhsu = dfdx + LIFT*uflux
+    # over-integration - version 2
+    flux = .5*Pq*((Vq*u).^2)
+    dfdx = rxJ.*(Dr*flux)
+    uf   = Vf*u
+    f_uf = @. (uf).^2/2
+    df = .5*(f_uf[mapP]+f_uf) - (Vf*flux)
+    uflux = @. df*nxJ - tau*abs(.5*(uP+uf))*du
+    rhsu = dfdx + LIFT*uflux
 
-    # split form
-    f_u = (Vq*u).^2
-    dfdx = rxJ.*(M\(-Dr'*Vq'*diagm(wq)*f_u)) # conservative part
-    ududx = Pq*((Vq*u).*(Vq*Dr*u))           # non-conservative part
-    uf = Vf*u
-    uP = uf[mapP]
-    df = @. .5*(uP^2 + uP*uf) # .5*(uP^2 + uf^2) + .5*(uP-uf)*uf = .5*(uP^2+uP*uf)
-    # uflux = @. (df*nxJ - tau*du*abs(.5*(uf[mapP]+uf))*abs(nxJ))
-    uflux = @. (df*nxJ - .5*tau*du*max(abs(uf[mapP]),abs(uf))*abs(nxJ))
-    rhsu = (1/3)*(dfdx + ududx + LIFT*uflux)
+    # # split form
+    # f_u = (Vq*u).^2
+    # dfdx = rxJ.*(M\(-Dr'*Vq'*diagm(wq)*f_u)) # conservative part
+    # ududx = Pq*((Vq*u).*(Vq*Dr*u))           # non-conservative part
+    # uf = Vf*u
+    # uP = uf[mapP]
+    # df = @. .5*(uP^2 + uP*uf) # .5*(uP^2 + uf^2) + .5*(uP-uf)*uf = .5*(uP^2+uP*uf)
+    # uflux = @. (df*nxJ - .5*tau*du*max(abs(uf[mapP]),abs(uf))*abs(nxJ))
+    # rhsu = (1/3)*(dfdx + ududx + LIFT*uflux)
 
     # combine advection and viscous terms
     rhsu = rhsu - ϵ*rhsσ
@@ -156,7 +156,10 @@ Vp = vandermonde_1D(N,LinRange(-1,1,100))/V
 gr(aspect_ratio=1,legend=false,markerstrokewidth=1,markersize=2)
 # plot()
 
+wJq = diagm(wq)*(Vq*J)
+
 resu = zeros(size(x)) # Storage for the Runge kutta residual storage
+energy = zeros(Nsteps)
 interval = 10
 @gif for i = 1:Nsteps
     for INTRK = 1:5
@@ -167,6 +170,7 @@ interval = 10
 
         # u .= (Filter*u)
     end
+    energy[i] = sum(sum(wJq.*(Vq*u).^2))
 
     if i%interval==0 || i==Nsteps
         println("Number of time steps $i out of $Nsteps")
@@ -175,5 +179,7 @@ interval = 10
     end
 end every interval
 
-# scatter!(x,u,markersize=4) # plot nodal values
-# plot!(Vp*x,Vp*u) # plot interpolated solution at fine points
+# scatter((1:Nsteps)*dt,energy)
+
+scatter(x,u,markersize=4) # plot nodal values
+plot!(Vp*x,Vp*u) # plot interpolated solution at fine points
