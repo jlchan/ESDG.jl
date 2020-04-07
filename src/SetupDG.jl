@@ -36,6 +36,7 @@ export init_mesh
 export MeshData, RefElemData
 
 # do we realy need mutable here?  I think we can remove it
+# TODO: add types to all of these...
 mutable struct MeshData
 
     VX;VY;VZ # vertex coordinates
@@ -62,17 +63,17 @@ mutable struct RefElemData
     V1 # low order interp nodes and matrix
 
     # probably won't use nodes, but might as well keep them around
-    r; s; t # interpolation nodes
+    r; s; t        # interpolation nodes
     rq; sq; tq; wq # volume quadrature
     rf; sf; tf; wf # surface quadrature
-    rp; sp; tp # plotting nodes
+    rp; sp; tp     # plotting nodes
 
-    VDM # Vandermonde matrix
+    VDM        # Vandermonde matrix
     Dr; Ds; Dt # differentiation matrices
-    Vq; Vf # quadrature interpolation matrices
-    M; Pq # mass matrix, L2 projection matrix
-    LIFT # quadrature-based lift matrix
-    Vp # interp to equispaced nodes
+    Vq; Vf     # quadrature interpolation matrices
+    M; Pq      # mass matrix, L2 projection matrix
+    LIFT       # quadrature-based lift matrix
+    Vp         # interp to equispaced nodes
 
     nrJ; nsJ; ntJ # reference normals
 

@@ -119,7 +119,7 @@ function init_jacobian_matrices(md::MeshData, dims, Nfields=1)
 end
 
 # accumulate VhTr*A*Vh on-the-fly
-function reduce_jacobian!(A_reduced::SparseMatrixCSC,A::SparseMatrixCSC,
+function reduce_jacobian!(A_reduced::SparseMatrixCSC, A::SparseMatrixCSC,
                           md::MeshData, Vh, Nfields=1)
 
     @unpack FToF = md
@@ -151,19 +151,20 @@ function hadamard_sum(ATr::SparseMatrixCSC,F,u::AbstractArray)
     m, n = size(ATr)
     # rhs = [zeros(n) for i in eachindex(u)]
     rhs = MVector{length(u)}([zeros(n) for i in eachindex(u)]) # probably faster w/StaticArrays?
-    hadamard_sum!(ATr,F,u,rhs)
+    hadamard_sum!(rhs,ATr,F,u)
     return rhs
 end
 
 # computes ∑ A_ij * F(u_i,u_j) = (A∘F)*1 for flux differencing
-function hadamard_sum!(ATr::SparseMatrixCSC,F,u::AbstractArray,rhs::AbstractArray)
+# TODO: switch to column-major indexing to speed up construction
+function hadamard_sum!(rhs::AbstractArray,ATr::SparseMatrixCSC,F,u::AbstractArray)
     cols = rowvals(ATr)
     vals = nonzeros(ATr)
     m, n = size(ATr)
     for i = 1:n
         ui = getindex.(u,i)
         val_i = zeros(length(u))
-        for j in nzrange(ATr, i)
+        for j in nzrange(ATr, i) # for column-major format, extracts ith col of ATr = ith row of A 
             col = cols[j]
             Aij = vals[j]
             uj = getindex.(u,col)
@@ -227,8 +228,8 @@ function assemble_global_SBP_matrices_2D(rd::RefElemData, md::MeshData,
                 Axnbr = spdiagm(0 => face_ids(.5*wf.*nxJ[:,e],f))
                 Aynbr = spdiagm(0 => face_ids(.5*wf.*nyJ[:,e],f))
                 Ax[Block(e,enbr)[face_ids(fids,f),fids[fperm]]] .= Axnbr
-                Ay[Block(e,enbr)[face_ids(fids,f),fids[fperm]]] .= Aynbr
-                Bx[Block(e,enbr)[face_ids(fids,f),fids[fperm]]] .= Axnbr
+                Ay[Block(e,enbr)[face_ids(fids,f),fids[fperm]]] .= Aynbr # TODO: remove this and just store Bx/By coupling matrices
+                Bx[Block(e,enbr)[face_ids(fids,f),fids[fperm]]] .= Axnbr # TODO: switch to block access pattern
                 By[Block(e,enbr)[face_ids(fids,f),fids[fperm]]] .= Aynbr
             end
         end
