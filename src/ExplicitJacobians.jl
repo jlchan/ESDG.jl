@@ -164,7 +164,7 @@ function hadamard_sum!(rhs::AbstractArray,ATr::SparseMatrixCSC,F,u::AbstractArra
     for i = 1:n
         ui = getindex.(u,i)
         val_i = zeros(length(u))
-        for j in nzrange(ATr, i) # for column-major format, extracts ith col of ATr = ith row of A 
+        for j in nzrange(ATr, i) # for column-major format, extracts ith col of ATr = ith row of A
             col = cols[j]
             Aij = vals[j]
             uj = getindex.(u,col)
