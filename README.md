@@ -1,5 +1,5 @@
 # ESDG.jl (**e**nergy/**e**ntropy stable **d**iscontinuous **G**alerkin)
-## A Julia codebase for solving 1D/2D/3D time-dependent hyperbolic PDEs using energy or entropy stable high order DG methods on conforming unstructured meshes of triangular, quadrilateral, or hexahedral elements.
+## A Julia codebase for solving 1D/2D/3D time-dependent hyperbolic PDEs using energy or entropy stable high order DG methods on conforming unstructured meshes consisting of triangular, quadrilateral, or hexahedral elements.
 
 These codes are inspired by the Matlab codes for the book [Nodal Discontinuous Galerkin methods](https://link.springer.com/book/10.1007/978-0-387-72067-8) by Hesthaven and Warburton (2007).  While unstructured meshes are supported, all demos use uniform meshes, and the codebase is intended mainly for experimentation and method development.
 

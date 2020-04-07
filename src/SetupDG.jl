@@ -2,7 +2,7 @@
 Module Setup2D
 
 Module to aid in setting up reference operators, meshes, geometric terms
-Can also assemble global DG-SBP operators
+Also provides functions to assemble global DG-SBP operators
 
 """
 
