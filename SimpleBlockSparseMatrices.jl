@@ -7,6 +7,7 @@ using SparseArrays
 export SparseMatrixSimpleBSR
 
 # SimpleBSR: assumes uniform block sizes + same number of blocks per row
+# some ideas from Kristoffer Carlsson's BlockSparseMatrices.jl package
 struct SparseMatrixSimpleBSR{Tv,Ti <: Integer}
     blocksize::Int            # number of rows/columns in a block
     colindices::Array{Ti,2}   # column indices of blocks - e.g., A[i,rowval[i]] has a block.
