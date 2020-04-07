@@ -7,10 +7,10 @@ push!(LOAD_PATH, "./src") # user defined modules
 using CommonUtils, Basis1D
 
 "Approximation parameters"
-N   = 3 # The order of approximation
-K   = 16
-CFL = .5
-T   = .25 #2.25
+N   = 2 # The order of approximation
+K   = 32
+CFL = .75
+T   = 2.25
 
 # viscosity, wave speed
 ϵ   = .0
@@ -95,24 +95,36 @@ function rhs(u,ops,vgeo,fgeo,mapP,params...)
     # dfdx = rxJ.*(Dr*flux)
     # flux_f = Vf*flux
     # df = flux_f[mapP] - flux_f
+    # uflux = @. .5*(df*nxJ - tau*du*abs(.5*(uf[mapP]+uf))*abs(nxJ))
+    # rhsu = dfdx + LIFT*uflux
+
+    # # over-integration - version 1
+    # f_u = (Vq*u).^2/2
+    # vol_rhs = rxJ.*(M\(-Dr'*Vq'*diagm(wq)*f_u))
+    # uf   = Vf*u
+    # uP   = uf[mapP]
+    # f_uf = @. (uf).^2/2
+    # flux = @. .5*(f_uf[mapP]+f_uf)*nxJ - tau*abs(.5*(uP+uf))*(uP - uf) # an educated guess for the flux
+    # rhsu = vol_rhs + LIFT*flux
 
     # # over-integration - version 2
     # flux = .5*Pq*((Vq*u).^2)
     # dfdx = rxJ.*(Dr*flux)
     # flux_f = Vf*flux
-    # df = @. .5*(flux_f[mapP]-flux_f) # an educated guess
-
-    # uflux = @. .5*(df*nxJ - tau*du*abs(.5*(uf[mapP]+uf))*abs(nxJ))
+    # df = @. .5*(flux_f[mapP]+f_uf)-flux_f
+    # uflux = @. (df*nxJ - tau*du*abs(.5*(uf[mapP]+uf))*abs(nxJ))
     # rhsu = dfdx + LIFT*uflux
 
-    # over-integration - version 1
-    f_u = (Vq*u).^2/2
-    vol_rhs = rxJ.*(M\(-Dr'*Vq'*diagm(wq)*f_u))
-    uf   = Vf*u
-    uP   = uf[mapP]
-    f_uf = @. (uf).^2/2
-    flux = @. .5*(f_uf[mapP]+f_uf)*nxJ - .5*tau*max(abs(uP),abs(uf))*(uP - uf)
-    rhsu = vol_rhs + LIFT*flux
+    # split form
+    f_u = (Vq*u).^2
+    dfdx = rxJ.*(M\(-Dr'*Vq'*diagm(wq)*f_u)) # conservative part
+    ududx = Pq*((Vq*u).*(Vq*Dr*u))           # non-conservative part
+    uf = Vf*u
+    uP = uf[mapP]
+    df = @. .5*(uP^2 + uP*uf) # .5*(uP^2 + uf^2) + .5*(uP-uf)*uf = .5*(uP^2+uP*uf)
+    # uflux = @. (df*nxJ - tau*du*abs(.5*(uf[mapP]+uf))*abs(nxJ))
+    uflux = @. (df*nxJ - .5*tau*du*max(abs(uf[mapP]),abs(uf))*abs(nxJ))
+    rhsu = (1/3)*(dfdx + ududx + LIFT*uflux)
 
     # combine advection and viscous terms
     rhsu = rhsu - ϵ*rhsσ
@@ -129,15 +141,15 @@ dt = T/Nsteps
 
 "Perform time-stepping"
 u = @. exp(-100*(x+.5)^2)
-u = @. -sin(pi*x)
+# u = @. -sin(pi*x)
 
-ulims = 1.25 .* (minimum(u),maximum(u))
+ulims = (minimum(u)-.5,maximum(u)+.5)
 
-filter_weights = ones(N+1)
-filter_weights[end-2] = .5
-filter_weights[end-1] = .1
-filter_weights[end] = .0
-Filter = V*(diagm(filter_weights)/V)
+# filter_weights = ones(N+1)
+# filter_weights[end-2] = .5
+# filter_weights[end-1] = .1
+# filter_weights[end] = .0
+# Filter = V*(diagm(filter_weights)/V)
 
 "plotting nodes"
 Vp = vandermonde_1D(N,LinRange(-1,1,100))/V
@@ -163,5 +175,5 @@ interval = 10
     end
 end every interval
 
-scatter!(x,u,markersize=4) # plot nodal values
-plot!(Vp*x,Vp*u) # plot interpolated solution at fine points
+# scatter!(x,u,markersize=4) # plot nodal values
+# plot!(Vp*x,Vp*u) # plot interpolated solution at fine points
