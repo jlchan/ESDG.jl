@@ -107,7 +107,7 @@ function init_reference_tri(N)
     Pq = M\(Vq'*diagm(wq))
     @pack! rd = Pq
 
-    rp, sp = equi_nodes_2D(15)
+    rp, sp = equi_nodes_2D(10)
     Vp = vandermonde_2D(N,rp,sp)/V
     @pack! rd = rp,sp,Vp
     return rd
