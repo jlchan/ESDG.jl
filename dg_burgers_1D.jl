@@ -122,7 +122,7 @@ function rhs(u,ops,vgeo,fgeo,mapP,params...)
     # ududx = Pq*((Vq*u).*(Vq*Dr*u))           # non-conservative part
     # uf = Vf*u
     # uP = uf[mapP]
-    # df = @. .5*(uP^2 + uP*uf) # .5*(uP^2 + uf^2) + .5*(uP-uf)*uf = .5*(uP^2+uP*uf)
+    # df = @. .5*(uP^2 + uP*uf)
     # uflux = @. (df*nxJ - .5*tau*du*max(abs(uf[mapP]),abs(uf))*abs(nxJ))
     # rhsu = (1/3)*(dfdx + ududx + LIFT*uflux)
 
