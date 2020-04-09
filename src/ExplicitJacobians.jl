@@ -45,8 +45,6 @@ end
 function accum_hadamard_jacobian!(A::SparseMatrixCSC,Q::SparseMatrixCSC,
     dF,U::AbstractArray,scale = -1)
 
-    #fill!(A,0.0) # should zero sparse entries but keep sparsity pattern
-
     Nfields = length(U)
 
     num_pts = size(Q,1)
@@ -66,10 +64,11 @@ function accum_hadamard_jacobian!(A::SparseMatrixCSC,Q::SparseMatrixCSC,
 
     # add diagonal entry assuming Q = +/- Q^T
     for m = 1:Nfields, n = 1:Nfields
-        #Asum = scale * vec(sum(A[Block(m,n)],dims=1)) # CartesianIndices broken :(
+        #Asum = scale * vec(sum(A[Block(m,n)],dims=1)) # CartesianIndices broken
         Asum = scale * vec(sum(A[ids(m),ids(n)],dims=1)) # TODO: fix slowness (maybe just alloc issue?)
+        # A[Block(m,n)] .+= diagm(Asum) # can't index all at once - bug related to CartesianIndices?
         for i = 1:num_pts
-            A[Block(m,n)[i,i]] += Asum[i] # can't index all at once - bug?
+            A[Block(m,n)[i,i]] += Asum[i]
         end
     end
 end
@@ -87,7 +86,7 @@ function banded_matrix_function(mat_fun,U::AbstractArray)
     for i = 1:num_pts
         mat_i = mat_fun(getindex.(U,i))
         for n = 1:Nfields, m = 1:Nfields
-            A[Block(m,n)[i,i]] = mat_i[m,n]
+            A[Block(m,n)[i,i]] = mat_i[m,n] # TODO: replace with fast sparse constructor
         end
     end
     return A
@@ -110,8 +109,8 @@ function init_jacobian_matrices(md::MeshData, dims, Nfields=1)
             id,id_nbr = ids.((e,enbr), block_size)
 
             # init to non-zeros to retain sparsity pattern
-            A[i][id, id]     .= 1e-16*ones(block_size,block_size)
-            A[i][id, id_nbr] .= 1e-16*ones(block_size,block_size)
+            fill!(A[i][id, id], 1e-16)
+            fill!(A[i][id, id_nbr], 1e-16)
         end
     end
 
@@ -119,6 +118,7 @@ function init_jacobian_matrices(md::MeshData, dims, Nfields=1)
 end
 
 # accumulate VhTr*A*Vh on-the-fly
+# TODO: speed up via SparseMatrixSimpleBSR
 function reduce_jacobian!(A_reduced::SparseMatrixCSC, A::SparseMatrixCSC,
                           md::MeshData, Vh, Nfields=1)
 
@@ -156,7 +156,6 @@ function hadamard_sum(ATr::SparseMatrixCSC,F,u::AbstractArray)
 end
 
 # computes ∑ A_ij * F(u_i,u_j) = (A∘F)*1 for flux differencing
-# TODO: switch to column-major indexing to speed up construction
 function hadamard_sum!(rhs::AbstractArray,ATr::SparseMatrixCSC,F,u::AbstractArray)
     cols = rowvals(ATr)
     vals = nonzeros(ATr)
@@ -164,7 +163,7 @@ function hadamard_sum!(rhs::AbstractArray,ATr::SparseMatrixCSC,F,u::AbstractArra
     for i = 1:n
         ui = getindex.(u,i)
         val_i = zeros(length(u))
-        for j in nzrange(ATr, i) # for column-major format, extracts ith col of ATr = ith row of A
+        for j in nzrange(ATr, i) # column-major: extracts ith col of ATr = ith row of A
             col = cols[j]
             Aij = vals[j]
             uj = getindex.(u,col)
@@ -227,8 +226,6 @@ function assemble_global_SBP_matrices_2D(rd::RefElemData, md::MeshData,
                 fperm = face_ids(reshape(mapPerm[:,e],Nfq,Nfaces),f)
                 Axnbr = spdiagm(0 => face_ids(.5*wf.*nxJ[:,e],f))
                 Aynbr = spdiagm(0 => face_ids(.5*wf.*nyJ[:,e],f))
-                Ax[Block(e,enbr)[face_ids(fids,f),fids[fperm]]] .= Axnbr
-                Ay[Block(e,enbr)[face_ids(fids,f),fids[fperm]]] .= Aynbr # TODO: remove this and just store Bx/By coupling matrices
                 Bx[Block(e,enbr)[face_ids(fids,f),fids[fperm]]] .= Axnbr # TODO: switch to block access pattern
                 By[Block(e,enbr)[face_ids(fids,f),fids[fperm]]] .= Aynbr
             end

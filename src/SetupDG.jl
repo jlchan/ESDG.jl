@@ -36,11 +36,11 @@ export init_mesh
 export MeshData, RefElemData
 
 # do we realy need mutable here?  I think we can remove it
-# TODO: add types to all of these...
+# TODO: add types to all of these, siwtch to immutable struct
 mutable struct MeshData
 
     VX;VY;VZ # vertex coordinates
-    K # num elems
+    K::Int # num elems
     EToV # mesh vertex array
     FToF # face connectivity
 
@@ -50,10 +50,17 @@ mutable struct MeshData
 
     mapM; mapP; mapB # connectivity between face nodes
 
-    rxJ; sxJ; txJ; ryJ; syJ; tyJ; rzJ; szJ; tzJ; J # volume geofacs
-    nxJ; nyJ; nzJ; sJ # surface geofacs
+    # volume geofacs    
+    rxJ; sxJ; txJ
+    ryJ; syJ; tyJ
+    rzJ; szJ; tzJ; J
+
+    # surface geofacs
+    nxJ; nyJ; nzJ; sJ
 
     MeshData() = new() # empty initializer
+
+
 end
 
 mutable struct RefElemData
@@ -68,12 +75,12 @@ mutable struct RefElemData
     rf; sf; tf; wf # surface quadrature
     rp; sp; tp     # plotting nodes
 
-    VDM        # Vandermonde matrix
-    Dr; Ds; Dt # differentiation matrices
-    Vq; Vf     # quadrature interpolation matrices
-    M; Pq      # mass matrix, L2 projection matrix
-    LIFT       # quadrature-based lift matrix
-    Vp         # interp to equispaced nodes
+    VDM         # Vandermonde matrix
+    Dr; Ds; Dt  # differentiation matrices
+    Vq; Vf      # quadrature interpolation matrices
+    M; Pq       # mass matrix, L2 projection matrix
+    LIFT        # quadrature-based lift matrix
+    Vp          # interp to equispaced nodes
 
     nrJ; nsJ; ntJ # reference normals
 
