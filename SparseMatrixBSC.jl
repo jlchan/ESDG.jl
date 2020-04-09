@@ -186,7 +186,6 @@ function getCSCordering(A::SparseMatrixBSC)
     for i = 1:length(A.colptr)-1
         # find i,j indices of each block in a col
         blocks_in_column = nzblockrange(A,i)
-        @show blocks_in_column
         for col = 1:C
             for block_id in blocks_in_column
                 CSC_permuted_indices[:,sk] .= flattened_indices[:,col,block_id]
