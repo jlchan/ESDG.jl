@@ -8,6 +8,13 @@ export SparseMatrixSimpleBSR, SparseMatrixCSC!
 
 # SimpleBSR: assumes uniform block sizes + same number of blocks per row
 # some ideas taken from Kristoffer Carlsson's BlockSparseMatrices.jl package
+#
+# for the matrix:
+# [A B 0
+#  C 0 D
+#  E F 0]
+# colindices = [1 2; 1 3; 1 2]
+
 struct SparseMatrixSimpleBSR{Tv,Ti <: Integer}
     blocksize::Int            # number of rows/columns in a block
     colindices::Array{Ti,2}   # column indices of blocks - e.g., A[i,rowval[i]] has a block.
@@ -15,19 +22,18 @@ struct SparseMatrixSimpleBSR{Tv,Ti <: Integer}
 
     I::Array{Ti,3}            # precomputed row indices for faster sparse construction
     J::Array{Ti,3}            # precomputed col indices for faster sparse construction
-    CSCpermuted_indices::Array{Ti,1} # list of indices
+    CSCpermuted_indices::Array{Ti,1} # permutation of nzval for CSC storage
 end
 
 
-# initialize SimpleBSR matrix of zeros
+# initialize a SimpleBSR matrix of zeros with specified block sparsity pattern
 function SparseMatrixSimpleBSR(blocksize::Integer, colindices::Array{Ti,2}) where {Ti}
-    nblocks = prod(size(colindices))
 
-    local_ids = (1:blocksize)
-    global_ids(offset) = local_ids .+ (offset-1)*blocksize
+    global_ids(offset) = (1:blocksize) .+ (offset-1)*blocksize
     Block(e1,e2) = CartesianIndices((global_ids(e1),global_ids(e2))) # emulating BlockArrays
 
-    # store indices IJK - faster than allocating block by block
+    # store indices IJK for initial construction of sparse CSC matrix
+    nblocks = prod(size(colindices))
     I = zeros(Int,blocksize,blocksize,nblocks)
     J = similar(I)
     r,c = size(colindices)
@@ -50,7 +56,7 @@ function SparseMatrixSimpleBSR(blocksize::Integer, colindices::Array{Ti,2}) wher
         # find i,j indices of each block in a col
         blocks_in_column = findall(blockcol .== colindices)
 
-        # sort by row ids
+        # sort blocks by block-row index
         p = sortperm((x->x[1]).(blocks_in_column))
         blocks_in_column .= blocks_in_column[p]
 
@@ -63,12 +69,12 @@ function SparseMatrixSimpleBSR(blocksize::Integer, colindices::Array{Ti,2}) wher
             end
         end
     end
-    # CSCpermuted_indices = reshape(CSCpermuted_indices,blocksize,blocksize,nblocks)
 
-    return SparseMatrixSimpleBSR(blocksize,colindices,zeros(blocksize,blocksize,nblocks),I,J,CSCpermuted_indices[:])
+    nzval = zeros(blocksize,blocksize,nblocks)
+    return SparseMatrixSimpleBSR(blocksize,colindices,nzval,I,J,CSCpermuted_indices[:])
 end
 
-# convert from SimpleBSR to SparseMatrixCSC
+# construct SparseMatrixCSC from SimpleBSR
 # slower but usually faster than the actual solve
 function SparseArrays.SparseMatrixCSC(A::SparseMatrixSimpleBSR{Tv, Ti}) where {Tv, Ti <: Integer}
     nblockrows = size(A.colindices,1)

@@ -173,6 +173,32 @@ function SparseMatrixBSC(A::SparseMatrixCSC{Tv, Ti}, R::Integer, C::Integer) whe
     SparseMatrixBSC(A.m, A.n, colptr, rowval, nzval)
 end
 
+# for fast CSC conversion: convert to SparseMatrixCSC nzval ordering
+function getCSCordering(A::SparseMatrixBSC)
+
+    # loop through all active columns
+    R,C = blocksize(A)
+    ntotalblocks = size(A.nzval,3)
+    flattened_indices = reshape(1:R*C*ntotalblocks,R,C,ntotalblocks) # UnitRange avoids allocation
+    CSC_permuted_indices = zeros(Int,R,C*ntotalblocks) # [col1, col2, ..., col_blocksize*nblocks]
+
+    sk = 1
+    for i = 1:length(A.colptr)-1
+        # find i,j indices of each block in a col
+        blocks_in_column = nzblockrange(A,i)
+        @show blocks_in_column
+        for col = 1:C
+            for block_id in blocks_in_column
+                CSC_permuted_indices[:,sk] .= flattened_indices[:,col,block_id]
+                sk += 1
+            end
+        end
+    end
+
+    return CSC_permuted_indices[:]
+end
+
+# fast conversion from BSC to CSC matrix
 function SparseMatrixCSC!(B::SparseMatrixCSC,A::SparseMatrixBSC{Tv, Ti}, CSCpermuted_indices) where {Tv, Ti <: Integer}
     B.nzval .= A.nzval[:][CSCpermuted_indices] # need to add permutation, but this should be super fast
 end
@@ -220,28 +246,6 @@ function Base.setindex!(A::SparseMatrixBSC{Tv,Ti}, val::Array{Tv,2}, blockindex:
     A.nzval[:,:,CSC_id] .= val
 end
 
-# function Base.getindex(A::SparseMatrixBSC{T}, i::Integer, j::Integer) where {T}
-#     # @boundscheck checkbounds(A, i, j)
-#     J = (j - 1) ÷ A.C + 1
-#     I = (i - 1) ÷ A.R + 1
-#     nzrange = nzblockrange(A, J)
-#     # No block stored in this column
-#     if start(nzrange) > last(nzrange)
-#       return zero(T)
-#     end
-#
-#     block = searchsortedlast(A.rowval, I, start(nzrange), last(nzrange), Forward)
-#     if start(nzrange) > block
-#         return zero(T)
-#     end
-#
-#     @inbounds if rowinblock(A, A.rowval[block], i)
-#         i_blk, j_blk = blockoffsets(A, I, J, i, j)
-#         return A.nzval[i_blk, j_blk, block]
-#     else
-#         return zero(T)
-#     end
-# end
 
 
 # ##########
