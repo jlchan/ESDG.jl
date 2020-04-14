@@ -52,9 +52,11 @@ nxJ = repeat([-1;1],1,K)
 rxJ = 1
 
 "Quadrature operators"
-rq,wq = gauss_quad(0,0,N)
+rq,wq = gauss_quad(0,0,2*N)
 rq,wq = gauss_lobatto_quad(0,0,N)
-Vq = vandermonde_1D(N,rq)/V
+Vq = vandermonde_1D(N,rq)/V # vandermonde_1D(N,rq) * inv(V)
+M = Vq'*diagm(wq)*Vq
+LIFT = M\transpose(Vf)
 Pq = (Vq'*diagm(wq)*Vq)\(Vq'*diagm(wq))
 
 "=========== done with mesh setup here ============ "
@@ -138,8 +140,15 @@ function rhs(u,ops,vgeo,fgeo,mapP,params...)
     uflux = @. (df*nxJ - .5*tau*du*max(abs(uf[mapP]),abs(uf))*abs(nxJ))
     rhsu = (1/3)*(dfdx + ududx + LIFT*uflux)
 
-    # DG-SEM split form
-    # todo
+    # DG-SEM split form: Vq = I, Pq = I
+    f_u   = u.^2
+    dfdx  = rxJ.*(Dr*f_u)        # conservative part
+    ududx = u.*(Dr*u)           # non-conservative part
+    uf = Vf*u
+    uP = uf[mapP]
+    df = @. .5*(uP^2 + uP*uf) - uf.^2
+    uflux = @. (df*nxJ - .5*tau*du*max(abs(uf[mapP]),abs(uf))*abs(nxJ))
+    rhsu = (1/3)*(dfdx + ududx + LIFT*uflux)
 
     # combine advection and viscous terms
     rhsu = rhsu - ϵ*rhsσ
@@ -155,7 +164,7 @@ Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
 "Perform time-stepping"
-u0(x) = @. exp(-100*(x+.5)^2)
+# u0(x) = @. exp(-100*(x+.5)^2)
 u0(x) = @. -sin(pi*x)
 u = u0(x)
 

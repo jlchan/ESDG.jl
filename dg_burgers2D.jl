@@ -12,7 +12,7 @@ using UnPack
 
 "Define approximation parameters"
 N   = 1 # The order of approximation
-K1D = 16 # number of elements along each edge of a rectangle
+K1D = 64 # number of elements along each edge of a rectangle
 CFL = .75 # relative size of a time-step
 T   = .15 # final time
 
@@ -38,13 +38,15 @@ mapP[mapB] = mapPB
 
 "======== Modify quadrature =========="
 
-@unpack r,s,V,Vq,wq = rd
-M = transpose(Vq)*diagm(wq)*Vq
+@unpack r,s,Vf,wf,V,Vq,wq = rd
+M = transpose(Vq)*diagm(wq)*Vq # original quadrature
 
 # redefine quadrature operators
 rq,sq = (r,s)
 wq = vec(sum(M,dims=2)) # apply mass lumping to get integrals
 Vq = vandermonde_2D(N,rq,sq)/V
+M = transpose(Vq)*diagm(wq)*Vq # reduced quadrature
+LIFT = M\(transpose(Vf)*diagm(wf))
 Pq = M\(Vq'*diagm(wq))
 @pack! rd = Vq,Pq
 
@@ -126,7 +128,6 @@ end
 # vv = Vp*u
 # scatter(xp,yp,vv,zcolor=vv,camera=(3,25))
 # scatter(xp,yp,vv,zcolor=vv,camera=(0,90))
-
 
 function burgers_exact_sol_2D(u0,x,y,T,dt)
     Nsteps = ceil(Int,T/dt)
