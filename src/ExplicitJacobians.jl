@@ -29,7 +29,7 @@ columnize(A) = SVector{size(A,2)}([A[:,i] for i in 1:size(A,2)])
 
 # sparse matrix assembly version
 # can only deal with one coordinate component at a time in higher dimensions
-function hadamard_jacobian(Q::SparseMatrixCSC,dF,U::AbstractArray,scale = -1)
+function hadamard_jacobian(Q::SparseMatrixCSC, dF, U::AbstractArray, scale = -1)
 
     Nfields = length(U)
     NpK = size(Q,2)
@@ -42,8 +42,8 @@ function hadamard_jacobian(Q::SparseMatrixCSC,dF,U::AbstractArray,scale = -1)
 end
 
 # compute and accumulate contributions from a Jacobian function dF
-function accum_hadamard_jacobian!(A::SparseMatrixCSC,Q::SparseMatrixCSC,
-    dF,U::AbstractArray,scale = -1)
+function accum_hadamard_jacobian!(A::SparseMatrixCSC, Q::SparseMatrixCSC,
+    dF, U::AbstractArray, scale = -1)
 
     Nfields = length(U)
 
