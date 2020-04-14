@@ -7,10 +7,10 @@ push!(LOAD_PATH, "./src") # user defined modules
 using CommonUtils, Basis1D
 
 "Approximation parameters"
-N   = 7 # The order of approximation
-K   = 8
+N   = 5 # The order of approximation
+K   = 32
 CFL = .75
-T   = 1
+T   = .25
 
 # viscosity, wave speed
 ϵ   = .0
@@ -52,7 +52,8 @@ nxJ = repeat([-1;1],1,K)
 rxJ = 1
 
 "Quadrature operators"
-rq,wq = gauss_quad(0,0,2*N)
+rq,wq = gauss_quad(0,0,N)
+rq,wq = gauss_lobatto_quad(0,0,N)
 Vq = vandermonde_1D(N,rq)/V
 Pq = (Vq'*diagm(wq)*Vq)\(Vq'*diagm(wq))
 
@@ -62,6 +63,17 @@ Pq = (Vq'*diagm(wq)*Vq)\(Vq'*diagm(wq))
 ops = (Dr,LIFT,Vf,Vq,Pq)
 vgeo = (rxJ,J)
 fgeo = (nxJ,)
+
+function burgers_exact_sol(u0,x,T,dt)
+    Nsteps = ceil(Int,T/dt)
+    dt = T/Nsteps
+    u = u0(x)
+    for i = 1:Nsteps
+        t = i*dt
+        u = @. u0(x-u*t)
+    end
+    return u
+end
 
 function rhs(u,ops,vgeo,fgeo,mapP,params...)
     # unpack arguments
@@ -98,33 +110,36 @@ function rhs(u,ops,vgeo,fgeo,mapP,params...)
     # uflux = @. .5*(df*nxJ - tau*du*abs(.5*(uf[mapP]+uf))*abs(nxJ))
     # rhsu = dfdx + LIFT*uflux
 
-    # over-integration - version 1
-    f_u = .5*(Vq*u).^2
-    vol_rhs = rxJ.*(M\(-Dr'*Vq'*diagm(wq)*f_u))
-    uf   = Vf*u
-    uP   = uf[mapP]
-    f_uf = @. (uf).^2/2
-    flux = @. .5*(f_uf[mapP]+f_uf)*nxJ - tau*abs(.5*(uP+uf))*du # an educated guess for the flux
-    rhsu = vol_rhs + LIFT*flux
+    # # over-integration - version 1
+    # f_u = .5*(Vq*u).^2
+    # vol_rhs = rxJ.*(M\(-Dr'*Vq'*diagm(wq)*f_u))
+    # uf   = Vf*u
+    # uP   = uf[mapP]
+    # f_uf = @. (uf).^2/2
+    # flux = @. .5*(f_uf[mapP]+f_uf)*nxJ - tau*abs(.5*(uP+uf))*du # an educated guess for the flux
+    # rhsu = vol_rhs + LIFT*flux
+    #
+    # # over-integration - version 2
+    # flux = .5*Pq*((Vq*u).^2)
+    # dfdx = rxJ.*(Dr*flux)
+    # uf   = Vf*u
+    # f_uf = @. (uf).^2/2
+    # df = .5*(f_uf[mapP]+f_uf) - (Vf*flux)
+    # uflux = @. df*nxJ - tau*abs(.5*(uP+uf))*du
+    # rhsu = dfdx + LIFT*uflux
 
-    # over-integration - version 2
-    flux = .5*Pq*((Vq*u).^2)
-    dfdx = rxJ.*(Dr*flux)
-    uf   = Vf*u
-    f_uf = @. (uf).^2/2
-    df = .5*(f_uf[mapP]+f_uf) - (Vf*flux)
-    uflux = @. df*nxJ - tau*abs(.5*(uP+uf))*du
-    rhsu = dfdx + LIFT*uflux
+    # split form
+    f_u = (Vq*u).^2
+    dfdx = rxJ.*(M\(-Dr'*Vq'*diagm(wq)*f_u)) # conservative part
+    ududx = Pq*((Vq*u).*(Vq*Dr*u))           # non-conservative part
+    uf = Vf*u
+    uP = uf[mapP]
+    df = @. .5*(uP^2 + uP*uf)
+    uflux = @. (df*nxJ - .5*tau*du*max(abs(uf[mapP]),abs(uf))*abs(nxJ))
+    rhsu = (1/3)*(dfdx + ududx + LIFT*uflux)
 
-    # # split form
-    # f_u = (Vq*u).^2
-    # dfdx = rxJ.*(M\(-Dr'*Vq'*diagm(wq)*f_u)) # conservative part
-    # ududx = Pq*((Vq*u).*(Vq*Dr*u))           # non-conservative part
-    # uf = Vf*u
-    # uP = uf[mapP]
-    # df = @. .5*(uP^2 + uP*uf)
-    # uflux = @. (df*nxJ - .5*tau*du*max(abs(uf[mapP]),abs(uf))*abs(nxJ))
-    # rhsu = (1/3)*(dfdx + ududx + LIFT*uflux)
+    # DG-SEM split form
+    # todo
 
     # combine advection and viscous terms
     rhsu = rhsu - ϵ*rhsσ
@@ -140,8 +155,9 @@ Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
 "Perform time-stepping"
-u = @. exp(-100*(x+.5)^2)
-# u = @. -sin(pi*x)
+u0(x) = @. exp(-100*(x+.5)^2)
+u0(x) = @. -sin(pi*x)
+u = u0(x)
 
 ulims = (minimum(u)-.5,maximum(u)+.5)
 
@@ -160,8 +176,8 @@ wJq = diagm(wq)*(Vq*J)
 
 resu = zeros(size(x)) # Storage for the Runge kutta residual storage
 energy = zeros(Nsteps)
-interval = 10
-@gif for i = 1:Nsteps
+interval = 25
+for i = 1:Nsteps
     for INTRK = 1:5
         rhsu = rhs(u,ops,vgeo,fgeo,mapP,ϵ,a)
         # rhsu .= (Filter*rhsu)
@@ -174,12 +190,18 @@ interval = 10
 
     if i%interval==0 || i==Nsteps
         println("Number of time steps $i out of $Nsteps")
-        plot(Vp*x,Vp*u,ylims=ulims,title="Timestep $i out of $Nsteps",lw=2)
-        scatter!(x,u,xlims=(-1,1),ylims=ulims)
+        # plot(Vp*x,Vp*u,ylims=ulims,title="Timestep $i out of $Nsteps",lw=2)
+        # scatter!(x,u,xlims=(-1,1),ylims=ulims)
     end
-end every interval
-
-# scatter((1:Nsteps)*dt,energy)
+end
 
 scatter(x,u,markersize=4) # plot nodal values
-plot!(Vp*x,Vp*u) # plot interpolated solution at fine points
+display(plot!(Vp*x,Vp*u)) # plot interpolated solution at fine points
+
+# compute using method of characteristics with small time-steps
+rq2,wq2 = gauss_quad(0,0,3*N)
+Vq2 = vandermonde_1D(N,rq2)/V
+xq2 = Vq2*x
+wJq2 = diagm(wq2)*(Vq2*J)
+L2err = sqrt(sum(wJq2.*(Vq2*u - burgers_exact_sol(u0,xq2,T,dt/100)).^2))
+@show L2err

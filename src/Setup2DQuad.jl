@@ -6,7 +6,7 @@ Also provides functions to assemble global DG-SBP operators
 
 """
 
-module SetupDGQuad
+module Setup2DQuad
 
 # non-DG modules
 using LinearAlgebra # for diagm
@@ -62,7 +62,7 @@ mutable struct RefElemData
     rf; sf; tf; wf # surface quadrature
     rp; sp; tp     # plotting nodes
 
-    VDM         # Vandermonde matrix
+    V         # Vandermonde matrix
     Dr; Ds; Dt  # differentiation matrices
     Vq; Vf      # quadrature interpolation matrices
     M; Pq       # mass matrix, L2 projection matrix
@@ -87,11 +87,11 @@ function init_reference_quad(N,quad_nodes_1D = gauss_quad(0,0,N))
 
     # Construct matrices on reference elements
     r, s = Basis2DQuad.nodes_2D(N)
-    VDM = Basis2DQuad.vandermonde_2D(N, r, s)
+    V = Basis2DQuad.vandermonde_2D(N, r, s)
     Vr, Vs = Basis2DQuad.grad_vandermonde_2D(N, r, s)
-    Dr = Vr/VDM
-    Ds = Vs/VDM
-    @pack! rd = r,s,VDM
+    Dr = Vr/V
+    Ds = Vs/V
+    @pack! rd = r,s,V
 
     # low order interpolation nodes
     r1,s1 = Basis2DQuad.nodes_2D(1)
@@ -118,12 +118,12 @@ function init_reference_quad(N,quad_nodes_1D = gauss_quad(0,0,N))
     rq,sq = (x->x[:]).(meshgrid(r1D))
     wr,ws = meshgrid(w1D)
     wq = wr[:] .* ws[:]
-    Vq = Basis2DQuad.vandermonde_2D(N,rq,sq)/VDM
+    Vq = Basis2DQuad.vandermonde_2D(N,rq,sq)/V
     M = transpose(Vq)*diagm(wq)*Vq
     Pq = M\(transpose(Vq)*diagm(wq))
     @pack! rd = rq,sq,wq,Vq,M,Pq
 
-    Vf = Basis2DQuad.vandermonde_2D(N,rf,sf)/VDM # interpolates from nodes to face nodes
+    Vf = Basis2DQuad.vandermonde_2D(N,rf,sf)/V # interpolates from nodes to face nodes
     LIFT = M\(transpose(Vf)*diagm(wf)) # lift matrix used in rhs evaluation
 
     # expose kronecker product sparsity
@@ -135,7 +135,7 @@ function init_reference_quad(N,quad_nodes_1D = gauss_quad(0,0,N))
 
     # plotting nodes
     rp, sp = Basis2DQuad.equi_nodes_2D(15)
-    Vp = Basis2DQuad.vandermonde_2D(N,rp,sp)/VDM
+    Vp = Basis2DQuad.vandermonde_2D(N,rp,sp)/V
     @pack! rd = rp,sp,Vp
 
     return rd

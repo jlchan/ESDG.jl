@@ -1,17 +1,19 @@
 using Revise # reduce need for recompile
 using Plots
 using LinearAlgebra
+using UnPack
 
 push!(LOAD_PATH, "./src") # user defined modules
 using CommonUtils
-using Basis2DTri
-using UniformTriMesh
-
-using Setup2DTri
-using UnPack
+# using Basis2DTri
+# using UniformTriMesh
+# using Setup2DTri
+using Basis2DQuad
+using UniformQuadMesh
+using Setup2DQuad
 
 "Define approximation parameters"
-N   = 1 # The order of approximation
+N   = 4 # The order of approximation
 K1D = 16 # number of elements along each edge of a rectangle
 CFL = .75 # relative size of a time-step
 T   = .15 # final time
@@ -19,13 +21,13 @@ T   = .15 # final time
 "=========== Setup code ============="
 
 # construct mesh
-VX,VY,EToV = uniform_tri_mesh(K1D,K1D)
+VX,VY,EToV = uniform_quad_mesh(K1D,K1D)
 
 # intialize reference operators
-rd = init_reference_tri(N)
+rd = init_reference_quad(N)
 
 # initialize physical mesh data
-md = init_tri_mesh((VX,VY),EToV,rd)
+md = init_quad_mesh(VX,VY,EToV,rd)
 
 #Make boundary maps periodic
 @unpack Nfaces,Vf = rd
@@ -41,12 +43,12 @@ mapP[mapB] = mapPB
 @unpack r,s,V,Vq,wq = rd
 M = transpose(Vq)*diagm(wq)*Vq
 
-# redefine quadrature operators
-rq,sq = (r,s)
-wq = vec(sum(M,dims=2)) # apply mass lumping to get integrals
-Vq = vandermonde_2D(N,rq,sq)/V
-Pq = M\(Vq'*diagm(wq))
-@pack! rd = Vq,Pq
+# # redefine quadrature operators
+# rq,sq = (r,s)
+# wq = vec(sum(M,dims=2)) # apply mass lumping to get integrals
+# Vq = vandermonde_2D(N,rq,sq)/V
+# Pq = M\(Vq'*diagm(wq))
+# @pack! rd = Vq,Pq
 
 "======== Define initial coefficients and time-stepping =========="
 
