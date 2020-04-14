@@ -10,7 +10,7 @@ using Basis1D
 using Basis2DQuad
 using UniformQuadMesh
 
-using SetupDG
+using SetupDGQuad
 using UnPack
 
 "Approximation parameters"
@@ -25,7 +25,7 @@ T   = .75
 rd = init_reference_quad(N,gauss_lobatto_quad(0,0,N))
 
 VX, VY, EToV = uniform_quad_mesh(K1D, K1D)
-md = init_mesh((VX,VY),EToV,rd)
+md = init_quad_mesh(VX,VY,EToV,rd)
 
 # Make domain periodic
 @unpack Nfaces,Vf = rd
