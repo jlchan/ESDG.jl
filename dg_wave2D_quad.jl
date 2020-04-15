@@ -10,7 +10,7 @@ using Basis1D
 using Basis2DQuad
 using UniformQuadMesh
 
-using SetupDGQuad
+using Setup2DQuad
 using UnPack
 
 "Approximation parameters"
@@ -38,6 +38,8 @@ mapP[mapB] = mapPB
 " ====== set up initial conditions ====== "
 
 @unpack x,y = md
+pex(x,y,t) = @. sin(pi*x)*sin(pi*y)*cos(sqrt(2)*pi*t)
+p = pex(x,y,0)
 p = @. exp(-100*(x^2+(y-.25)^2))
 u = zeros(size(x))
 v = zeros(size(x))
@@ -49,11 +51,7 @@ dt = CFL * 2 / (CN*K1D)
 Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
-"varying wavespeed"
-c2 = @. 1 + .5*sin(pi*x)*sin(pi*y)
-# c2 = ones(size(x))
-
-function rhs(Q, rd::RefElemData, md::MeshData, params...)
+function rhs(Q, rd::RefElemData, md::MeshData)
 
     (p,u,v) = Q
     @unpack Dr,Ds,LIFT,Vf = rd
@@ -84,8 +82,6 @@ function rhs(Q, rd::RefElemData, md::MeshData, params...)
     rhsu = px + .5*LIFT*uflux
     rhsv = py + .5*LIFT*vflux
 
-    c2 = params[1]
-    rhsp = @. c2*rhsp
     return (x->-x./J).((rhsp,rhsu,rhsv))
 end
 
@@ -93,7 +89,7 @@ Q = [p,u,v] # make arrays of arrays for mutability
 resQ = [zeros(size(x)) for i in eachindex(Q)]
 for i = 1:Nsteps
     for INTRK = 1:5
-        rhsQ = rhs(Q,rd,md,c2)
+        rhsQ = rhs(Q,rd,md)
         @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
         @. Q    = Q + rk4b[INTRK]*resQ
     end
@@ -103,10 +99,11 @@ for i = 1:Nsteps
     end
 end
 
-#plotting
-gr(aspect_ratio=1,legend=false,
-   markerstrokewidth=0,markersize=2)
-
-@unpack Vp = rd # interpolation nodes
-vv = Vp*Q[1]
-scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90))
+max
+# #plotting
+# gr(aspect_ratio=1,legend=false,
+#    markerstrokewidth=0,markersize=2)
+#
+# @unpack Vp = rd # interpolation nodes
+# vv = Vp*Q[1]
+# scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90))
