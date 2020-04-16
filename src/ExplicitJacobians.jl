@@ -129,19 +129,6 @@ function reduce_jacobian!(A_reduced::SparseMatrixCSC, A::SparseMatrixCSC,
 
     ids(e,npts) = (@. (1:npts) + (e-1)*npts)
 
-    for i = 1:Nfields, j = 1:Nfields
-        for e = 1:K, f = 1:Nfaces
-            enbr = EToE[f,e]
-            id,id_nbr   = ids.((e,enbr), Nh)
-            idr,idr_nbr = ids.((e,enbr), Np)
-
-            offset(i,num_pts) = (i-1)*num_pts*K
-
-            # convert to matrix for fast NLA
-            A_reduced[idr .+ offset(i,Np),idr .+ offset(j,Np)]     .= transpose(Vh)*Matrix(A[id.+offset(i,Nh),id.+offset(j,Nh)])*Vh
-            A_reduced[idr .+ offset(i,Np),idr_nbr .+ offset(j,Np)] .= transpose(Vh)*Matrix(A[id.+offset(i,Nh),id_nbr.+offset(j,Nh)])*Vh
-        end
-    end
 end
 
 # =============== for residual evaluation ================

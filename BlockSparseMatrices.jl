@@ -7,9 +7,10 @@ using SparseArrays
 
 # include Block type for indexing
 import BlockArrays.Block
-export Block
+export Block # for indexing
 
 export SparseMatrixBSC, SparseMatrixCSC!, getCSCordering
+export block_lrmul
 # export blocksize, getCSCindex
 # export nnzblocks, nblocks, nzblockrange
 

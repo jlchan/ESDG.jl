@@ -247,43 +247,54 @@ end
 
 
 
-# ##########
-# # LinAlg #
-# ##########
-#
-# # We do dynamic dispatch here so that the size of the blocks are known at compile time
-# function LinearAlgebra.mul!(b::Vector{Tv}, A::SparseMatrixBSC{Tv}, x::Vector{Tv}) where {Tv}
-#     if blocksize(A) == (1,1)
-#         mul!(b, SparseMatrixCSC(A), x)
-#     else
-#         _mul!(b, A, x, Val(A.C), Val(A.R))
-#     end
-# end
-#
-# function _mul!(b::Vector{Tv}, A::SparseMatrixBSC{Tv}, x::Vector{Tv},
-#                              ::Val{C}, ::Val{R}) where {Tv, C, R}
-#     fill!(b, 0.0)
-#     n_cb, n_rb = nblocks(A)
-#     for J in 1:n_cb
-#         j_offset = (J - 1)  * blocksize(A, 2)
-#         for r in nzblockrange(A, J)
-#             @inbounds i_offset = (A.rowval[r] - 1) * blocksize(A, 1)
-#             matvec_kernel!(b, A, x, r, i_offset, j_offset, Val(C), Val(R))
-#         end
-#     end
-#     return b
-# end
-#
-# # TODO: Possibly SIMD.jl and do a bunch of simd magic coolness for small mat * vec
-# @inline function matvec_kernel!(b::Vector{T}, A::SparseMatrixBSC{T}, x::Vector{T}, r,
-#                                 i_offset, j_offset, ::Val{C}, ::Val{R}) where {C, R, T}
-#     @inbounds for j in 1:C
-#         for i in 1:R
-#             b[i_offset + i] += A.nzval[i, j, r] * x[j_offset + j]
-#         end
-#     end
-# end
-#
-# function Base.:*(A::SparseMatrixBSC{Tv}, x::Vector{Tv}) where {Tv}
-#     mul!(similar(x, A.m), A, x)
-# end
+##########
+# LinAlg #
+##########
+
+# computes BL*A_i*BR for each block via BLAS-3 operations + permutedims.
+function block_lrmul(A::SparseMatrixBSC, BL, BR)
+    rA,cA,nb = size(A.nzval)
+    rBL,cBL  = size(BL)
+    rBR,cBR  = size(BR)
+    nzval = reshape(BL*reshape(A.nzval,rA,cA*nb),rBL,cA,nb) # left multiply
+    nzval = transpose(BR)*reshape(permutedims(nzval,(2,1,3)), cA, rBL*nb) # flip + left multiply with transpose
+    nzval = permutedims(reshape(nzval,cBR,rBL,nb),(2,1,3)) # flip back
+    return SparseMatrixBSC(rBL, cBR, rBL*nb, cBR*nb, A.colptr, A.rowval, nzval) # resizes blocks, keeps
+end
+
+# We do dynamic dispatch here so that the size of the blocks are known at compile time
+function LinearAlgebra.mul!(b::Vector{Tv}, A::SparseMatrixBSC{Tv}, x::Vector{Tv}) where {Tv}
+    if blocksize(A) == (1,1)
+        mul!(b, SparseMatrixCSC(A), x)
+    else
+        _mul!(b, A, x, Val(A.C), Val(A.R))
+    end
+end
+
+function _mul!(b::Vector{Tv}, A::SparseMatrixBSC{Tv}, x::Vector{Tv},
+                             ::Val{C}, ::Val{R}) where {Tv, C, R}
+    fill!(b, 0.0)
+    n_cb, n_rb = nblocks(A)
+    for J in 1:n_cb
+        j_offset = (J - 1)  * blocksize(A, 2)
+        for r in nzblockrange(A, J)
+            @inbounds i_offset = (A.rowval[r] - 1) * blocksize(A, 1)
+            matvec_kernel!(b, A, x, r, i_offset, j_offset, Val(C), Val(R))
+        end
+    end
+    return b
+end
+
+# TODO: Possibly SIMD.jl and do a bunch of simd magic coolness for small mat * vec
+@inline function matvec_kernel!(b::Vector{T}, A::SparseMatrixBSC{T}, x::Vector{T}, r,
+                                i_offset, j_offset, ::Val{C}, ::Val{R}) where {C, R, T}
+    @inbounds for j in 1:C
+        for i in 1:R
+            b[i_offset + i] += A.nzval[i, j, r] * x[j_offset + j]
+        end
+    end
+end
+
+function Base.:*(A::SparseMatrixBSC{Tv}, x::Vector{Tv}) where {Tv}
+    mul!(similar(x, A.m), A, x)
+end
