@@ -117,20 +117,6 @@ function init_jacobian_matrices(md::MeshData, dims, Nfields=1)
     return repeat.(A,Nfields,Nfields)
 end
 
-# accumulate VhTr*A*Vh on-the-fly
-# TODO: speed up via SparseMatrixSimpleBSR
-function reduce_jacobian!(A_reduced::SparseMatrixCSC, A::SparseMatrixCSC,
-                          md::MeshData, Vh, Nfields=1)
-
-    @unpack FToF = md
-    Nfaces,K = size(FToF)
-    EToE = @. (FToF.-1) ÷ Nfaces + 1
-    Nh,Np = size(Vh)
-
-    ids(e,npts) = (@. (1:npts) + (e-1)*npts)
-
-end
-
 # =============== for residual evaluation ================
 
 # use ATr for faster col access of sparse CSC matrices
