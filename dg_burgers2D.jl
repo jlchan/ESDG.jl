@@ -11,8 +11,8 @@ using Setup2DTri
 using UnPack
 
 "Define approximation parameters"
-N   = 1 # The order of approximation
-K1D = 64 # number of elements along each edge of a rectangle
+N   = 3 # The order of approximation
+K1D = 16 # number of elements along each edge of a rectangle
 CFL = .75 # relative size of a time-step
 T   = .15 # final time
 
@@ -39,16 +39,16 @@ mapP[mapB] = mapPB
 "======== Modify quadrature =========="
 
 @unpack r,s,Vf,wf,V,Vq,wq = rd
-M = transpose(Vq)*diagm(wq)*Vq # original quadrature
+M = transpose(Vq)*diagm(wq)*Vq # original quadrature of degree 2N
 
 # redefine quadrature operators
 rq,sq = (r,s)
 wq = vec(sum(M,dims=2)) # apply mass lumping to get integrals
 Vq = vandermonde_2D(N,rq,sq)/V
-M = transpose(Vq)*diagm(wq)*Vq # reduced quadrature
+# M = transpose(Vq)*diagm(wq)*Vq # reduced quadrature
 LIFT = M\(transpose(Vf)*diagm(wf))
 Pq = M\(Vq'*diagm(wq))
-@pack! rd = Vq,Pq
+@pack! rd = Vq,Pq,LIFT
 
 "======== Define initial coefficients and time-stepping =========="
 
@@ -141,9 +141,9 @@ function burgers_exact_sol_2D(u0,x,y,T,dt)
 end
 
 @unpack J = md
-rq2,sq2,wq2 = quad_nodes_2D(2*N+2)
+rq2,sq2,wq2 = quad_nodes_2D(3*N)
 Vq2 = vandermonde_2D(N,rq2,sq2)/V
 xq2,yq2 = (x->Vq2*x).((x,y))
 wJq2 = diagm(wq2)*(Vq2*J)
-L2err = sqrt(sum(wJq2.*(Vq2*u - burgers_exact_sol_2D(u0,xq2,yq2,T,dt/10)).^2))
+L2err = sqrt(sum(wJq2.*(Vq2*u - burgers_exact_sol_2D(u0,xq2,yq2,T,dt/100)).^2))
 @show L2err
