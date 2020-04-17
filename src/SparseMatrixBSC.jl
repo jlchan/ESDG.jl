@@ -29,6 +29,35 @@ function SparseMatrixBSC(m::Integer, n::Integer, colptr::Vector{Ti}, rowval::Vec
     SparseMatrixBSC(R, C, m, n, colptr, rowval, nzval)
 end
 
+################################################################
+# block zero matrix initializations
+################################################################
+
+# returns block matrix of zeros with sparsity structure of input matrix
+function block_spzeros(A::SparseMatrixBSC{Tv,Ti}) where {Tv,Ti<:Integer}
+    SparseMatrixBSC(A.R, A.C, A.m, A.n, A.colptr, A.rowval, zeros(Tv,size(A.nzval)...))
+end
+
+# default block sparse constructor with Float64
+function block_spzeros(R::Integer, C::Integer, row_indices::Vector{Ti}, col_indices::Vector{Ti}) where {Ti<:Integer}
+    block_spzeros(Float64,R,C, row_indices, col_indices)
+end
+
+# initialize zero SparseBSC matrix given
+function block_spzeros(Tv::DataType,R::Integer, C::Integer, row_indices::Vector{Ti}, col_indices::Vector{Ti}) where {Ti<:Integer}
+    if length(row_indices)!=length(col_indices)
+        error("Number of row indices and column indices are different: $(length(row_indices)) row indices, $(length(col_indices)) col indices")
+    end
+    nblocks_R = maximum(row_indices)
+    nblocks_C = maximum(col_indices)
+    num_nzblocks = max(length(row_indices))
+
+    # get colptr the lazy way
+    scalarA = SparseArrays.sparse(row_indices,col_indices,similar(row_indices))
+    SparseMatrixBSC(R, C, R*nblocks_R, C*nblocks_C, scalarA.colptr, scalarA.rowval, zeros(Tv,R,C,num_nzblocks))
+end
+
+
 ###########################
 # Conversions CSC <-> BSC #
 ###########################
@@ -37,6 +66,7 @@ nblocks(A::SparseMatrixBSC) = (length(A.colptr) - 1, A.n ÷ A.C)
 nblocks(A::SparseMatrixBSC, i::Int) = nblocks(A)[i]
 blocksize(A::SparseMatrixBSC) = A.R, A.C
 blocksize(A::SparseMatrixBSC, i::Int) = blocksize(A)[i]
+nnzblocks(A) = size(A.nzval,3)
 
 # Column i is in colptr[i]:(colptr[i+1]-1)
 nzblockrange(A::SparseMatrixBSC, col::Integer) =  Int(A.colptr[col]):Int(A.colptr[col + 1] - 1) # returns range for blocks in column "col"
@@ -174,6 +204,7 @@ function SparseMatrixBSC(A::SparseMatrixCSC{Tv, Ti}, R::Integer, C::Integer) whe
 end
 
 # for fast CSC conversion: convert to SparseMatrixCSC nzval ordering
+# returns permutation vector "p" such that (A::SparseCSC).nzval = (A::SparseBSC).nzval[p]
 function getCSCordering(A::SparseMatrixBSC)
 
     # loop through all active columns
@@ -197,14 +228,14 @@ function getCSCordering(A::SparseMatrixBSC)
     return CSC_permuted_indices[:]
 end
 
-# fast conversion from BSC to CSC matrix
-function SparseMatrixCSC!(B::SparseMatrixCSC,A::SparseMatrixBSC{Tv, Ti}, CSCpermuted_indices) where {Tv, Ti <: Integer}
+# SparseMatrixCSC!(B,A,p) - fast conversion from BSC to CSC matrix, storing A into B::CSC
+function SparseMatrixCSC!(B::SparseMatrixCSC,A::SparseMatrixBSC{Tv, Ti}, CSCpermuted_indices=getCSCordering(A)) where {Tv, Ti <: Integer}
     B.nzval .= A.nzval[:][CSCpermuted_indices] # need to add permutation, but this should be super fast
 end
 
-############
+###################
 # Base interfaces #
-############
+###################
 
 function Base.show(io::IO, A::SparseMatrixBSC;
                    header::Bool=true, repr=false)
@@ -212,8 +243,29 @@ function Base.show(io::IO, A::SparseMatrixBSC;
         eltype(A), " blocks of size ", blocksize(A, 1),"×",blocksize(A, 2))
 end
 
+# colptr::Vector{Ti}     # Column i is in colptr[i]:(colptr[i+1]-1)
+# rowval::Vector{Ti}     # Row values of blocks
+
+# returns a Vector of Block(i,j) of each block in A
+function getBlockIndices(A::SparseMatrixBSC{Tv,Ti}) where {Tv,Ti}
+
+    rowindices,colindices = ntuple(x->zeros(Ti,nnzblocks(A)),2)
+    n_cb, n_rb = nblocks(A)
+
+    sk = 1
+    for J in 1:n_cb # loop over cols
+        for r in nzblockrange(A, J) # col ranges
+            rowindices[sk] = A.rowval[r]
+            colindices[sk] = J
+            sk += 1
+        end
+    end
+
+    return Block.(rowindices,colindices)
+end
+
 # convert from block index to CSC index
-function getCSCindex(A::SparseMatrixBSC{Tv,Ti}, index::Block{2,Ti}) where {Tv,Ti}
+function getBlockCSCindex(A::SparseMatrixBSC{Tv,Ti}, index::Block{2,Ti}) where {Tv,Ti}
     row,col  = index.n
     colrange = nzblockrange(A,col)
     rows     = A.rowval[colrange]
@@ -225,24 +277,31 @@ function getCSCindex(A::SparseMatrixBSC{Tv,Ti}, index::Block{2,Ti}) where {Tv,Ti
     end
 end
 
+# get global matrix entry corresponding to BlockIndex((block_i,block_j),(local_i,local_j))
+function Base.getindex(A::SparseMatrixBSC, index::BlockIndex{2})
+    Ablock = Base.getindex(A,Block(index.I...)) # call Block(i,j) for block
+    return Ablock[index.α...]
+end
+
+# get block matrix corresponding to Block(i,j) index
 function Base.getindex(A::SparseMatrixBSC{Tv,Ti}, blockindex::Block{2,Ti}) where {Tv,Ti}
-    CSC_id = getCSCindex(A,blockindex)
-    if isnothing(CSC_id)
+    blockCSC_id = getBlockCSCindex(A,blockindex)
+    if isnothing(blockCSC_id)
         return zeros(blocksize(A)...)
     else
-        return A.nzval[:,:,CSC_id]
+        return A.nzval[:,:,blockCSC_id]
     end
 end
 
 function Base.setindex!(A::SparseMatrixBSC{Tv,Ti}, val::Array{Tv,2}, blockindex::Block{2,Ti}) where {Tv,Ti}
-    CSC_id = getCSCindex(A,blockindex)
-    if isnothing(CSC_id)
+    blockCSC_id = getBlockCSCindex(A,blockindex)
+    if isnothing(blockCSC_id)
         error("block index not in original sparsity pattern. adding new sparse blocks not currently supported")
     end
     if size(val)!=blocksize(A)
         error("assigned block is size ", size(val), ", block size is ", blocksize(A))
     end
-    A.nzval[:,:,CSC_id] .= val
+    A.nzval[:,:,blockCSC_id] .= val
 end
 
 
