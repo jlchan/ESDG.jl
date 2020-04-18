@@ -19,7 +19,7 @@ export init_jacobian_matrices
 export hadamard_jacobian,accum_hadamard_jacobian!
 export reduce_jacobian!
 export hadamard_sum, hadamard_sum!
-export banded_matrix_function
+export banded_matrix_function, diag_block_matrix_function
 export columnize
 
 # for constructing DG matrices
@@ -37,8 +37,8 @@ columnize(A) = SVector{size(A,2)}([A[:,i] for i in 1:size(A,2)])
 function hadamard_jacobian(Q::SparseMatrixBSC, dF, U::AbstractArray, scale = -1)
 
     Nfields = length(U)
-    #A = SMatrix{Nfields,Nfields}([block_spzeros(Q) for i = 1:Nfields, j=1:Nfields]) # why does StaticArrays break?
-    A = [block_spzeros(Q) for i = 1:Nfields, j=1:Nfields] # why does StaticArrays break?
+    #A = SMatrix{Nfields,Nfields}([block_spzeros(Q) for i = 1:Nfields, j=1:Nfields])
+    A = [block_spzeros(Q) for i = 1:Nfields, j=1:Nfields] # StaticArrays seems to break it?
     accum_hadamard_jacobian!(A,Q,dF,U,scale)
     return A
 end
@@ -51,9 +51,9 @@ function accum_hadamard_jacobian!(A::Matrix{SparseMatrixBSC{Tv,Ti}}, Q::SparseMa
 
     Nfields = length(U)
 
-    # local storage
+    # preallocate local storage
     R,C = BlockSparseMatrices.blocksize(Q)
-    Alocal = SMatrix{Nfields,Nfields}([zeros(R,C) for i = 1:Nfields,j=1:Nfields])
+    Alocal = SMatrix{Nfields,Nfields}([zeros(Tv,R,C) for i = 1:Nfields,j=1:Nfields])
 
     # loop over blocks
     for block_id in getBlockIndices(Q)
@@ -61,33 +61,32 @@ function accum_hadamard_jacobian!(A::Matrix{SparseMatrixBSC{Tv,Ti}}, Q::SparseMa
         Qblock = Q[block_id] # dense block extracted in order
 
         fill!.(Alocal,zero(Tv))
-        for j = 1:size(Qblock,2) # access column major
+        for j = 1:C # access column major
 
-            j_global = j + (block_id.n[2]-1)*Q.C # should fix - avoid using internals of Block...
+            j_global = j + (block_id.n[2]-1)*C # should fix - avoid using internals of Block...
             Uj = getindex.(U,j_global)
 
-            for i = 1:size(Qblock,1)
+            for i = 1:R
 
-                i_global = i + (block_id.n[1]-1)*Q.R
+                i_global = i + (block_id.n[1]-1)*R
                 Ui = getindex.(U,i_global)
 
                 dFdU = dF(Ui,Uj) # local Jacobian blocks
-                Qij  = Qblock[i,j]
+                Qij = Qblock[i,j]
 
                 for n = 1:Nfields, m = 1:Nfields
                     Alocal[m,n][i,j] += dFdU[m,n]*Qij
-                    #A[m,n][block_id][i,j] += dFdU[m,n]*Qij
                 end
             end
         end
 
         # store local blocks back in A
         for n = 1:Nfields, m = 1:Nfields
-            A[m,n][block_id] += Alocal[m,n]
+            A[m,n][block_id] = Alocal[m,n]
         end
     end
 
-    # add diagonal entry assuming Q = +/- Q^T
+    # add diagonal entry for each field block (assumes Q = +/- Q^T)
     for m = 1:Nfields, n = 1:Nfields
         Asum = scale * vec(sum(A[m,n],dims=1))
 
@@ -98,32 +97,28 @@ function accum_hadamard_jacobian!(A::Matrix{SparseMatrixBSC{Tv,Ti}}, Q::SparseMa
             A[m,n][Block(i,i)] += diagm(Asum[(1:C) .+ (i-1)*C])
         end
     end
+
+end # function
+
+# computes block-banded matrix whose bands are entries of matrix-valued
+# function evals (e.g., a Jacobian function).
+function diag_block_matrix_function(mat_fun,U::AbstractArray)
+    Nfields = length(U)
+    num_pts = length(U[1])
+
+    A = [Diagonal(zeros(num_pts)) for i = 1:Nfields, j=1:Nfields]
+
+    for i = 1:num_pts
+        mat_i = mat_fun(getindex.(U,i))
+        for n = 1:Nfields, m = 1:Nfields
+            A[m,n].diag[i] = mat_i[m,n]
+        end
+    end
+    return A
 end
 
-# # computes block-banded matrix whose bands are entries of matrix-valued
-# # function evals (e.g., a Jacobian function).
-# function banded_matrix_function(mat_fun,U::AbstractArray)
-#     Nfields = length(U)
-#     num_pts = length(U[1])
-#
-#     A = spzeros(Nfields*num_pts,Nfields*num_pts)
-#     ids(m) = (1:num_pts) .+ (m-1)*num_pts
-#     Block(m,n) = CartesianIndices((ids(m),ids(n)))
-#
-#     for i = 1:num_pts
-#         mat_i = mat_fun(getindex.(U,i))
-#         for n = 1:Nfields, m = 1:Nfields
-#             A[Block(m,n)[i,i]] = mat_i[m,n] # TODO: replace with fast sparse constructor
-#         end
-#     end
-#     return A
-# end
 
-
-
-#################################################################
-#####  regular SparseCSC version for faster dense linear algebra
-##################################################################
+##  regular SparseCSC version
 
 # sparse matrix assembly version
 # can only deal with one coordinate component at a time in higher dimensions

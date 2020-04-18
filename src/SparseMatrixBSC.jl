@@ -376,3 +376,16 @@ end
 function Base.:*(A::SparseMatrixBSC{Tv}, x::Vector{Tv}) where {Tv}
     mul!(similar(x, A.m), A, x)
 end
+
+# in-place multiplication of block BSC matrix and Diagonal matrix
+function sparseBSC_diag_rmult!(A::SparseMatrixBSC{Tv},D::Diagonal{Tv}) where {Tv}
+    n_cb, n_rb = nblocks(A)
+    R,C = BlockSparseMatrices.blocksize(A)
+
+    for J in 1:n_cb # loop over cols
+        for nzid in nzblockrange(A, J) # col ranges
+            id = (1:C) .+ (J-1)*C
+            A.nzval[:,:,nzid] .= (A.nzval[:,:,nzid]*Diagonal(D.diag[id]))
+        end
+    end
+end
