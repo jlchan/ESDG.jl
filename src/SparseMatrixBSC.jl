@@ -29,9 +29,7 @@ function SparseMatrixBSC(m::Integer, n::Integer, colptr::Vector{Ti}, rowval::Vec
     SparseMatrixBSC(R, C, m, n, colptr, rowval, nzval)
 end
 
-################################################################
-# block zero matrix initializations
-################################################################
+## block zero matrix initializations
 
 # returns block matrix of zeros with sparsity structure of input matrix
 function block_spzeros(A::SparseMatrixBSC{Tv,Ti}) where {Tv,Ti<:Integer}
@@ -58,9 +56,7 @@ function block_spzeros(Tv::DataType,R::Integer, C::Integer, row_indices::Vector{
 end
 
 
-###########################
-# Conversions CSC <-> BSC #
-###########################
+## Conversions CSC <-> BSC
 
 nblocks(A::SparseMatrixBSC) = (length(A.colptr) - 1, A.n ÷ A.C)
 nblocks(A::SparseMatrixBSC, i::Int) = nblocks(A)[i]
@@ -71,9 +67,6 @@ nnzblocks(A) = size(A.nzval,3)
 # Column i is in colptr[i]:(colptr[i+1]-1)
 nzblockrange(A::SparseMatrixBSC, col::Integer) =  Int(A.colptr[col]):Int(A.colptr[col + 1] - 1) # returns range for blocks in column "col"
 
-Base.size(A::SparseMatrixBSC) = (A.m, A.n)
-Base.size(A::SparseMatrixBSC, i) = size(A)[i]
-Base.eltype(A::SparseMatrixBSC) = eltype(A.nzval)
 SparseArrays.nnz(A::SparseMatrixBSC) = length(A.nzval)
 
 function SparseArrays.SparseMatrixCSC(A::SparseMatrixBSC{Tv, Ti}) where {Tv, Ti <: Integer}
@@ -233,9 +226,7 @@ function SparseMatrixCSC!(B::SparseMatrixCSC,A::SparseMatrixBSC{Tv, Ti}, CSCperm
     B.nzval .= A.nzval[:][CSCpermuted_indices] # need to add permutation, but this should be super fast
 end
 
-###################
-# Base interfaces #
-###################
+## Base interfaces
 
 function Base.show(io::IO, A::SparseMatrixBSC;
                    header::Bool=true, repr=false)
@@ -243,8 +234,66 @@ function Base.show(io::IO, A::SparseMatrixBSC;
         eltype(A), " blocks of size ", blocksize(A, 1),"×",blocksize(A, 2))
 end
 
-# colptr::Vector{Ti}     # Column i is in colptr[i]:(colptr[i+1]-1)
-# rowval::Vector{Ti}     # Row values of blocks
+Base.size(A::SparseMatrixBSC) = (A.m, A.n)
+Base.size(A::SparseMatrixBSC, i) = size(A)[i]
+Base.eltype(A::SparseMatrixBSC) = eltype(A.nzval)
+
+# get global matrix entry corresponding to BlockIndex((block_i,block_j),(local_i,local_j))
+function Base.getindex(A::SparseMatrixBSC, index::BlockIndex{2})
+    Ablock = Base.getindex(A,Block(index.I...)) # call Block(i,j) for block
+    return Ablock[index.α...]
+end
+
+# get block matrix corresponding to Block(i,j) index
+function Base.getindex(A::SparseMatrixBSC{Tv,Ti}, blockindex::Block{2,Ti}) where {Tv,Ti}
+    blockCSC_id = getBlockCSCindex(A,blockindex)
+    if isnothing(blockCSC_id)
+        return zeros(blocksize(A)...)
+    else
+        return A.nzval[:,:,blockCSC_id]
+    end
+end
+
+function Base.setindex!(A::SparseMatrixBSC{Tv,Ti}, val::Array{Tv,2}, blockindex::Block{2,Ti}) where {Tv,Ti}
+    blockCSC_id = getBlockCSCindex(A,blockindex)
+    if isnothing(blockCSC_id)
+        error("block index not in original sparsity pattern. adding new sparse blocks not currently supported")
+    end
+    if size(val)!=blocksize(A)
+        error("assigned block is size ", size(val), ", block size is ", blocksize(A))
+    end
+    A.nzval[:,:,blockCSC_id] .= val
+end
+
+# quick and dirty to get ExplicitJacobians working
+function Base.sum(A::SparseMatrixBSC; kwargs...)
+
+    dims = kwargs[:dims]
+    if dims==2
+        error("block row sums not yet implemented")
+    end
+
+    # loop over columns, sum
+    rowindices,colindices = ntuple(x->zeros(eltype(A),nnzblocks(A)),2)
+    n_cb, n_rb = nblocks(A)
+    R,C = blocksize(A)
+
+    # assumes dims=1
+    if dims==1
+        global_sum = zeros(eltype(A),1,size(A,2))
+        local_sum = zeros(eltype(A),1,C)
+    end
+    for J in 1:n_cb # loop over cols
+        fill!(local_sum,zero(eltype(A)))
+        for index in nzblockrange(A, J) # col ranges
+            local_sum .+= sum(A.nzval[:,:,index]; kwargs...)
+        end
+        global_sum[(1:C) .+ (J-1)*C] .= vec(local_sum)
+    end
+    return global_sum
+end
+
+## conversion between block and linear indices
 
 # returns a Vector of Block(i,j) of each block in A
 function getBlockIndices(A::SparseMatrixBSC{Tv,Ti}) where {Tv,Ti}
@@ -277,48 +326,18 @@ function getBlockCSCindex(A::SparseMatrixBSC{Tv,Ti}, index::Block{2,Ti}) where {
     end
 end
 
-# get global matrix entry corresponding to BlockIndex((block_i,block_j),(local_i,local_j))
-function Base.getindex(A::SparseMatrixBSC, index::BlockIndex{2})
-    Ablock = Base.getindex(A,Block(index.I...)) # call Block(i,j) for block
-    return Ablock[index.α...]
-end
-
-# get block matrix corresponding to Block(i,j) index
-function Base.getindex(A::SparseMatrixBSC{Tv,Ti}, blockindex::Block{2,Ti}) where {Tv,Ti}
-    blockCSC_id = getBlockCSCindex(A,blockindex)
-    if isnothing(blockCSC_id)
-        return zeros(blocksize(A)...)
-    else
-        return A.nzval[:,:,blockCSC_id]
-    end
-end
-
-function Base.setindex!(A::SparseMatrixBSC{Tv,Ti}, val::Array{Tv,2}, blockindex::Block{2,Ti}) where {Tv,Ti}
-    blockCSC_id = getBlockCSCindex(A,blockindex)
-    if isnothing(blockCSC_id)
-        error("block index not in original sparsity pattern. adding new sparse blocks not currently supported")
-    end
-    if size(val)!=blocksize(A)
-        error("assigned block is size ", size(val), ", block size is ", blocksize(A))
-    end
-    A.nzval[:,:,blockCSC_id] .= val
-end
-
-
-
-##########
-# LinAlg #
-##########
+## LinAlg
 
 # computes BL*A_i*BR for each block via BLAS-3 operations + permutedims.
 function block_lrmul(A::SparseMatrixBSC, BL, BR)
-    rA,cA,nb = size(A.nzval)
-    rBL,cBL  = size(BL)
-    rBR,cBR  = size(BR)
-    nzval = reshape(BL*reshape(A.nzval,rA,cA*nb),rBL,cA,nb) # left multiply
-    nzval = transpose(BR)*reshape(permutedims(nzval,(2,1,3)), cA, rBL*nb) # flip + left multiply with transpose
-    nzval = permutedims(reshape(nzval,cBR,rBL,nb),(2,1,3)) # flip back
-    return SparseMatrixBSC(rBL, cBR, rBL*nb, cBR*nb, A.colptr, A.rowval, nzval) # resizes blocks, keeps
+    rA,cA,nnzb = size(A.nzval)
+    nbR,nbC    = nblocks(A)
+    rBL,cBL    = size(BL)
+    rBR,cBR    = size(BR)
+    nzval = reshape(BL*reshape(A.nzval,rA,cA*nnzb),rBL,cA,nnzb) # left multiply
+    nzval = transpose(BR)*reshape(permutedims(nzval,(2,1,3)), cA, rBL*nnzb) # flip + left multiply with transpose
+    nzval = permutedims(reshape(nzval,cBR,rBL,nnzb),(2,1,3)) # flip back
+    return SparseMatrixBSC(rBL, cBR, rBL*nbR, cBR*nbC, A.colptr, A.rowval, nzval) # resizes blocks, keeps
 end
 
 # We do dynamic dispatch here so that the size of the blocks are known at compile time
