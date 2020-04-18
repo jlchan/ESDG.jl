@@ -265,28 +265,28 @@ function Base.setindex!(A::SparseMatrixBSC{Tv,Ti}, val::Array{Tv,2}, blockindex:
     A.nzval[:,:,blockCSC_id] .= val
 end
 
-# quick and dirty to get ExplicitJacobians working
-function Base.sum(A::SparseMatrixBSC; kwargs...)
+# quick and dirty column sums to get ExplicitJacobians working
+function Base.sum(A::SparseMatrixBSC; dims=1)
 
-    dims = kwargs[:dims]
+    # dims = kwargs[:dims]
     if dims==2
         error("block row sums not yet implemented")
     end
 
     # loop over columns, sum
-    rowindices,colindices = ntuple(x->zeros(eltype(A),nnzblocks(A)),2)
     n_cb, n_rb = nblocks(A)
     R,C = blocksize(A)
 
     # assumes dims=1
     if dims==1
         global_sum = zeros(eltype(A),1,size(A,2))
-        local_sum = zeros(eltype(A),1,C)
+        local_sum = zeros(eltype(A),1,C) # preallocate
     end
+    local_sums = sum(A.nzval,dims=dims) # compute sums of all blocks
     for J in 1:n_cb # loop over cols
-        fill!(local_sum,zero(eltype(A)))
+        fill!(local_sum,zero(eltype(A))) # reset for each col
         for index in nzblockrange(A, J) # col ranges
-            local_sum .+= sum(A.nzval[:,:,index]; kwargs...)
+            local_sum .+= local_sums[:,:,index]
         end
         global_sum[(1:C) .+ (J-1)*C] .= vec(local_sum)
     end
