@@ -13,6 +13,7 @@ using StaticArrays
 using SparseArrays
 using UnPack
 using SetupDG
+using BlockSparseMatrices
 
 export init_jacobian_matrices
 export hadamard_jacobian,accum_hadamard_jacobian!
@@ -26,6 +27,103 @@ export build_rhs_matrix, assemble_global_SBP_matrices_2D
 
 # use w/reshape to convert from matrices to arrays of arrays
 columnize(A) = SVector{size(A,2)}([A[:,i] for i in 1:size(A,2)])
+
+#################################################################
+#####  block SparseBSC version for faster dense linear algebra
+##################################################################
+
+
+# block SparseBSC version of the jacobian assembly
+function hadamard_jacobian(Q::SparseMatrixBSC, dF, U::AbstractArray, scale = -1)
+
+    Nfields = length(U)
+    #A = SMatrix{Nfields,Nfields}([block_spzeros(Q) for i = 1:Nfields, j=1:Nfields]) # why does StaticArrays break?
+    A = [block_spzeros(Q) for i = 1:Nfields, j=1:Nfields] # why does StaticArrays break?
+    accum_hadamard_jacobian!(A,Q,dF,U,scale)
+    return A
+end
+
+# compute and accumulate contributions from a Jacobian function dF
+#function accum_hadamard_jacobian!(A::SMatrix{Nfields,Nfields,SparseMatrixBSC{Tv,Ti}}, Q::SparseMatrixBSC{Tv,Ti},
+                                  # dF, U::AbstractArray, scale = -1) where {Nfields,Tv,Ti <: Integer}
+function accum_hadamard_jacobian!(A::Matrix{SparseMatrixBSC{Tv,Ti}}, Q::SparseMatrixBSC{Tv,Ti},
+                                  dF, U::AbstractArray, scale = -1) where {Tv,Ti <: Integer}
+
+    Nfields = length(U)
+
+    # local storage
+    R,C = BlockSparseMatrices.blocksize(Q)
+    Alocal = SMatrix{Nfields,Nfields}([zeros(R,C) for i = 1:Nfields,j=1:Nfields])
+
+    # loop over blocks
+    for block_id in getBlockIndices(Q)
+
+        Qblock = Q[block_id] # dense block extracted in order
+
+        fill!.(Alocal,zero(Tv))
+        for j = 1:size(Qblock,2) # access column major
+
+            j_global = j + (block_id.n[2]-1)*Q.C # should fix - avoid using internals of Block...
+            Uj = getindex.(U,j_global)
+
+            for i = 1:size(Qblock,1)
+
+                i_global = i + (block_id.n[1]-1)*Q.R
+                Ui = getindex.(U,i_global)
+
+                dFdU = dF(Ui,Uj) # local Jacobian blocks
+                Qij  = Qblock[i,j]
+
+                for n = 1:Nfields, m = 1:Nfields
+                    Alocal[m,n][i,j] += dFdU[m,n]*Qij
+                    #A[m,n][block_id][i,j] += dFdU[m,n]*Qij
+                end
+            end
+        end
+
+        # store local blocks back in A
+        for n = 1:Nfields, m = 1:Nfields
+            A[m,n][block_id] += Alocal[m,n]
+        end
+    end
+
+    # add diagonal entry assuming Q = +/- Q^T
+    for m = 1:Nfields, n = 1:Nfields
+        Asum = scale * vec(sum(A[m,n],dims=1))
+
+        # accumulate field block sum into diagonal blocks
+        # assumes that there are diagonal blocks allocated in Q::SparseBSC (should be for DG)
+        # assumes that A[m,n] has same sparsity structure as Q
+        for i = 1:BlockSparseMatrices.nblocks(Q,2)
+            A[m,n][Block(i,i)] += diagm(Asum[(1:C) .+ (i-1)*C])
+        end
+    end
+end
+
+# # computes block-banded matrix whose bands are entries of matrix-valued
+# # function evals (e.g., a Jacobian function).
+# function banded_matrix_function(mat_fun,U::AbstractArray)
+#     Nfields = length(U)
+#     num_pts = length(U[1])
+#
+#     A = spzeros(Nfields*num_pts,Nfields*num_pts)
+#     ids(m) = (1:num_pts) .+ (m-1)*num_pts
+#     Block(m,n) = CartesianIndices((ids(m),ids(n)))
+#
+#     for i = 1:num_pts
+#         mat_i = mat_fun(getindex.(U,i))
+#         for n = 1:Nfields, m = 1:Nfields
+#             A[Block(m,n)[i,i]] = mat_i[m,n] # TODO: replace with fast sparse constructor
+#         end
+#     end
+#     return A
+# end
+
+
+
+#################################################################
+#####  regular SparseCSC version for faster dense linear algebra
+##################################################################
 
 # sparse matrix assembly version
 # can only deal with one coordinate component at a time in higher dimensions
@@ -116,6 +214,8 @@ function init_jacobian_matrices(md::MeshData, dims, Nfields=1)
 
     return repeat.(A,Nfields,Nfields)
 end
+
+
 
 # =============== for residual evaluation ================
 
