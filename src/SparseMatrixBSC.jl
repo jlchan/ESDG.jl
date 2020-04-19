@@ -75,7 +75,7 @@ function SparseArrays.SparseMatrixCSC(A::SparseMatrixBSC{Tv, Ti}) where {Tv, Ti 
     end
     rowval = zeros(Ti, nnz(A))
     colptr = zeros(Ti, size(A, 2) + 1)
-    nzval = zeros(Tv, length(A.nzval))
+    nzval  = zeros(Tv, length(A.nzval))
 
     count_row = 1
     count_col = 2
@@ -194,36 +194,6 @@ function SparseMatrixBSC(A::SparseMatrixCSC{Tv, Ti}, R::Integer, C::Integer) whe
     end
 
     SparseMatrixBSC(A.m, A.n, colptr, rowval, nzval)
-end
-
-# for fast CSC conversion: convert to SparseMatrixCSC nzval ordering
-# returns permutation vector "p" such that (A::SparseCSC).nzval = (A::SparseBSC).nzval[p]
-function getCSCordering(A::SparseMatrixBSC)
-
-    # loop through all active columns
-    R,C = blocksize(A)
-    ntotalblocks = size(A.nzval,3)
-    flattened_indices = reshape(1:R*C*ntotalblocks,R,C,ntotalblocks) # UnitRange avoids allocation
-    CSC_permuted_indices = zeros(Int,R,C*ntotalblocks) # [col1, col2, ..., col_blocksize*nblocks]
-
-    sk = 1
-    for i = 1:length(A.colptr)-1
-        # find i,j indices of each block in a col
-        blocks_in_column = nzblockrange(A,i)
-        for col = 1:C
-            for block_id in blocks_in_column
-                CSC_permuted_indices[:,sk] .= flattened_indices[:,col,block_id]
-                sk += 1
-            end
-        end
-    end
-
-    return CSC_permuted_indices[:]
-end
-
-# SparseMatrixCSC!(B,A,p) - fast conversion from BSC to CSC matrix, storing A into B::CSC
-function SparseMatrixCSC!(B::SparseMatrixCSC,A::SparseMatrixBSC{Tv, Ti}, CSCpermuted_indices=getCSCordering(A)) where {Tv, Ti <: Integer}
-    B.nzval .= A.nzval[:][CSCpermuted_indices] # need to add permutation, but this should be super fast
 end
 
 ## Base interfaces
