@@ -263,6 +263,10 @@ function Base.sum(A::SparseMatrixBSC; dims=1)
     return global_sum
 end
 
+function Base.fill!(A::SparseMatrixBSC{Tv,Ti}, x::Tv) where {Tv,Ti}
+    fill!(A.nzval,x)
+end
+
 ## conversion between block and linear indices
 
 # returns a Vector of Block(i,j) of each block in A
@@ -287,8 +291,7 @@ end
 function getBlockCSCindex(A::SparseMatrixBSC{Tv,Ti}, index::Block{2,Ti}) where {Tv,Ti}
     row,col  = index.n
     colrange = nzblockrange(A,col)
-    rows     = A.rowval[colrange]
-    index    = findfirst(rows.==row)
+    index    = findfirst(A.rowval[colrange].==row)
     if isnothing(index)
         return nothing
     else

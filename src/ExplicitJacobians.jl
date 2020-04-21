@@ -46,8 +46,8 @@ end
 # compute and accumulate contributions from a Jacobian function dF
 #function accum_hadamard_jacobian!(A::SMatrix{Nfields,Nfields,SparseMatrixBSC{Tv,Ti}}, Q::SparseMatrixBSC{Tv,Ti},
                                   # dF, U::AbstractArray, scale = -1) where {Nfields,Tv,Ti <: Integer}
-function accum_hadamard_jacobian!(A::Matrix{SparseMatrixBSC{Tv,Ti}}, Q::SparseMatrixBSC{Tv,Ti},
-                                  dF, U::AbstractArray, scale = -1) where {Tv,Ti <: Integer}
+function accum_hadamard_jacobian!(A::Array{SparseMatrixBSC{Tv,Ti},Td}, Q::SparseMatrixBSC{Tv,Ti},
+                                  dF, U::AbstractArray, scale = -1) where {Tv,Ti,Td}
 
     Nfields = length(U)
 
@@ -82,7 +82,7 @@ function accum_hadamard_jacobian!(A::Matrix{SparseMatrixBSC{Tv,Ti}}, Q::SparseMa
 
         # store local blocks back in A
         for n = 1:Nfields, m = 1:Nfields
-            A[m,n][block_id] = Alocal[m,n]
+            A[m,n][block_id] += Alocal[m,n]
         end
     end
 
@@ -215,7 +215,7 @@ end
 # =============== for residual evaluation ================
 
 # use ATr for faster col access of sparse CSC matrices
-function hadamard_sum(ATr::SparseMatrixCSC,F,u::AbstractArray)
+function hadamard_sum(ATr,F,u::AbstractArray)
     m, n = size(ATr)
     # rhs = [zeros(n) for i in eachindex(u)]
     rhs = MVector{length(u)}([zeros(n) for i in eachindex(u)]) # probably faster w/StaticArrays?
@@ -224,7 +224,7 @@ function hadamard_sum(ATr::SparseMatrixCSC,F,u::AbstractArray)
 end
 
 # computes ∑ A_ij * F(u_i,u_j) = (A∘F)*1 for flux differencing
-function hadamard_sum!(rhs::AbstractArray,ATr::SparseMatrixCSC,F,u::AbstractArray)
+function hadamard_sum!(rhs::AbstractArray,ATr::SparseMatrixCSC,F,u::AbstractArray) where {T}
     cols = rowvals(ATr)
     vals = nonzeros(ATr)
     m, n = size(ATr)
