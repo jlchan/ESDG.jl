@@ -2,6 +2,7 @@ using Revise # reduce need for recompile
 using Plots
 using LinearAlgebra
 using UnPack
+using SparseArrays
 
 push!(LOAD_PATH, "./src") # user defined modules
 using CommonUtils
@@ -13,10 +14,10 @@ using UniformQuadMesh
 using Setup2DQuad
 
 "Define approximation parameters"
-N   = 5 # The order of approximation
+N   = 1 # The order of approximation
 K1D = 8 # number of elements along each edge of a rectangle
 CFL = .75 # relative size of a time-step
-T   = .1 # final time
+T   = .5 # final time
 
 "=========== Setup code ============="
 
@@ -74,20 +75,16 @@ function rhs(u, rd::RefElemData, md::MeshData)
     @unpack nxJ,nyJ,sJ = md
     @unpack mapP,mapB = md
 
-    # quadrature operators
-    @unpack Vq,Pq = rd
-
     # split form volume terms
-    uq     = Vq*u
     ur,us  = (A->A*u).((Dr,Ds))
     dudx   = @. rxJ*ur + sxJ*us
     dudy   = @. ryJ*ur + syJ*us
-    f_proj = Pq*(uq.^2)
+    f_proj = (u.^2)
 
     du2x  = rxJ.*(Dr*f_proj) + sxJ.*(Ds*f_proj)
     du2y  = ryJ.*(Dr*f_proj) + syJ.*(Ds*f_proj)
     du2   = du2x + du2y # (du^2/dx + du^2/dy, v)
-    udu   = Pq*(uq.*(Vq*(dudx+dudy))) # (u*dudx,v)
+    udu   = u.*(dudx+dudy) # (u*dudx,v)
 
     # boundary terms
     uf = Vf*u
@@ -95,10 +92,12 @@ function rhs(u, rd::RefElemData, md::MeshData)
     du = uP - uf
     fproj_f = Vf*f_proj
 
-    tau = 1
+    tau = 0
     uflux = @. ((1/6)*(uP^2 + uP*uf) - (1/3)*fproj_f)*(nxJ + nyJ) - .5*tau*du*max(abs(uP),abs(uf))*abs(nxJ + nyJ)
 
     rhsu = (1/3)*(du2 + udu) + LIFT*uflux
+
+    rhsu = dudx + LIFT*(@. .5 * du * nxJ)
 
     return -rhsu./J
 end
@@ -111,13 +110,21 @@ plot()
 @unpack Vp = rd
 xp,yp = (x->Vp*x).((x,y))
 
+@unpack J = md
+
 "Perform time-stepping"
 resQ = zeros(size(x))
+rhstest = zeros(Nsteps)
 interval = 5
 for i = 1:Nsteps
     for INTRK = 1:5
         time    = i*dt + rk4c[INTRK]*dt
         rhsQ    = rhs(u,rd,md)
+
+        if INTRK==5
+            rhstest[i] = sum(u.*(J.*(M*rhsQ)))
+        end
+
         @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
         @. u    = u + rk4b[INTRK]*resQ
     end
@@ -131,22 +138,23 @@ end
 # scatter(xp,yp,vv,zcolor=vv,camera=(3,25))
 # scatter(xp,yp,vv,zcolor=vv,camera=(0,90))
 
+@show rhstest
 
-function burgers_exact_sol_2D(u0,x,y,T,dt)
-    Nsteps = ceil(Int,T/dt)
-    dt = T/Nsteps
-    u = u0(x,y) # computed at input points
-    for i = 1:Nsteps
-        t = i*dt
-        u .= @. u0(x-u*t,y-u*t) # evolve solution at quadrature points using characteristics
-    end
-    return u
-end
-
-@unpack J = md
-rq2,sq2,wq2 = quad_nodes_2D(3*N)
-Vq2 = vandermonde_2D(N,rq2,sq2)/V
-xq2,yq2 = (x->Vq2*x).((x,y))
-wJq2 = diagm(wq2)*(Vq2*J)
-L2err = sqrt(sum(wJq2.*(Vq2*u - burgers_exact_sol_2D(u0,xq2,yq2,T,dt/100)).^2))
-@show L2err
+# function burgers_exact_sol_2D(u0,x,y,T,dt)
+#     Nsteps = ceil(Int,T/dt)
+#     dt = T/Nsteps
+#     u = u0(x,y) # computed at input points
+#     for i = 1:Nsteps
+#         t = i*dt
+#         u .= @. u0(x-u*t,y-u*t) # evolve solution at quadrature points using characteristics
+#     end
+#     return u
+# end
+#
+# @unpack J = md
+# rq2,sq2,wq2 = quad_nodes_2D(3*N)
+# Vq2 = vandermonde_2D(N,rq2,sq2)/V
+# xq2,yq2 = (x->Vq2*x).((x,y))
+# wJq2 = diagm(wq2)*(Vq2*J)
+# L2err = sqrt(sum(wJq2.*(Vq2*u - burgers_exact_sol_2D(u0,xq2,yq2,T,dt/100)).^2))
+# @show L2err
