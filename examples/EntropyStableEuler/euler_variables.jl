@@ -3,6 +3,8 @@ Euler functions for entropy variables and more
 
 """
 
+# maybe define γ const here?
+
 function Unorm(U)
     unorm = zeros(size(U[1]))
     for u in U

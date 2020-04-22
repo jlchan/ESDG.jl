@@ -6,7 +6,7 @@ function euler_fluxes(UL,UR)
 """
 
 "1D wavespeed for use in interface fluxes"
-function wavespeed(rho,rhou,E)
+function wavespeed(rho,rhou,E,γ=1.4)
     cvel = (@. sqrt(γ*pfun(rho,rhou,E)/rho))
     return (@. sqrt(abs(rhou/rho)) + cvel)
 end
@@ -27,7 +27,7 @@ end
 
 # 2d version
 function euler_fluxes(rhoL,uL,vL,betaL,rhoR,uR,vR,betaR,
-                      rhologL,betalogL,rhologR,betalogR)
+                      rhologL,betalogL,rhologR,betalogR,γ=1.4)
 
     rholog = logmean.(rhoL,rhoR,rhologL,rhologR)
     betalog = logmean.(betaL,betaR,betalogL,betalogR)
@@ -55,7 +55,7 @@ end
 
 # 3d version
 function euler_fluxes(rhoL,uL,vL,wL,betaL,rhoR,uR,vR,wR,betaR,
-                      rhologL,betalogL,rhologR,betalogR)
+                      rhologL,betalogL,rhologR,betalogR,γ=1.4)
 
     rholog = logmean.(rhoL,rhoR,rhologL,rhologR)
     betalog = logmean.(betaL,betaR,betalogL,betalogR)
