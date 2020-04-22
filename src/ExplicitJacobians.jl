@@ -46,8 +46,13 @@ end
 # compute and accumulate contributions from a Jacobian function dF
 #function accum_hadamard_jacobian!(A::SMatrix{Nfields,Nfields,SparseMatrixBSC{Tv,Ti}}, Q::SparseMatrixBSC{Tv,Ti},
                                   # dF, U::AbstractArray, scale = -1) where {Nfields,Tv,Ti <: Integer}
-function accum_hadamard_jacobian!(A::Array{SparseMatrixBSC{Tv,Ti},Td}, Q::SparseMatrixBSC{Tv,Ti},
-                                  dF, U::AbstractArray, scale = -1) where {Tv,Ti,Td}
+function accum_hadamard_jacobian!(A::SparseMatrixBSC{Tv,Ti}, Q::SparseMatrixBSC{Tv,Ti},
+                                dF, U::AbstractArray, scale = -1) where {Tv,Ti}
+    accum_hadamard_jacobian!(reshape([A],1,1), Q, dF,U,scale)
+end
+
+function accum_hadamard_jacobian!(A::Array{SparseMatrixBSC{Tv,Ti},2}, Q::SparseMatrixBSC{Tv,Ti},
+                                  dF, U::AbstractArray, scale = -1) where {Tv,Ti}
 
     Nfields = length(U)
 
@@ -136,7 +141,7 @@ end
 
 # compute and accumulate contributions from a Jacobian function dF
 function accum_hadamard_jacobian!(A::SparseMatrixCSC, Q::SparseMatrixCSC,
-    dF, U::AbstractArray, scale = -1)
+                                  dF, U::AbstractArray, scale = -1)
 
     Nfields = length(U)
 
