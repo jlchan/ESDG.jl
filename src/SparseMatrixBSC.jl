@@ -218,7 +218,7 @@ end
 function Base.getindex(A::SparseMatrixBSC{Tv,Ti}, blockindex::Block{2,Ti}) where {Tv,Ti}
     blockCSC_id = getBlockCSCindex(A,blockindex)
     if isnothing(blockCSC_id)
-        return zeros(blocksize(A)...)
+        return zeros(Tv,blocksize(A)...)
     else
         return A.nzval[:,:,blockCSC_id]
     end
