@@ -28,13 +28,13 @@ export build_rhs_matrix, assemble_global_SBP_matrices_2D
 # use w/reshape to convert from matrices to arrays of arrays
 columnize(A) = SVector{size(A,2)}([A[:,i] for i in 1:size(A,2)])
 
+# TODO: remove block sparse version since it's slower (more nnz)
 #################################################################
 #####  block SparseBSC version for faster dense linear algebra
 ##################################################################
 
-
 # block SparseBSC version of the jacobian assembly
-function hadamard_jacobian(Q::SparseMatrixBSC, dF, U::AbstractArray, scale = -1)
+function hadamard_jacobian(Q::SparseMatrixBSC, dF::Function, U::AbstractArray, scale = -1)
 
     Nfields = length(U)
     #A = SMatrix{Nfields,Nfields}([block_spzeros(Q) for i = 1:Nfields, j=1:Nfields])
@@ -47,12 +47,12 @@ end
 #function accum_hadamard_jacobian!(A::SMatrix{Nfields,Nfields,SparseMatrixBSC{Tv,Ti}}, Q::SparseMatrixBSC{Tv,Ti},
                                   # dF, U::AbstractArray, scale = -1) where {Nfields,Tv,Ti <: Integer}
 function accum_hadamard_jacobian!(A::SparseMatrixBSC{Tv,Ti}, Q::SparseMatrixBSC{Tv,Ti},
-                                dF, U::AbstractArray, scale = -1) where {Tv,Ti}
+                                dF::Function, U::AbstractArray, scale = -1) where {Tv,Ti}
     accum_hadamard_jacobian!(reshape([A],1,1), Q, dF,U,scale)
 end
 
 function accum_hadamard_jacobian!(A::Array{SparseMatrixBSC{Tv,Ti},2}, Q::SparseMatrixBSC{Tv,Ti},
-                                  dF, U::AbstractArray, scale = -1) where {Tv,Ti}
+                                  dF::Function, U::AbstractArray, scale = -1) where {Tv,Ti}
 
     Nfields = length(U)
 
@@ -107,7 +107,7 @@ end # function
 
 # computes block-banded matrix whose bands are entries of matrix-valued
 # function evals (e.g., a Jacobian function).
-function diag_block_matrix_function(mat_fun,U::AbstractArray)
+function diag_block_matrix_function(mat_fun::Function,U::AbstractArray)
     Nfields = length(U)
     num_pts = length(U[1])
 
@@ -127,7 +127,7 @@ end
 
 # sparse matrix assembly version
 # can only deal with one coordinate component at a time in higher dimensions
-function hadamard_jacobian(Q::SparseMatrixCSC, dF, U::AbstractArray, scale = -1)
+function hadamard_jacobian(Q::SparseMatrixCSC, dF::Function, U::AbstractArray, scale = -1)
 
     Nfields = length(U)
     NpK = size(Q,2)
@@ -141,7 +141,7 @@ end
 
 # compute and accumulate contributions from a Jacobian function dF
 function accum_hadamard_jacobian!(A::SparseMatrixCSC, Q::SparseMatrixCSC,
-                                  dF, U::AbstractArray, scale = -1)
+                                  dF::Function, U::AbstractArray, scale = -1)
 
     Nfields = length(U)
 
@@ -173,7 +173,7 @@ end
 
 # computes block-banded matrix whose bands are entries of matrix-valued
 # function evals (e.g., a Jacobian function).
-function banded_matrix_function(mat_fun,U::AbstractArray)
+function banded_matrix_function(mat_fun::Function,U::AbstractArray)
     Nfields = length(U)
     num_pts = length(U[1])
 
@@ -206,7 +206,7 @@ function init_jacobian_matrices(md::MeshData, dims, Nfields=1)
         for (i,block_size) = enumerate(dims)
             id,id_nbr = ids.((e,enbr), block_size)
 
-            # init to non-zeros to retain sparsity pattern
+            # init to small non-zeros to retain sparsity pattern
             fill!(A[i][id, id], 1e-16)
             fill!(A[i][id, id_nbr], 1e-16)
         end
@@ -216,11 +216,10 @@ function init_jacobian_matrices(md::MeshData, dims, Nfields=1)
 end
 
 
-
 # =============== for residual evaluation ================
 
 # use ATr for faster col access of sparse CSC matrices
-function hadamard_sum(ATr,F,u::AbstractArray)
+function hadamard_sum(ATr,F::Function,u::AbstractArray)
     m, n = size(ATr)
     # rhs = [zeros(n) for i in eachindex(u)]
     rhs = MVector{length(u)}([zeros(n) for i in eachindex(u)]) # probably faster w/StaticArrays?
@@ -229,7 +228,7 @@ function hadamard_sum(ATr,F,u::AbstractArray)
 end
 
 # computes ∑ A_ij * F(u_i,u_j) = (A∘F)*1 for flux differencing
-function hadamard_sum!(rhs::AbstractArray,ATr::SparseMatrixCSC,F,u::AbstractArray) where {T}
+function hadamard_sum!(rhs::AbstractArray,ATr::SparseMatrixCSC,F::Function,u::AbstractArray)
     cols = rowvals(ATr)
     vals = nonzeros(ATr)
     m, n = size(ATr)
