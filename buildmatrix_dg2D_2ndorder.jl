@@ -79,4 +79,4 @@ M = Vq'*diagm(wq)*Vq
 A = kron(spdiagm(0=>J[1,:]),M) * A
 A = droptol!(sparse(A),1e-12)
 nnzA = nnz(A)
-spy(A .!= 0, ms=3, title="nnz = $nnzA")
+spy(A, ms=3, title="nnz = $nnzA")
