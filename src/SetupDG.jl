@@ -36,7 +36,7 @@ export init_mesh
 export MeshData, RefElemData
 
 # do we realy need mutable here?  I think we can remove it
-# TODO: add types to all of these, siwtch to immutable struct
+# TODO: add type annotation to all of these, switch to immutable struct
 mutable struct MeshData
 
     VX;VY;VZ # vertex coordinates
@@ -50,7 +50,7 @@ mutable struct MeshData
 
     mapM; mapP; mapB # connectivity between face nodes
 
-    # volume geofacs    
+    # volume geofacs
     rxJ; sxJ; txJ
     ryJ; syJ; tyJ
     rzJ; szJ; tzJ; J

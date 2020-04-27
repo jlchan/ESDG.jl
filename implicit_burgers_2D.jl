@@ -19,13 +19,13 @@ using BlockSparseMatrices
 
 "Approximation parameters"
 N = 2 # The order of approximation
-K1D = 16
+K1D = 8
 CFL = 100
 T = 1 # endtime
 
 "Mesh related variables"
 VX, VY, EToV = uniform_tri_mesh(K1D)
-# VX = @. VX - .3*sin(pi*VX)
+VX = @. VX - .3*sin(pi*VX)
 
 # initialize ref element and mesh
 # specify lobatto nodes to automatically get DG-SEM mass lumping
@@ -40,7 +40,7 @@ mapPB = build_periodic_boundary_maps!(xf,yf,LX,LY,Nfaces*K,mapM,mapP,mapB,FToF)
 mapP[mapB] = mapPB
 # @pack! md = mapP,FToF
 
-# construct hybridized SBP operators
+## construct hybridized SBP operators
 @unpack M,Dr,Ds,Vq,Pq,Vf,wf,nrJ,nsJ = rd
 Qr = Pq'*M*Dr*Pq
 Qs = Pq'*M*Ds*Pq
@@ -66,6 +66,8 @@ Qshskew = .5*(Qsh-transpose(Qsh))
 rxJ, sxJ, ryJ, syJ = (x->Vh*x).((rxJ, sxJ, ryJ, syJ)) # interp to hybridized points
 # @pack! md = rxJ, sxJ, ryJ, syJ
 
+## global matrices
+
 Ax,Ay,Bx,By = assemble_global_SBP_matrices_2D(rd,md,Qrhskew,Qshskew)
 
 # add off-diagonal couplings
@@ -84,8 +86,12 @@ invM = kron(spdiagm(0 => 1 ./ J[1,:]),sparse(inv(M)))
 M    = kron(spdiagm(0 => J[1,:]),sparse(M))
 Ph   = kron(spdiagm(0 => 1 ./ J[1,:]),sparse(Ph))
 
+@unpack x,y = md
+x,y = (a->a[:]).((x,y))
+
 println("Done building global ops")
 
+## fluxes
 function F(uL,uR)
         Fx = @. (uL^2 + uL*uR + uR^2)/6
         Fy = @. 0*uL
@@ -99,19 +105,7 @@ end
 Fx = (uL,uR)->F(uL,uR)[1]
 Fy = (uL,uR)->F(uL,uR)[2]
 
-@unpack x,y = md
-x,y = (a->a[:]).((x,y))
-
-# set initial condition
-u = @. -sin(pi*x)
-Q = [u]
-
-# set time-stepping constants
-CN = (N+1)*(N+2)/2  # estimated trace constant
-h = minimum(J)
-dt = CFL * 2 * h / CN
-Nsteps = convert(Int,ceil(T/dt))
-dt = T/Nsteps
+## nonlinear solver stuff
 
 function midpt_newton_iter!(dFdU_h::SparseMatrixCSC, Qnew, Qprev, dF, ops, varargs...) # for Burgers' eqn specifically
 
@@ -150,82 +144,29 @@ dLF(uL,uR) = ForwardDiff.jacobian(uR->LF(uL,uR),uR)
 dF = (dFx,dFy,dLF)
 ops = (Ax,Ay,copy(transpose(Ax)),copy(transpose(Ay)),Bx,Vh)
 
+## init condition, rhs
+
+u = @. -sin(pi*x)
+Q = [u]
+
+# set time-stepping constants
+CN = (N+1)*(N+2)/2  # estimated trace constant
+h = minimum(J)
+dt = CFL * 2 * h / CN
+Nsteps = convert(Int,ceil(T/dt))
+dt = T/Nsteps
+
 # initialize jacobian
 Qh = (x->Vh*x).(SVector{length(Q)}(Q))
 dFdU_h = hadamard_jacobian(Ax, dFx, Qh) + hadamard_jacobian(Ay, dFy, Qh) + hadamard_jacobian(Bx,dLF,Qh)
 
-## switch to block ops
-
-# Nh,Np = size([Vq;Vf])
-# AxBlk = SparseMatrixBSC(Ax,Nh,Nh)
-# AyBlk = SparseMatrixBSC(Ay,Nh,Nh)
-# BxBlk = SparseMatrixBSC(Bx,Nh,Nh)
-# block_ops = (AxBlk,AyBlk,BxBlk,[Vq;Vf])
-
-# function init_DG_jacobian(Nh,md::MeshData)
-#         @unpack FToF = md
-#         EToE = @. (FToF.-1) ÷ Nfaces + 1
-#         nzids = findall(EToE .!= 0)
-#         rows = (x->x[2]).(nzids)
-#         cols = EToE[nzids]
-#
-#         #append rows/cols for diagonal blocks
-#         K = size(EToE,2)
-#         rows = append!(rows,1:K)
-#         cols = append!(cols,1:K)
-#         return block_spzeros(Nh,Nh,rows,cols)
-# end
-
-# function midpt_newton_iter!(dFdU_h::Array{SparseMatrixBSC{Tv,Ti},Td}, Qnew, Qprev,
-#                             dF, ops, block_ops) where {Tv,Ti,Td}
-#
-#         dFx,dFy,dLF = dF
-#         Ax,Ay,AxTr,AyTr,Bx,Vh = ops
-#         AxBlk,AyBlk,BxBlk,Vh_local = block_ops
-#
-#         # get lengths of arrays
-#         Nfields = length(Q)
-#         Id_fields = speye(Nfields) # for Kronecker expansion to large matrices - fix later with lazy evals
-#         Vh_fields = droptol!(kron(Id_fields,Vh),1e-12)
-#
-#         Qh    = (x->Vh*x).(SVector{Nfields}(Qnew)) # tuples are faster, but need SVector for ForwardDiff
-#         ftmp  = hadamard_sum(AxTr,Fx,Qh) + hadamard_sum(AyTr,Fy,Qh) + hadamard_sum(Bx,LF,Qh)
-#         f     = kron(Id_fields,Ph)*vcat(ftmp...)
-#         res   = vcat(Qnew...) + .5*dt*f - vcat(Qprev...)
-#
-#         # #dFdU_h = hadamard_jacobian(Ax, dFx, Qh) + hadamard_jacobian(Ay, dFy, Qh) + hadamard_jacobian(Bx,dLF,Qh)
-#         fill!.(dFdU_h,0.0)
-#         accum_hadamard_jacobian!(dFdU_h, AxBlk, dFx, Qh)
-#         accum_hadamard_jacobian!(dFdU_h, AyBlk, dFy, Qh)
-#         accum_hadamard_jacobian!(dFdU_h, BxBlk, dLF, Qh)
-#         dFdU   = block_lrmul(dFdU_h[1],transpose(Vh_local),Vh_local)
-#         dFdU   = SparseMatrixCSC(dFdU) # generalize beyond scalar?
-#
-#         b    = (kron(Id_fields,M)*res)
-#         dQ   = (kron(Id_fields,M) + .5*dt*dFdU)\b
-#         Qnew = vcat(Qnew...) - dQ  # convert to global column, can also scale by M for additional sparsity
-#         Qnew = columnize(reshape(Qnew,length(Q[1]),Nfields)) # convert back to array of arrays
-#
-#         return Qnew,norm(dQ)
-# end
-
-# dFdU_h = [init_DG_jacobian(Nh,md)]
-# accum_hadamard_jacobian!(dFdU_h, AxBlk, dFx, Qh)
-# accum_hadamard_jacobian!(dFdU_h, AyBlk, dFy, Qh)
-# accum_hadamard_jacobian!(dFdU_h, BxBlk, dLF, Qh)
-#
-# dFdU_h_CSC = SparseMatrixCSC(dFdU_h[1])
-# @btime accum_hadamard_jacobian!($dFdU_h_CSC, $Ax, $dFx, $Qh)
-# @btime accum_hadamard_jacobian!($dFdU_h, $AxBlk, $dFx, $Qh)
-# error("d")
-
-##
+## newton time iteration
 
 it_count = zeros(Nsteps)
 for i = 1:Nsteps
-        global Q #,dFdU_h
+        global Q
 
-        Qnew = copy(Q)  # copy / over-write
+        Qnew = copy(Q)  # copy / over-write at each timestep
         iter = 0
         dQnorm = 1
         while dQnorm > 1e-12
@@ -237,8 +178,8 @@ for i = 1:Nsteps
                         println("iter = $iter")
                 end
         end
-        Q = @. 2*Qnew-Q # implicit midpoint rule
         it_count[i] = iter
+        Q = @. 2*Qnew - Q # implicit midpoint rule
 
         if i%10==0 || i==Nsteps
                 println("Number of time steps $i out of $Nsteps")
@@ -248,7 +189,8 @@ end
 
 @unpack Vp = rd
 gr(aspect_ratio=1, legend=false,
-markerstrokewidth=0, markersize=2)
+   markerstrokewidth=0, markersize=2)
 xp,yp,vv = (x->Vp*reshape(x,size(Vp,2),K)).((x,y,Q[1]))
+# xp,yp,vv = (x->reshape(x,size(Vp,2),K)).((x,y,Q[1]))
 display(scatter(xp,yp,vv,zcolor=vv,cam=(3,25)))
 # scatter(xp,yp,vv,zcolor=vv,cam=(0,90))

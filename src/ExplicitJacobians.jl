@@ -154,6 +154,7 @@ function accum_hadamard_jacobian!(A::SparseMatrixCSC, Q::SparseMatrixCSC,
     for (i,j,Qij) in Qnz
         Ui = getindex.(U,i)
         Uj = getindex.(U,j)
+        # @show typeof(Ui),typeof(Uj)
         dFdU = dF(Ui,Uj)
         for n = 1:length(U), m=1:length(U)
             A[Block(m,n)[i,j]] += dFdU[m,n]*Qij
