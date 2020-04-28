@@ -144,7 +144,6 @@ function accum_hadamard_jacobian!(A::SparseMatrixCSC, Q::SparseMatrixCSC,
                                   dF::Function, U::AbstractArray, scale = -1)
 
     Nfields = length(U)
-
     num_pts = size(Q,1)
     ids(m) = (1:num_pts) .+ (m-1)*num_pts
     Block(m,n) = CartesianIndices((ids(m),ids(n)))
@@ -154,7 +153,7 @@ function accum_hadamard_jacobian!(A::SparseMatrixCSC, Q::SparseMatrixCSC,
     for (i,j,Qij) in Qnz
         Ui = getindex.(U,i)
         Uj = getindex.(U,j)
-        # @show typeof(Ui),typeof(Uj)
+
         dFdU = dF(Ui,Uj)
         for n = 1:length(U), m=1:length(U)
             A[Block(m,n)[i,j]] += dFdU[m,n]*Qij
@@ -163,12 +162,8 @@ function accum_hadamard_jacobian!(A::SparseMatrixCSC, Q::SparseMatrixCSC,
 
     # add diagonal entry assuming Q = +/- Q^T
     for m = 1:Nfields, n = 1:Nfields
-        #Asum = scale * vec(sum(A[Block(m,n)],dims=1)) # CartesianIndices broken
-        Asum = scale * vec(sum(A[ids(m),ids(n)],dims=1)) # TODO: fix slowness (maybe just alloc issue?)
-        # A[Block(m,n)] .+= diagm(Asum) # can't index all at once - bug related to CartesianIndices?
-        for i = 1:num_pts
-            A[Block(m,n)[i,i]] += Asum[i]
-        end
+        Asum = sum(A[ids(m),ids(n)],dims=1)
+        A[ids(m),ids(n)] += spdiagm(0=>scale * vec(Asum))
     end
 end
 
@@ -268,7 +263,7 @@ end
 # Qrhskew,Qshskew = skew symmetric hybridized SBP operators
 # note that md::MeshData needs FToF to also be periodic
 function assemble_global_SBP_matrices_2D(rd::RefElemData, md::MeshData,
-    Qrhskew, Qshskew, dtol=1e-12)
+                                         Qrhskew, Qshskew, dtol=1e-12)
 
     @unpack rxJ,sxJ,ryJ,syJ,nxJ,nyJ,mapP,FToF = md
     @unpack Nfaces,wf,wq = rd
@@ -299,7 +294,7 @@ function assemble_global_SBP_matrices_2D(rd::RefElemData, md::MeshData,
                 fperm = face_ids(reshape(mapPerm[:,e],Nfq,Nfaces),f)
                 Axnbr = spdiagm(0 => face_ids(.5*wf.*nxJ[:,e],f))
                 Aynbr = spdiagm(0 => face_ids(.5*wf.*nyJ[:,e],f))
-                Bx[Block(e,enbr)[face_ids(fids,f),fids[fperm]]] .= Axnbr # TODO: switch to block access pattern
+                Bx[Block(e,enbr)[face_ids(fids,f),fids[fperm]]] .= Axnbr
                 By[Block(e,enbr)[face_ids(fids,f),fids[fperm]]] .= Aynbr
             end
         end
