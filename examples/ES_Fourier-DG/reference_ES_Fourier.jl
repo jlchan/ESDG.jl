@@ -58,8 +58,8 @@ compute_L2_err = false
 N_P = 8;    # The order of approximation in polynomial dimension
 Np_P = N_P+1;
 Np_F = 16;    # The order of approximation in Fourier dimension
-CFL  = 1.0;
-T    = 0.2;  # End time
+CFL  = 0.2;
+T    = 5.0;  # End time
 
 "Time integration Parameters"
 rk4a,rk4b,rk4c = rk45_coeffs()
@@ -110,6 +110,8 @@ Qrh_skew = 1/2*(Qrh-Qrh')
 #          -1/2*Br*Ef       1/2*Br]
 # Qrh_skew_2 = 1/2*[Qr-Qr' Ef'*Br;
 #                   -Br*Ef Br]
+Qsh = Qs # TODO: is this formulation correct? vanish at boundary?
+
 
 ops = (Vq,Vf,wq,wf,nrJ,Qr,Qs,Ef,Br,Pq,Lq,Drh,Qrh,Qrh_skew,h)
 function rhs(u,ops,compute_rhstest)
@@ -117,18 +119,35 @@ function rhs(u,ops,compute_rhstest)
     # Volume term
     uq,uf = (A->A*u).((Vq,Vf))
     uh = [uq;uf]
-    Fs = zeros(size(uh,1),size(uh,1),size(uh,2))
-    for k = 1:size(uh,2)
-        Fs[:,:,k] = [fS(uL,uR) for uL in uh[:,k], uR in uh[:,k]]
-    end
-    # TODO: Fourier Differentiation
-    ∇fh = zeros(size(uh))
-    QrF = Qrh.*Fs
-    for k = 1:size(uh,2)
-        ∇fh[:,k] = 2*QrF[:,:,k]*ones(size(uh,1),1)
-    end
-    ∇f = [Pq Lq]*diagm(vec(1 ./ [wq;wf]))*∇fh
 
+    ∇fh = zeros(size(uh)) #TODO: more informative name for this variable
+    # Flux differencing in x direction
+    Fs_r = zeros(size(uh,1),size(uh,1),size(uh,2))
+    for k = 1:size(uh,2)
+        Fs_r[:,:,k] = [fS(uL,uR) for uL in uh[:,k], uR in uh[:,k]]
+    end
+    QrF = Qrh.*Fs_r
+    for k = 1:size(uh,2)
+        ∇fh[:,k] += 2*QrF[:,:,k]*ones(size(uh,1),1)
+    end
+
+    # Flux differencing in y direction
+    # TODO: simplify
+    Fs_s = zeros(size(uh,2),size(uh,2),size(uh,1))
+    for k = 1:size(uh,1)
+        Fs_s[:,:,k] = [fS(uL,uR) for uL in uh[k,:], uR in uh[k,:]]
+    end
+    QsF = zeros(size(Fs_s))
+    w = [wq;wf]
+    for k = 1:size(uh,1)
+        QsF[:,:,k] = w[k]*Qsh.*Fs_s[:,:,k]
+    end
+    for k = 1:size(uh,1)
+        ∇fh[k,:] += 2*pi*QsF[:,:,k]*ones(size(uh,2),1)
+    end
+
+    # Spatial term
+    ∇f = [Pq Lq]*diagm(vec(1 ./ [wq;wf]))*∇fh
     # Flux term
     uM = Vf*u
     uP = [uM[2,:] uM[1,:]]'
@@ -172,7 +191,8 @@ sp = LinRange(h,2*pi,100)
 VDM_F = vandermonde_Sinc(h,sp)
 V2 = vandermonde_1D(1,sp)/vandermonde_1D(1,LinRange(h,2*pi,Np_F))
 
-scatter(Vp*r*V2',Vp*s*V2',Vp*u*VDM_F',zcolor=Vp*u*VDM_F',camera=(0,90),show=true)
+plt = scatter(Vp*r*V2',Vp*s*V2',Vp*u*VDM_F',zcolor=Vp*u*VDM_F',camera=(0,90))
+display(plt)
 # exact_sol = burgers_exact_sol_2D(u0,Vp*r*V2',Vp*s*V2',T,dt/100)
 # scatter(Vp*r*V2',Vp*s*V2',exact_sol,zcolor=exact_sol,camera=(0,90))
 
