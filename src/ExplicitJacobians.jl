@@ -16,7 +16,7 @@ using SetupDG
 using BlockSparseMatrices
 
 export init_jacobian_matrices
-export hadamard_jacobian,accum_hadamard_jacobian!
+export hadamard_jacobian,accum_hadamard_jacobian!,hadamard_scale!
 export reduce_jacobian!
 export hadamard_sum, hadamard_sum!
 export banded_matrix_function, diag_block_matrix_function
@@ -28,7 +28,8 @@ export build_rhs_matrix, assemble_global_SBP_matrices_2D
 # use w/reshape to convert from matrices to arrays of arrays
 columnize(A) = SVector{size(A,2)}([A[:,i] for i in 1:size(A,2)])
 
-# TODO: remove block sparse version since it's slower (more nnz)
+# TODO: remove block sparse version since it's slower (more nnz than CSC)
+
 #################################################################
 #####  block SparseBSC version for faster dense linear algebra
 ##################################################################
@@ -139,9 +140,8 @@ function hadamard_jacobian(Q::SparseMatrixCSC, dF::Function, U::AbstractArray, s
     return A
 end
 
-# compute and accumulate contributions from a Jacobian function dF
-function accum_hadamard_jacobian!(A::SparseMatrixCSC, Q::SparseMatrixCSC,
-                                  dF::Function, U::AbstractArray, scale = -1)
+# computes the matrix A_ij = Q_ij * F(u_i,u_j)
+function hadamard_scale!(A::SparseMatrixCSC, Q::SparseMatrixCSC, F::Function, U::AbstractArray)
 
     Nfields = length(U)
     num_pts = size(Q,1)
@@ -154,13 +154,24 @@ function accum_hadamard_jacobian!(A::SparseMatrixCSC, Q::SparseMatrixCSC,
         Ui = getindex.(U,i)
         Uj = getindex.(U,j)
 
-        dFdU = dF(Ui,Uj)
+        Fij = F(Ui,Uj)
         for n = 1:length(U), m=1:length(U)
-            A[Block(m,n)[i,j]] += dFdU[m,n]*Qij
+            A[Block(m,n)[i,j]] += Fij[m,n]*Qij
         end
     end
+end
+
+# compute and accumulate contributions from a Jacobian function dF
+function accum_hadamard_jacobian!(A::SparseMatrixCSC, Q::SparseMatrixCSC,
+                                  dF::Function, U::AbstractArray, scale = -1)
+
+    # scale A_ij = Q_ij * F(ui,uj)
+    hadamard_scale!(A,Q,dF,U)
 
     # add diagonal entry assuming Q = +/- Q^T
+    Nfields = length(U)
+    num_pts = size(Q,1)
+    ids(m) = (1:num_pts) .+ (m-1)*num_pts
     for m = 1:Nfields, n = 1:Nfields
         Asum = sum(A[ids(m),ids(n)],dims=1)
         A[ids(m),ids(n)] += spdiagm(0=>scale * vec(Asum))
@@ -240,7 +251,6 @@ function hadamard_sum!(rhs::AbstractArray,ATr::SparseMatrixCSC,F::Function,u::Ab
         setindex!.(rhs,val_i,i)
     end
 end
-
 
 # ============== Constructing DG matrices =================
 
