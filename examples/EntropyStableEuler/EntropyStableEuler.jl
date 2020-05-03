@@ -7,6 +7,7 @@ Includes general math tools
 module EntropyStableEuler
 
 const γ=1.4
+export γ
 export logmean
 export u_vfun, v_ufun, betafun
 export euler_fluxes, wavespeed

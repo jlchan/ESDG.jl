@@ -6,7 +6,7 @@ Euler functions for entropy variables and more
 # maybe define γ const here?
 
 function Unorm(U)
-    unorm = zeros(size(U[1]))
+    unorm = zeros(eltype(U[1]),size(U[1]))
     for u in U
         @. unorm += u^2
     end
