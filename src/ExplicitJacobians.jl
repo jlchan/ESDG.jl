@@ -28,24 +28,28 @@ export build_rhs_matrix, assemble_global_SBP_matrices_2D
 # use w/reshape to convert from matrices to arrays of arrays
 columnize(A) = SVector{size(A,2)}([A[:,i] for i in 1:size(A,2)])
 
-##  regular SparseCSC version
+##  hadamard function matrix utilities
 
-# sparse matrix assembly version
 # can only deal with one coordinate component at a time in higher dimensions
-function hadamard_jacobian(Q::SparseMatrixCSC, dF::Function, U::AbstractArray, scale = -1)
+# assumes that Q/F is a skew-symmetric/symmetric pair
+function hadamard_jacobian(Q::SparseMatrixCSC, dF::Function,
+                           U::AbstractArray, Fargs::AbstractArray ...; scale = -1)
 
     Nfields = length(U)
     NpK = size(Q,2)
     blockIds = repeat([NpK],Nfields)
     A = spzeros(NpK*Nfields,NpK*Nfields)
 
-    accum_hadamard_jacobian!(A,Q,dF,U,scale)
+    accum_hadamard_jacobian!(A,Q,dF,U,Fargs...; scale=scale)
 
     return A
 end
 
-# computes the matrix A_ij = Q_ij * F(u_i,u_j)
-function hadamard_scale!(A::SparseMatrixCSC, Q::SparseMatrixCSC, F::Function, U::AbstractArray)
+" computes the matrix A_ij = Q_ij * F(u_i,u_j)
+if you add extra args, they are passed to F(ux,uy) via F(u_i,u_j,args_i,args_j)
+"
+function hadamard_scale!(A::SparseMatrixCSC, Q::SparseMatrixCSC, F::Function,
+                        U::AbstractArray, Fargs::AbstractArray ...)
 
     Nfields = length(U)
     num_pts = size(Q,1)
@@ -58,7 +62,7 @@ function hadamard_scale!(A::SparseMatrixCSC, Q::SparseMatrixCSC, F::Function, U:
         Ui = getindex.(U,i)
         Uj = getindex.(U,j)
 
-        Fij = F(Ui,Uj)
+        Fij = F(Ui,Uj,getindex.(Fargs,i)...,getindex.(Fargs,j)...)
         for n = 1:length(U), m=1:length(U)
             A[Block(m,n)[i,j]] += Fij[m,n]*Qij
         end
@@ -67,12 +71,12 @@ end
 
 # compute and accumulate contributions from a Jacobian function dF
 function accum_hadamard_jacobian!(A::SparseMatrixCSC, Q::SparseMatrixCSC,
-                                  dF::Function, U::AbstractArray, scale = -1)
+                                  dF::Function, U::AbstractArray, Fargs::AbstractArray ...; scale = -1)
 
     # scale A_ij = Q_ij * F(ui,uj)
-    hadamard_scale!(A,Q,dF,U)
+    hadamard_scale!(A,Q,dF,U,Fargs...)
 
-    # add diagonal entry assuming Q = +/- Q^T
+    # add diagonal entry assuming Q = - Q^T
     Nfields = length(U)
     num_pts = size(Q,1)
     ids(m) = (1:num_pts) .+ (m-1)*num_pts
@@ -84,7 +88,7 @@ end
 
 # computes block-banded matrix whose bands are entries of matrix-valued
 # function evals (e.g., a Jacobian function).
-function banded_matrix_function(mat_fun::Function,U::AbstractArray)
+function banded_matrix_function(mat_fun::Function, U::AbstractArray, Fargs::AbstractArray ...)
     Nfields = length(U)
     num_pts = length(U[1])
 
@@ -93,7 +97,7 @@ function banded_matrix_function(mat_fun::Function,U::AbstractArray)
     Block(m,n) = CartesianIndices((ids(m),ids(n)))
 
     for i = 1:num_pts
-        mat_i = mat_fun(getindex.(U,i))
+        mat_i = mat_fun(getindex.(U,i),getindex.(Fargs,i)...)
         for n = 1:Nfields, m = 1:Nfields
             A[Block(m,n)[i,i]] = mat_i[m,n] # TODO: replace with fast sparse constructor
         end
@@ -130,16 +134,17 @@ end
 # =============== for residual evaluation ================
 
 # use ATr for faster col access of sparse CSC matrices
-function hadamard_sum(ATr,F::Function,u::AbstractArray)
+function hadamard_sum(ATr,F::Function,u::AbstractArray,Fargs::AbstractArray ...)
     m, n = size(ATr)
     # rhs = [zeros(n) for i in eachindex(u)]
     rhs = MVector{length(u)}([zeros(n) for i in eachindex(u)]) # probably faster w/StaticArrays?
-    hadamard_sum!(rhs,ATr,F,u)
+    hadamard_sum!(rhs,ATr,F,u,Fargs...)
     return rhs
 end
 
 # computes ∑ A_ij * F(u_i,u_j) = (A∘F)*1 for flux differencing
-function hadamard_sum!(rhs::AbstractArray,ATr::SparseMatrixCSC,F::Function,u::AbstractArray)
+function hadamard_sum!(rhs::AbstractArray,ATr::SparseMatrixCSC,F::Function,
+                        u::AbstractArray,Fargs::AbstractArray ...)
     cols = rowvals(ATr)
     vals = nonzeros(ATr)
     m, n = size(ATr)
@@ -150,7 +155,7 @@ function hadamard_sum!(rhs::AbstractArray,ATr::SparseMatrixCSC,F::Function,u::Ab
             col = cols[j]
             Aij = vals[j]
             uj = getindex.(u,col)
-            val_i += Aij * F(ui,uj)
+            val_i += Aij * F(ui,uj,getindex.(Fargs,i)...,getindex.(Fargs,j)...)
         end
         setindex!.(rhs,val_i,i)
     end
@@ -174,12 +179,12 @@ function build_rhs_matrix(applyRHS,Np,K,vargs...)
 end
 
 # inputs = ref elem and mesh data
-# Qrhskew,Qshskew = skew symmetric hybridized SBP operators
+# Ax,Ay,Bx,By,B = global operators. B = only sJ
 # note that md::MeshData needs FToF to also be periodic
 function assemble_global_SBP_matrices_2D(rd::RefElemData, md::MeshData,
                                          Qrhskew, Qshskew, dtol=1e-12)
 
-    @unpack rxJ,sxJ,ryJ,syJ,nxJ,nyJ,mapP,FToF = md
+    @unpack rxJ,sxJ,ryJ,syJ,nxJ,nyJ,sJ,mapP,FToF = md
     @unpack Nfaces,wf,wq = rd
     Nh = size(Qrhskew,1)
     NfqNfaces,K = size(nxJ)
@@ -193,7 +198,7 @@ function assemble_global_SBP_matrices_2D(rd::RefElemData, md::MeshData,
     Block(e1,e2) = CartesianIndices((ids(e1),ids(e2))) # emulating BlockArrays, but faster
     face_ids = (x,f)->reshape(x,Nfq,Nfaces)[:,f]
 
-    Ax,Ay,Bx,By = ntuple(x->spzeros(Nh*K,Nh*K),4)
+    Ax,Ay,Bx,By,B = ntuple(x->spzeros(Nh*K,Nh*K),5)
     for e = 1:K # loop over elements
 
         # self-contributions - assume affine for now
@@ -210,10 +215,11 @@ function assemble_global_SBP_matrices_2D(rd::RefElemData, md::MeshData,
                 Aynbr = spdiagm(0 => face_ids(.5*wf.*nyJ[:,e],f))
                 Bx[Block(e,enbr)[face_ids(fids,f),fids[fperm]]] .= Axnbr
                 By[Block(e,enbr)[face_ids(fids,f),fids[fperm]]] .= Aynbr
+                B[ Block(e,enbr)[face_ids(fids,f),fids[fperm]]] .= spdiagm(0 => face_ids(.5*wf.*sJ[:,e],f))
             end
         end
     end
-    return droptol!.((Ax,Ay,Bx,By),dtol)
+    return droptol!.((Ax,Ay,Bx,By,B),dtol)
 end
 
 end

@@ -64,7 +64,7 @@ rxJ, sxJ, ryJ, syJ = (x->Vh*x).((rxJ, sxJ, ryJ, syJ)) # interp to hybridized poi
 
 ## global matrices
 
-Ax,Ay,Bx,By = assemble_global_SBP_matrices_2D(rd,md,Qrhskew,Qshskew)
+Ax,Ay,Bx,By,B = assemble_global_SBP_matrices_2D(rd,md,Qrhskew,Qshskew)
 
 # add off-diagonal couplings
 Ax += Bx
@@ -99,12 +99,6 @@ function LF(uL,uR)
         return (@. max(abs(uL),abs(uR))*(uL-uR))
         # return @. (uL-uR)
 end
-function Ujump(uL,uR)
-        return (@. (uL-uR))
-end
-function Lmax(uL,uR)
-        return (@. max(abs(uL),abs(uR)))
-end
 
 # extract coordinate fluxes
 Fx = (uL,uR)->F(uL,uR)[1]
@@ -114,13 +108,23 @@ Fy = (uL,uR)->F(uL,uR)[2]
 dFx(uL,uR) = ForwardDiff.jacobian(uR->F(uL,uR)[1],uR)
 dFy(uL,uR) = ForwardDiff.jacobian(uR->F(uL,uR)[2],uR)
 dLF(uL,uR) = ForwardDiff.jacobian(uR->LF(uL,uR),uR)
-dUjump(uL,uR) = ForwardDiff.jacobian(uR->Ujump(uL,uR),uR)
-
 
 ## nonlinear solver stuff
 function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData)
 
         Ax,Ay,AxTr,AyTr,Bx,Vh = ops
+
+        # set up normals for use in penalty term
+        @unpack Vq,Vf = rd
+        @unpack nxJ,nyJ,sJ = md
+        Nq,Np = size(Vq)
+        Nf    = size(Vf,1)
+        Nh    = Nq + Nf
+        fids  = Nq + 1:Nh
+        nxh,nyh = ntuple(x->zeros(Nh,K),2)
+        nxh[fids,:] = nxJ[:]./sJ[:]
+        nyh[fids,:] = nyJ[:]./sJ[:]
+        nxh,nyh = (x->x[:]).((nxh,nyh))
 
         # get lengths of arrays
         Nfields = length(Q)
@@ -129,60 +133,27 @@ function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData)
         M_fields  = droptol!(kron(Id_fields,M),1e-12)
         Ph_fields = droptol!(kron(Id_fields,Ph),1e-12)
 
-        @unpack K = md
-        @unpack Vq,Vf = rd
-        Nq,Np = size(Vq)
-        Nf,_ = size(Vf)
-        Nh = Nq+Nf
-        fids = Nq+1:Nh
-
         # init jacobian matrix
         Qh = (x->Vh*x).(SVector{length(Q)}(Q))
-        BLFmat = hadamard_jacobian(Bx,dLF,Qh)
-        dFdU_h = hadamard_jacobian(Ax, dFx, Qh) + hadamard_jacobian(Ay, dFy, Qh) + BLFmat
+        dFdU_h = hadamard_jacobian(Ax, dFx, Qh) + hadamard_jacobian(Ay, dFy, Qh) + hadamard_jacobian(B,dLF,Qh,nxh,nyh) #hadamard_jacobian(Bx,dLF,Qh)
 
         function midpt_newton_iter!(Qnew, Qprev) # for Burgers' eqn specifically
 
                 Qh    = (x->Vh*x).(SVector{Nfields}(Qnew)) # tuples are faster, but need SVector for ForwardDiff
 
-                # frozen coefficient penalty
-                fill!(BLFmat.nzval,0.0)
-                hadamard_scale!(BLFmat,Bx,Lmax,Qh)
-
-                # ftmp  = hadamard_sum(AxTr,Fx,Qh) + hadamard_sum(AyTr,Fy,Qh) + hadamard_sum(Bx,LF,Qh)
-                function fres(Qh)
-                        ftmp  = hadamard_sum(AxTr,Fx,Qh) + hadamard_sum(AyTr,Fy,Qh) + hadamard_sum(BLFmat,Ujump,Qh)
-                        f     = Ph_fields*vcat(ftmp...)
-                        res   = vcat(Qnew...) + .5*dt*f - vcat(Qprev...)
-                        return res
-                end
-                res = fres(Qh)
+                ftmp  = hadamard_sum(AxTr,Fx,Qh) + hadamard_sum(AyTr,Fy,Qh) + hadamard_sum(B,LF,Qh,nxh,nyh) #hadamard_sum(Bx,LF,Qh)
+                f     = Ph_fields*vcat(ftmp...)
+                res   = vcat(Qnew...) + .5*dt*f - vcat(Qprev...)
 
                 fill!(dFdU_h.nzval,0.0)
                 accum_hadamard_jacobian!(dFdU_h, Ax, dFx, Qh)
                 accum_hadamard_jacobian!(dFdU_h, Ay, dFy, Qh)
-                accum_hadamard_jacobian!(dFdU_h, Bx, dLF, Qh)
-                # accum_hadamard_jacobian!(dFdU_h, BLFmat, dUjump, Qh)
+                #accum_hadamard_jacobian!(dFdU_h, Bx, dLF, Qh)
+                accum_hadamard_jacobian!(dFdU_h, B, dLF, Qh,nxh,nyh) # flux term involving normals
+                dFdU = droptol!(transpose(Vh_fields)*(dFdU_h*Vh_fields),1e-12)
 
-                dFdU   = droptol!(transpose(Vh_fields)*(dFdU_h*Vh_fields),1e-12)
-
-                # TODO: add line search
+                # solve and update
                 dQ   = (M_fields + .5*dt*dFdU)\(M_fields*res)
-                # function linesearch(Qnew,dQ)
-                #         iter = 0
-                #         tau = .75
-                #         resnorm = norm(res)
-                #         resnew = copy(resnorm) + 1
-                #         while (resnew > resnorm) & (iter < 5)
-                #                 α = tau^iter
-                #                 Qtmp = columnize(reshape(vcat(Qnew...) - α*dQ,length(Q[1]),Nfields))
-                #                 resnew = norm(fres(Qtmp))
-                #                 iter += 1
-                #         end
-                #         return tau^(iter-1)
-                # end
-                # α = linesearch(Qnew,dQ)
-                # Qnew = vcat(Qnew...) - α*dQ                            # convert Qnew to column vector for update
                 Qnew = vcat(Qnew...) - dQ                            # convert Qnew to column vector for update
                 Qnew = columnize(reshape(Qnew,length(Q[1]),Nfields)) # convert back to array of arrays
 
@@ -197,6 +168,7 @@ ops = (Ax,Ay,copy(transpose(Ax)),copy(transpose(Ay)),Bx,Vh)
 ## init condition, rhs
 
 u = @. -sin(pi*x)
+# u = randn(size(x))
 Q = [u]
 
 # set time-stepping constants
@@ -206,6 +178,32 @@ dt = CFL * 2 * h / CN
 dt = .1
 Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
+
+function LF(uL,uR,nxL,nyL,nxR,nyR)
+        nx = abs(nxL)#+nxR)/2
+        return (@. max(abs(uL),abs(uR))*(uL-uR)*nx)
+end
+dLF(uL,uR,args...) = ForwardDiff.jacobian(uR->LF(uL,uR,args...),uR)
+
+# @unpack Vq,Vf = rd
+# @unpack nxJ,nyJ,sJ = md
+# Nq,Np = size(Vq)
+# Nf = size(Vf,1)
+# Nh = Nq+Nf
+# fids = Nq+1:Nh
+# nxh,nyh = ntuple(x->zeros(Nh,K),2)
+# nxh[fids,:] = nxJ[:]./sJ[:]
+# nyh[fids,:] = nyJ[:]./sJ[:]
+# nxh,nyh = (x->x[:]).((nxh,nyh))
+#
+# Qh = (x->Vh*x).(SVector{length(Q)}(Q))
+# jacx = droptol!(hadamard_jacobian(Bx,dLF,Qh),1e-12)
+# jac  = droptol!(hadamard_jacobian(B,dLF,Qh,nxh,nyh),1e-12)
+# @show norm(jacx-jac)
+# r1 = hadamard_sum(Bx,LF,Qh)[1]
+# r2 = hadamard_sum(B,LF,Qh,nxh,nyh)[1]
+# @show norm(r1-r2)
+# error("d")
 
 # initialize jacobian
 midpt_newton_iter! = init_newton_fxn(Q,ops,rd,md)
