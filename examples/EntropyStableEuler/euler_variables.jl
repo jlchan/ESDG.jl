@@ -3,7 +3,12 @@ Euler functions for entropy variables and more
 
 """
 
-# maybe define γ const here?
+# 1D wavespeed for use in interface fluxes
+function wavespeed(rho,rhou,E)
+    cvel = (@. sqrt(γ*pfun(rho,rhou,E)/rho))
+    return (@. sqrt(abs(rhou/rho)) + cvel)
+end
+
 
 function Unorm(U)
     unorm = zeros(eltype(U[1]),size(U[1]))

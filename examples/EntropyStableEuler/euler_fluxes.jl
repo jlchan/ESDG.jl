@@ -5,12 +5,6 @@ function euler_fluxes(UL,UR)
 
 """
 
-"1D wavespeed for use in interface fluxes"
-function wavespeed(rho,rhou,E)
-    cvel = (@. sqrt(γ*pfun(rho,rhou,E)/rho))
-    return (@. sqrt(abs(rhou/rho)) + cvel)
-end
-
 # assumes field ordering: (rhoL,uL,...,betaL) = UL, (rhoR,uR,...,betaR) = UR
 function euler_fluxes(UL,UR)
     rhoL = first(UL); betaL = last(UL)
