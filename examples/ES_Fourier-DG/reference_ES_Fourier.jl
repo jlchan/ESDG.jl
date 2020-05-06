@@ -15,11 +15,11 @@ using UniformQuadMesh
 
 using SetupDG
 
+# TODO: refactor the code
 function fS(uL, uR)
     return 1/6*(uL^2+uR^2+uL*uR)
 end
 
-# TODO: didn't work for T >= 0.4
 function burgers_exact_sol_2D(u0,x,y,T,dt)
     Nsteps = ceil(Int,T/dt)
     dt = T/Nsteps
@@ -46,7 +46,6 @@ function vandermonde_Sinc(h,r)
     return V
 end
 
-
 "Constants"
 const sp_tol = 1e-12
 u0(x,y) = @. -sin(pi*x)*sin(y)
@@ -57,14 +56,14 @@ compute_L2_err = false
 "Approximation Parameters"
 N_P = 8;    # The order of approximation in polynomial dimension
 Np_P = N_P+1;
-Np_F = 16;    # The order of approximation in Fourier dimension
+Np_F = 32;    # The order of approximation in Fourier dimension
 CFL  = 0.2;
-T    = 5.0;  # End time
+T    = 0.2;  # End time
 
 "Time integration Parameters"
 rk4a,rk4b,rk4c = rk45_coeffs()
 CN = (max(N_P,Np_F)+1)*(max(N_P,Np_F)+2)/2  # estimated trace constant for CFL
-dt = CFL * 2 / CN
+dt = CFL / CN
 Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
@@ -83,75 +82,51 @@ rp = LinRange(-1,1,100)
 Vp = vandermonde_1D(N_P,rp)/VDM # Redefine Vp
 Lq = LIFT
 
-# Initialize Mesh
+"Initialize Mesh"
 s,r = meshgrid(s,r)
 Nfp = 2*Np_F
-mapM = collect(1:Nfp)
-mapP = vec(reshape([mapM[2:2:end] mapM[1:2:end-1]],1,Nfp))
 
-# scale by Fourier dimension
-# TODO: may confuse myself, any better way to do it?
+"scale by Fourier dimension"
 M = h*M
 wq = h*wq
 wf = h*wf
 
-# Hybridized operators
+"Hybridized operators"
 Ef = Vf*Pq
 Br = diagm(wf.*nrJ)
 Qr = Pq'*M*Dr*Pq
 Qs = Ds
 Drh = [Vq*Dr*Pq-1/2*Vq*Lq*diagm(nrJ)*Vf*Pq  1/2*Vq*Lq*diagm(nrJ);
        -1/2*diagm(nrJ)*Vf*Pq                1/2*diagm(nrJ)]
-# Qrh = diagm(vec([wq;wf]))*Drh
 Qrh = 1/2*[Qr-Qr' Ef'*Br;
            -Br*Ef Br]
 Qrh_skew = 1/2*(Qrh-Qrh')
-# Qrh_2 = [Qr-1/2*Ef'*Br*Ef 1/2*Ef'*Br;
-#          -1/2*Br*Ef       1/2*Br]
-# Qrh_skew_2 = 1/2*[Qr-Qr' Ef'*Br;
-#                   -Br*Ef Br]
-Qsh = Qs # TODO: is this formulation correct? vanish at boundary?
+Qsh = Qs # Not the SBP operator, weighted when flux differencing
 
-
-ops = (Vq,Vf,wq,wf,nrJ,Qr,Qs,Ef,Br,Pq,Lq,Drh,Qrh,Qrh_skew,h)
+ops = (Vq,Vf,wq,wf,Pq,Lq,Qrh,Qsh,nrJ,h)
 function rhs(u,ops,compute_rhstest)
-    Vq,Vf,wq,wf,nrJ,Qr,Qs,Ef,Br,Pq,Lq,Drh,Qrh,Qrh_skew,h = ops
+    Vq,Vf,wq,wf,Pq,Lq,Qrh,Qsh,nrJ,h = ops
     # Volume term
     uq,uf = (A->A*u).((Vq,Vf))
     uh = [uq;uf]
-
-    ∇fh = zeros(size(uh)) #TODO: more informative name for this variable
-    # Flux differencing in x direction
-    Fs_r = zeros(size(uh,1),size(uh,1),size(uh,2))
-    for k = 1:size(uh,2)
-        Fs_r[:,:,k] = [fS(uL,uR) for uL in uh[:,k], uR in uh[:,k]]
-    end
-    QrF = Qrh.*Fs_r
-    for k = 1:size(uh,2)
-        ∇fh[:,k] += 2*QrF[:,:,k]*ones(size(uh,1),1)
-    end
-
-    # Flux differencing in y direction
-    # TODO: simplify
-    Fs_s = zeros(size(uh,2),size(uh,2),size(uh,1))
-    for k = 1:size(uh,1)
-        Fs_s[:,:,k] = [fS(uL,uR) for uL in uh[k,:], uR in uh[k,:]]
-    end
-    QsF = zeros(size(Fs_s))
     w = [wq;wf]
-    for k = 1:size(uh,1)
-        QsF[:,:,k] = w[k]*Qsh.*Fs_s[:,:,k]
+    ∇fh = zeros(size(uh))
+
+    # Flux differencing in x direction
+    for k = 1:size(uh,2)
+        ∇fh[:,k] += 2*Qrh.*[fS(uL,uR) for uL in uh[:,k], uR in uh[:,k]]*ones(size(uh,1),1)
     end
+    # Flux differencing in y direction
     for k = 1:size(uh,1)
-        ∇fh[k,:] += 2*pi*QsF[:,:,k]*ones(size(uh,2),1)
+        ∇fh[k,:] += 2*pi*w[k]*Qsh.*[fS(uL,uR) for uL in uh[k,:], uR in uh[k,:]]*ones(size(uh,2),1)
     end
 
     # Spatial term
-    ∇f = [Pq Lq]*diagm(vec(1 ./ [wq;wf]))*∇fh
+    ∇f = [Pq Lq]*diagm(1 ./ w)*∇fh
     # Flux term
     uM = Vf*u
     uP = [uM[2,:] uM[1,:]]'
-    uflux = diagm(0 => nrJ)*(@. fS(uM,uP)-uM*uM/2)
+    uflux = diagm(nrJ)*(@. fS(uM,uP)-uM*uM/2)
     rhsu = -(∇f+Lq*uflux)
 
     rhstest = 0
