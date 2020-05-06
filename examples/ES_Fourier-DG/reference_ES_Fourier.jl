@@ -56,9 +56,9 @@ compute_L2_err = false
 "Approximation Parameters"
 N_P = 8;    # The order of approximation in polynomial dimension
 Np_P = N_P+1;
-Np_F = 32;    # The order of approximation in Fourier dimension
+Np_F = 16;    # The order of approximation in Fourier dimension
 CFL  = 0.2;
-T    = 0.2;  # End time
+T    = 5.0;  # End time
 
 "Time integration Parameters"
 rk4a,rk4b,rk4c = rk45_coeffs()
@@ -131,7 +131,7 @@ function rhs(u,ops,compute_rhstest)
 
     rhstest = 0
     if compute_rhstest
-        rhstest = sum(diagm(wq)*Vq*(u.*rhsu))
+        rhstest += sum(diagm(wq)*uq.*(Vq*rhsu))
     end
 
     return rhsu,rhstest
