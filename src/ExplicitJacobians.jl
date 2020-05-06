@@ -143,6 +143,7 @@ function hadamard_sum(ATr,F::Function,u::AbstractArray,Fargs::AbstractArray ...)
 end
 
 # computes ∑ A_ij * F(u_i,u_j) = (A∘F)*1 for flux differencing
+# separate code from hadamard_scale!, since it's non-allocating
 function hadamard_sum!(rhs::AbstractArray,ATr::SparseMatrixCSC,F::Function,
                         u::AbstractArray,Fargs::AbstractArray ...)
     cols = rowvals(ATr)
@@ -155,7 +156,7 @@ function hadamard_sum!(rhs::AbstractArray,ATr::SparseMatrixCSC,F::Function,
             col = cols[j]
             Aij = vals[j]
             uj = getindex.(u,col)
-            val_i += Aij * F(ui,uj,getindex.(Fargs,i)...,getindex.(Fargs,j)...)
+            val_i += Aij * F(ui,uj,getindex.(Fargs,i)...,getindex.(Fargs,col)...)
         end
         setindex!.(rhs,val_i,i)
     end

@@ -141,14 +141,13 @@ function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData)
 
                 Qh    = (x->Vh*x).(SVector{Nfields}(Qnew)) # tuples are faster, but need SVector for ForwardDiff
 
-                ftmp  = hadamard_sum(AxTr,Fx,Qh) + hadamard_sum(AyTr,Fy,Qh) + hadamard_sum(B,LF,Qh,nxh,nyh) #hadamard_sum(Bx,LF,Qh)
+                ftmp  = hadamard_sum(AxTr,Fx,Qh) + hadamard_sum(AyTr,Fy,Qh) + hadamard_sum(B,LF,Qh,nxh,nyh)
                 f     = Ph_fields*vcat(ftmp...)
                 res   = vcat(Qnew...) + .5*dt*f - vcat(Qprev...)
 
                 fill!(dFdU_h.nzval,0.0)
                 accum_hadamard_jacobian!(dFdU_h, Ax, dFx, Qh)
                 accum_hadamard_jacobian!(dFdU_h, Ay, dFy, Qh)
-                #accum_hadamard_jacobian!(dFdU_h, Bx, dLF, Qh)
                 accum_hadamard_jacobian!(dFdU_h, B, dLF, Qh,nxh,nyh) # flux term involving normals
                 dFdU = droptol!(transpose(Vh_fields)*(dFdU_h*Vh_fields),1e-12)
 
@@ -175,12 +174,12 @@ Q = [u]
 CN = (N+1)*(N+2)/2  # estimated trace constant
 h = minimum(J)
 dt = CFL * 2 * h / CN
-dt = .1
+# dt = .1
 Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
-function LF(uL,uR,nxL,nyL,nxR,nyR)
-        nx = abs(nxL)#+nxR)/2
+function LF(uL,uR,nxL,nyL,nxR,nyR)        
+        nx = @. (abs(nxL) + abs(nxR))/2
         return (@. max(abs(uL),abs(uR))*(uL-uR)*nx)
 end
 dLF(uL,uR,args...) = ForwardDiff.jacobian(uR->LF(uL,uR,args...),uR)
@@ -194,7 +193,7 @@ dLF(uL,uR,args...) = ForwardDiff.jacobian(uR->LF(uL,uR,args...),uR)
 # nxh,nyh = ntuple(x->zeros(Nh,K),2)
 # nxh[fids,:] = nxJ[:]./sJ[:]
 # nyh[fids,:] = nyJ[:]./sJ[:]
-# nxh,nyh = (x->x[:]).((nxh,nyh))
+# nxh,nyh = vec.((nxh,nyh))
 #
 # Qh = (x->Vh*x).(SVector{length(Q)}(Q))
 # jacx = droptol!(hadamard_jacobian(Bx,dLF,Qh),1e-12)
@@ -203,6 +202,15 @@ dLF(uL,uR,args...) = ForwardDiff.jacobian(uR->LF(uL,uR,args...),uR)
 # r1 = hadamard_sum(Bx,LF,Qh)[1]
 # r2 = hadamard_sum(B,LF,Qh,nxh,nyh)[1]
 # @show norm(r1-r2)
+
+# B1 = copy(B)
+# B1.nzval .= 1 # make bool
+# uh = [Vq;Vf]*randn(Np,K)
+# ua = reshape(B1*uh[:],Nh,K)
+# uf = reshape(uh,Nh,K)[fids,:]
+# ua2 = zeros(size(ua))
+# ua2[fids,:] = uf[mapP]
+# @show norm(ua-ua2)
 # error("d")
 
 # initialize jacobian
