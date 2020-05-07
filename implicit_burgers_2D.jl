@@ -128,7 +128,7 @@ function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData)
 
         # init jacobian matrix
         Qh = (x->Vh*x).(SVector{length(Q)}(Q))
-        dFdU_h = hadamard_jacobian(Ax, dFx, Qh) + hadamard_jacobian(Ay, dFy, Qh) + hadamard_jacobian(B,dLF,Qh,nxh,nyh) #hadamard_jacobian(Bx,dLF,Qh)
+        dFdU_h = repeat(I+Ax+Ay,Nfields,Nfields) 
 
         function midpt_newton_iter!(Qnew, Qprev) # for Burgers' eqn specifically
 

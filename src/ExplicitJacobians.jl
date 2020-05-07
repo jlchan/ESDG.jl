@@ -19,7 +19,7 @@ export init_jacobian_matrices
 export hadamard_jacobian,accum_hadamard_jacobian!,hadamard_scale!
 export reduce_jacobian!
 export hadamard_sum, hadamard_sum!
-export banded_matrix_function, diag_block_matrix_function
+export banded_matrix_function
 export columnize
 
 # for constructing DG matrices
@@ -104,32 +104,6 @@ function banded_matrix_function(mat_fun::Function, U::AbstractArray, Fargs::Abst
     end
     return A
 end
-
-# init sparse matrices based on elem-to-elem connectivity
-# dims = tuple of matrix dimensions for each matrix (assumes square matrices)
-function init_jacobian_matrices(md::MeshData, dims, Nfields=1)
-    @unpack FToF = md
-    Nfaces,K = size(FToF)
-    EToE = @. (FToF.-1) ÷ Nfaces + 1
-    A = spzeros.(K.*dims,K.*dims)
-
-    ids(e,block_size) = (@. (1:block_size) + (e-1)*block_size)
-
-    for e = 1:K, f = 1:Nfaces
-        enbr = EToE[f,e]
-
-        for (i,block_size) = enumerate(dims)
-            id,id_nbr = ids.((e,enbr), block_size)
-
-            # init to small non-zeros to retain sparsity pattern
-            fill!(A[i][id, id], 1e-16)
-            fill!(A[i][id, id_nbr], 1e-16)
-        end
-    end
-
-    return repeat.(A,Nfields,Nfields)
-end
-
 
 # =============== for residual evaluation ================
 
