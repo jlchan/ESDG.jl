@@ -13,7 +13,7 @@ using StaticArrays
 using SparseArrays
 using UnPack
 using SetupDG
-using BlockSparseMatrices
+# using BlockSparseMatrices
 
 export init_jacobian_matrices
 export hadamard_jacobian,accum_hadamard_jacobian!,hadamard_scale!

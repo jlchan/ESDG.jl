@@ -15,17 +15,16 @@ using UniformTriMesh
 
 using SetupDG
 using ExplicitJacobians
-using BlockSparseMatrices
 
 "Approximation parameters"
 N = 2 # The order of approximation
-K1D = 8
-CFL = 100
+K1D = 16
+CFL = 250
 T = 1 # endtime
 
 "Mesh related variables"
 VX, VY, EToV = uniform_tri_mesh(K1D)
-VX = @. VX - .3*sin(pi*VX)
+# VX = @. VX - .3*sin(pi*VX)
 
 # initialize ref element and mesh
 rd = init_reference_tri(N)
@@ -95,11 +94,6 @@ function F(uL,uR)
         return Fx,Fy
 end
 
-function LF(uL,uR)
-        return (@. max(abs(uL),abs(uR))*(uL-uR))
-        # return @. (uL-uR)
-end
-
 # extract coordinate fluxes
 Fx = (uL,uR)->F(uL,uR)[1]
 Fy = (uL,uR)->F(uL,uR)[2]
@@ -107,7 +101,6 @@ Fy = (uL,uR)->F(uL,uR)[2]
 # AD for jacobians
 dFx(uL,uR) = ForwardDiff.jacobian(uR->F(uL,uR)[1],uR)
 dFy(uL,uR) = ForwardDiff.jacobian(uR->F(uL,uR)[2],uR)
-dLF(uL,uR) = ForwardDiff.jacobian(uR->LF(uL,uR),uR)
 
 ## nonlinear solver stuff
 function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData)
@@ -178,40 +171,11 @@ dt = CFL * 2 * h / CN
 Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
-function LF(uL,uR,nxL,nyL,nxR,nyR)        
+function LF(uL,uR,nxL,nyL,nxR,nyR)
         nx = @. (abs(nxL) + abs(nxR))/2
         return (@. max(abs(uL),abs(uR))*(uL-uR)*nx)
 end
 dLF(uL,uR,args...) = ForwardDiff.jacobian(uR->LF(uL,uR,args...),uR)
-
-# @unpack Vq,Vf = rd
-# @unpack nxJ,nyJ,sJ = md
-# Nq,Np = size(Vq)
-# Nf = size(Vf,1)
-# Nh = Nq+Nf
-# fids = Nq+1:Nh
-# nxh,nyh = ntuple(x->zeros(Nh,K),2)
-# nxh[fids,:] = nxJ[:]./sJ[:]
-# nyh[fids,:] = nyJ[:]./sJ[:]
-# nxh,nyh = vec.((nxh,nyh))
-#
-# Qh = (x->Vh*x).(SVector{length(Q)}(Q))
-# jacx = droptol!(hadamard_jacobian(Bx,dLF,Qh),1e-12)
-# jac  = droptol!(hadamard_jacobian(B,dLF,Qh,nxh,nyh),1e-12)
-# @show norm(jacx-jac)
-# r1 = hadamard_sum(Bx,LF,Qh)[1]
-# r2 = hadamard_sum(B,LF,Qh,nxh,nyh)[1]
-# @show norm(r1-r2)
-
-# B1 = copy(B)
-# B1.nzval .= 1 # make bool
-# uh = [Vq;Vf]*randn(Np,K)
-# ua = reshape(B1*uh[:],Nh,K)
-# uf = reshape(uh,Nh,K)[fids,:]
-# ua2 = zeros(size(ua))
-# ua2[fids,:] = uf[mapP]
-# @show norm(ua-ua2)
-# error("d")
 
 # initialize jacobian
 midpt_newton_iter! = init_newton_fxn(Q,ops,rd,md)
@@ -245,19 +209,15 @@ for i = 1:Nsteps
         end
 end
 
-@unpack Vp = rd
+@unpack VDM = rd
+rp, sp = Basis2DTri.equi_nodes_2D(25)
+Vp = Basis2DTri.vandermonde_2D(N,rp,sp)/VDM
+
 gr(aspect_ratio=1, legend=false,
    markerstrokewidth=0, markersize=2)
-xp,yp,vv = (x->Vp*reshape(x,size(Vp,2),K)).((x,y,Q[1]))
-display(scatter(xp,yp,vv,zcolor=vv,cam=(3,25)))
-scatter(xp,yp,vv,zcolor=vv,cam=(0,90))
+xp,yp,up = (x->Vp*reshape(x,size(Vp,2),K)).((x,y,Q[1]))
+# display(scatter(xp,yp,up,zcolor=up,cam=(3,25),axis=false))
 
-# plot()
-# for e = 1:K
-#         vids = [EToV[e,:];EToV[e,1]]
-#         vx = VX[vids]
-#         vy = VY[vids]
-#         plot!(vx,vy,linecolor=:black)
-# end
-# display(plot!(border=:none))
-# png("squeezed_mesh")
+# plotly()
+scatter(xp,yp,up,zcolor=up,cam=(0,90),border=:none,axis=false)
+# png("sol_unif_mesh.png")
