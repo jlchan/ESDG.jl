@@ -16,11 +16,14 @@ using UniformTriMesh
 using SetupDG
 using ExplicitJacobians
 
+push!(LOAD_PATH, "./examples/EntropyStableEuler")
+using EntropyStableEuler
+
 "Approximation parameters"
 N = 2 # The order of approximation
-K1D = 2
-CFL = 250
-T = .1 # endtime
+K1D = 8
+CFL = 10
+T = .5 # endtime
 
 "Mesh related variables"
 VX, VY, EToV = uniform_tri_mesh(K1D)
@@ -78,24 +81,29 @@ Bx   = abs.(Bx) # create LF penalization term
 
 # globalize operators and nodes
 @unpack x,y,J = md
+Vq   = kron(speye(K),sparse(Vq))
+Pq   = kron(speye(K),sparse(Pq))
 VhTr = kron(speye(K),sparse(transpose(Vh)))
+M    = kron(spdiagm(0 => J[1,:]),sparse(M))
 Vh   = kron(speye(K),sparse(Vh))
 Ph   = kron(spdiagm(0 => 1 ./ J[1,:]), sparse(Ph))
+VhP  = Vh*Pq
 x,y = (a->a[:]).((x,y))
 
 println("Done building global ops")
 
-jacspy = I+Ax+Ay
-jac = droptol!(jacspy,1e-12)
-jac = droptol!(VhTr*jacspy*Vh,1e-12)
-display(spy(jac .!= 0,ms=2.25))
-# title="nnz = $(nnz(jac))",
-error("d")
-## define Burgers fluxes
-function F(uL,uR)
-        Fx = @. (uL^2 + uL*uR + uR^2)/6
-        Fy = @. 0*uL
-        return Fx,Fy
+## define Euler fluxes
+function F(UL,UR)
+    # convert to flux variables
+    function UtoQ(U)
+        rho,rhou,rhov,E = U
+        beta = betafun(U...)
+        return (rho,rhou./rho,rhov./rho,beta),(log.(rho),log.(beta))
+    end
+    QL,QlogL = UtoQ(UL)
+    QR,QlogR = UtoQ(UR)
+    Fx,Fy = euler_fluxes(QL...,QR...,QlogL...,QlogR...)
+    return SVector{length(Fx)}(Fx...),SVector{length(Fy)}(Fy...)
 end
 
 # extract coordinate fluxes
@@ -106,10 +114,30 @@ Fy = (uL,uR)->F(uL,uR)[2]
 dFx(uL,uR) = ForwardDiff.jacobian(uR->F(uL,uR)[1],uR)
 dFy(uL,uR) = ForwardDiff.jacobian(uR->F(uL,uR)[2],uR)
 
+## dissipative flux
+
+function LF(uL,uR,nxL,nyL,nxR,nyR)
+        rhoL,rhouL,rhovL,EL = uL
+        rhoR,rhouR,rhovR,ER = uR
+
+        nx = nxL #.5*(nxL+nxR)
+        ny = nyL #.5*(nyL+nyR)
+        rhoUnL = @. rhouL*nx + rhovL*ny
+        rhoUnR = @. rhouR*nx + rhovR*ny
+        cL   = @. wavespeed(rhoL,rhoUnL,EL)
+        cR   = @. wavespeed(rhoR,rhoUnR,ER)
+        lam  = @. max(abs(cL),abs(cR))
+        return (@. lam*(uL-uR))
+end
+dLF(uL,uR,args...) = ForwardDiff.jacobian(uR->LF(uL,uR,args...),uR)
+
+## transform mappings
+
+dVdU_fun(U) = ForwardDiff.jacobian(U->SVector(v_ufun(U...)...),U)
+dUdV_fun(V) = ForwardDiff.jacobian(V->SVector(u_vfun(V...)...),V)
+
 ## nonlinear solver stuff
 function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData)
-
-        Ax,Ay,AxTr,AyTr,Bx,Vh = ops
 
         # set up normals for use in penalty term
         @unpack Vq,Vf = rd
@@ -119,37 +147,48 @@ function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData)
         Nh    = Nq + Nf
         fids  = Nq + 1:Nh
         nxh,nyh = ntuple(x->zeros(Nh,K),2)
-        nxh[fids,:] = nxJ[:]./sJ[:]
-        nyh[fids,:] = nyJ[:]./sJ[:]
-        nxh,nyh = (x->x[:]).((nxh,nyh))
+        nxh[fids,:] = @. nxJ/sJ
+        nyh[fids,:] = @. nyJ/sJ
+        nxh,nyh = vec.((nxh,nyh))
 
         # get lengths of arrays
-        Nfields = length(Q)
-        Id_fields = speye(Nfields) # for Kronecker expansion to large matrices - fix later with lazy evals
-        Vh_fields = droptol!(kron(Id_fields,Vh),1e-12)
-        M_fields  = droptol!(kron(Id_fields,M),1e-12)
-        Ph_fields = droptol!(kron(Id_fields,Ph),1e-12)
+        Ax,Ay,AxTr,AyTr,Bx,Vh,Vq,Pq = ops
 
-        # init jacobian matrix
-        Qh = (x->Vh*x).(SVector{Nfields}(Q))
+        Nfields = length(Q)
+        Id_fld = speye(Nfields) # for Kronecker expansion to large matrices - fix later with lazy evals
+        Vq_fld = droptol!(kron(Id_fld,Vq),1e-12)
+        VhP    = Vh*Pq
+        VhP_fld = droptol!(kron(Id_fld,VhP),1e-12)
+        Vh_fld = droptol!(kron(Id_fld,Vh),1e-12)
+        M_fld  = droptol!(kron(Id_fld,M),1e-12)
+        Ph_fld = droptol!(kron(Id_fld,Ph),1e-12)
+
+        # init jacobian matrix (no need for entropy projection since we'll zero it out later)
         dFdU_h = repeat(I+Ax+Ay,Nfields,Nfields)
 
         function midpt_newton_iter!(Qnew, Qprev) # for Burgers' eqn specifically
 
-                Qh    = (x->Vh*x).(SVector{Nfields}(Qnew)) # tuples are faster, but need SVector for ForwardDiff
+                # perform entropy projection
+                Uq    = (x->Vq*x).(SVector{Nfields}(Qnew))
+                VUh   = SVector{Nfields}((x->VhP*x).(v_ufun(Uq...)))
+                Qh    = SVector{Nfields}(u_vfun(VUh...))
 
                 ftmp  = hadamard_sum(AxTr,Fx,Qh) + hadamard_sum(AyTr,Fy,Qh) + hadamard_sum(B,LF,Qh,nxh,nyh)
-                f     = Ph_fields*vcat(ftmp...)
+                f     = Ph_fld*vcat(ftmp...)
                 res   = vcat(Qnew...) + .5*dt*f - vcat(Qprev...)
 
                 fill!(dFdU_h.nzval,0.0)
                 accum_hadamard_jacobian!(dFdU_h, Ax, dFx, Qh)
                 accum_hadamard_jacobian!(dFdU_h, Ay, dFy, Qh)
-                accum_hadamard_jacobian!(dFdU_h, B, dLF, Qh,nxh,nyh) # flux term involving normals
-                dFdU = droptol!(transpose(Vh_fields)*(dFdU_h*Vh_fields),1e-12)
+                accum_hadamard_jacobian!(dFdU_h, B,  dLF, Qh, nxh,nyh) # flux term involving normals
+                dVdU_h = banded_matrix_function(dVdU_fun, Uq)
+                dUdV_h = banded_matrix_function(dUdV_fun, VUh)
+
+                dFdU   = droptol!(transpose(Vh_fld)*(dFdU_h*dUdV_h*VhP_fld*dVdU_h*Vq_fld),1e-12)
 
                 # solve and update
-                dQ   = (M_fields + .5*dt*dFdU)\(M_fields*res)
+                dQ   = (M_fld + .5*dt*dFdU)\(M_fld*res)
+                # compute damping factor
                 Qnew = vcat(Qnew...) - dQ                            # convert Qnew to column vector for update
                 Qnew = columnize(reshape(Qnew,length(Q[1]),Nfields)) # convert back to array of arrays
 
@@ -159,27 +198,25 @@ function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData)
 end
 
 # pack inputs together
-ops = (Ax,Ay,copy(transpose(Ax)),copy(transpose(Ay)),Bx,Vh)
+ops = (Ax,Ay,copy(transpose(Ax)),copy(transpose(Ay)),Bx,Vh,Vq,Pq)
 
 ## init condition, rhs
 
-u = @. -sin(pi*x)
-# u = randn(size(x))
-Q = [u]
+rho = @. 2 + (abs(x)<.5) #+ exp(-10*(x^2+y^2)) #ones(size(x))
+rhou = zeros(size(x))
+rhov = zeros(size(x))
+E = rho.^1.4
+Q = @SVector [rho,rhou,rhov,E]
+# rho,u,v,p = vortex(x,y,0)
+# Q = SVector{4}(primitive_to_conservative(rho,u,v,p))
+
 
 # set time-stepping constants
 CN = (N+1)*(N+2)/2  # estimated trace constant
 h = minimum(J)
 dt = CFL * 2 * h / CN
-# dt = .1
 Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
-
-function LF(uL,uR,nxL,nyL,nxR,nyR)
-        absnx = @. (abs(nxL) + abs(nxR))/2
-        return (@. max(abs(uL),abs(uR))*(uL-uR)*absnx)
-end
-dLF(uL,uR,args...) = ForwardDiff.jacobian(uR->LF(uL,uR,args...),uR)
 
 # initialize jacobian
 midpt_newton_iter! = init_newton_fxn(Q,ops,rd,md)
@@ -197,7 +234,7 @@ for i = 1:Nsteps
         while dQnorm > 1e-12
                 Qnew,dQnorm = midpt_newton_iter!(Qnew,Q)
                 iter += 1
-                if iter > 10
+                if iter > 15
                         println("iter = $iter")
                 end
         end
@@ -217,10 +254,11 @@ end
 rp, sp = Basis2DTri.equi_nodes_2D(25)
 Vp = Basis2DTri.vandermonde_2D(N,rp,sp)/VDM
 
+gr(aspect_ratio=1, legend=false,
+   markerstrokewidth=0, markersize=2)
 xp,yp,up = (x->Vp*reshape(x,size(Vp,2),K)).((x,y,Q[1]))
-# gr(aspect_ratio=1, legend=false,
-#    markerstrokewidth=0, markersize=2)
 # display(scatter(xp,yp,up,zcolor=up,cam=(3,25),axis=false))
-# scatter(xp,yp,up,zcolor=up,cam=(0,90),border=:none,axis=false)
-contourf(xp,yp,up,lw=1,fill=true,levels=20)
+
+# plotly()
+scatter(xp,yp,up,zcolor=up,cam=(0,90),border=:none,axis=false)
 # png("sol_unif_mesh.png")

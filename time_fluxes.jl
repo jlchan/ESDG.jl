@@ -2,9 +2,12 @@ using ForwardDiff
 using BenchmarkTools
 using StaticArrays
 using FiniteDiff
+using LinearAlgebra
+using SparseArrays
 
 push!(LOAD_PATH, "./src")
 using CommonUtils
+using ExplicitJacobians
 push!(LOAD_PATH, "./examples/EntropyStableEuler")
 using EntropyStableEuler
 
@@ -13,7 +16,7 @@ F(x,y) = (x^2+x*y+y^2)/6
 # F(x,y) = logmean(x,y)
 dF(x,y) = ForwardDiff.derivative(y->F(x,y),y)
 
-K = 10
+K = 3
 Q = randn(K,K)
 Q = Q-transpose(Q)
 
@@ -44,7 +47,7 @@ function jac!(dfdu,u,dF,QTr)
     end
 end
 
-u = randn(K)
+u = 1 .+ rand(K)
 cache = FiniteDiff.JacobianCache(u)
 output = zeros(size(Q))
 f!(out,u) = ff!(out,u,F,Q)
@@ -54,14 +57,34 @@ function ff(u,Q,F)
 end
 f(u) = ff(u,Q,F)
 
-# @btime ForwardDiff.jacobian($f,$u)
-# @btime FiniteDiff.finite_difference_jacobian!($output,$f!,$u,$cache)
-# @btime jac!($output,$u,$dF,$Q)
+# @btime ForwardDiff.jacobian($f,$u) # AD jacobian
+# @btime FiniteDiff.finite_difference_jacobian!($output,$f!,$u,$cache) # FiniteDiff.jl
+# @btime jac!($output,$u,$dF,$Q) # explicit Jacobian
+# out = similar(u); @btime f!($out,$u) # flux eval
 
-out = similar(u)
-@btime f!($out,$u)
-# ForwardDiff.jacobian(u->[u[1]*u[2],u[2]],u)
+function LF(uL,uR)
+        return (@. .5*max(abs(uL),abs(uR))*(uL-uR))
+        # return (@. (uL-uR))
+end
+B = randn(K,K)
+B = B'*B
+# B = [0 1;1 0]
+d!(out,u) = ff!(out,u,LF,B)
+FiniteDiff.finite_difference_jacobian!(output,d!,u,cache)
 
+uR,uL = meshgrid(u)
+dxLF(uL,uR) = ForwardDiff.derivative(uL->LF(uL,uR),uL)
+dyLF(uL,uR) = ForwardDiff.derivative(uR->LF(uL,uR),uR)
+jacx = -B.*transpose(dxLF.(uL,uR)) + diagm(vec(sum(B.*transpose(dxLF.(uL,uR)),dims=1)))
+jacy = B.*dyLF.(uL,uR) - diagm(vec(sum(B.*dyLF.(uL,uR),dims=1)))
+
+dxLFJ(uL,uR) = ForwardDiff.jacobian(uL->LF(uL,uR),uL)
+dyLFJ(uL,uR) = ForwardDiff.jacobian(uR->LF(uL,uR),uR)
+jacx2 = Matrix(hadamard_jacobian(sparse(B), dxLFJ, [u]))
+jacy2 = Matrix(hadamard_jacobian(sparse(B), dyLFJ, [u]))
+
+@show norm(output - jacx), norm(jacx - jacx2)
+@show norm(output - jacy), norm(jacy - jacy2)
 
 # F(x,y)  = SVector{2}(x[1]*y[2],y[1]+x[2])
 # dF(x,y) = ForwardDiff.jacobian(y->F(x,y),y)

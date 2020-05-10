@@ -126,11 +126,12 @@ function hadamard_sum!(rhs::AbstractArray,ATr::SparseMatrixCSC,F::Function,
     for i = 1:n
         ui = getindex.(u,i)
         val_i = zeros(length(u))
+        Farg_i = getindex.(Fargs,i)
         for j in nzrange(ATr, i) # column-major: extracts ith col of ATr = ith row of A
             col = cols[j]
             Aij = vals[j]
             uj = getindex.(u,col)
-            val_i += Aij * F(ui,uj,getindex.(Fargs,i)...,getindex.(Fargs,col)...)
+            val_i += Aij * F(ui,uj,Farg_i...,getindex.(Fargs,col)...)
         end
         setindex!.(rhs,val_i,i)
     end
