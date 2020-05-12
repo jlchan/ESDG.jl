@@ -48,7 +48,8 @@ end
 
 "Constants"
 const sp_tol = 1e-12
-u0(x,y) = @. -sin(pi*x)*sin(y)
+# u0(x,y) = @. -sin(pi*x)*sin(y)
+u0(x,y) = @. exp(-1*((y-pi)^2+2*pi*x^2))
 
 "Program parameters"
 compute_L2_err = false
@@ -58,7 +59,7 @@ N_P = 8;    # The order of approximation in polynomial dimension
 Np_P = N_P+1;
 Np_F = 16;    # The order of approximation in Fourier dimension
 CFL  = 0.2;
-T    = 5.0;  # End time
+T    = 1.2;  # End time
 
 "Time integration Parameters"
 rk4a,rk4b,rk4c = rk45_coeffs()
@@ -69,8 +70,10 @@ dt = T/Nsteps
 
 "Initialize Reference Element in Fourier dimension"
 h = 2*pi/Np_F
-column = [0; .5*(-1).^(1:Np_F-1).*cot.((1:Np_F-1)*h/2)];
-Ds = Toeplitz(column,column[[1;Np_F:-1:2]]);
+column = [0; .5*(-1).^(1:Np_F-1).*cot.((1:Np_F-1)*h/2)]
+column2 = [-pi^2/3/h^2-1/6; -((-1).^(1:Np_F-1)./(2*(sin.((1:Np_F-1)*h/2)).^2))]
+Ds = Toeplitz(column,column[[1;Np_F:-1:2]])
+D2s = Toeplitz(column2,column2[[1;Np_F:-1:2]])
 s = LinRange(h,2*pi,Np_F)
 
 "Initialize Reference Element in polynomial dimension"
@@ -103,9 +106,9 @@ Qrh = 1/2*[Qr-Qr' Ef'*Br;
 Qrh_skew = 1/2*(Qrh-Qrh')
 Qsh = Qs # Not the SBP operator, weighted when flux differencing
 
-ops = (Vq,Vf,wq,wf,Pq,Lq,Qrh,Qsh,nrJ,h)
+ops = (Vq,Vf,wq,wf,Pq,Lq,Qrh,Qsh,D2s,nrJ,h)
 function rhs(u,ops,compute_rhstest)
-    Vq,Vf,wq,wf,Pq,Lq,Qrh,Qsh,nrJ,h = ops
+    Vq,Vf,wq,wf,Pq,Lq,Qrh,Qsh,D2s,nrJ,h = ops
     # Volume term
     uq,uf = (A->A*u).((Vq,Vf))
     uh = [uq;uf]
@@ -116,6 +119,7 @@ function rhs(u,ops,compute_rhstest)
     for k = 1:size(uh,2)
         ∇fh[:,k] += 2*Qrh.*[fS(uL,uR) for uL in uh[:,k], uR in uh[:,k]]*ones(size(uh,1),1)
     end
+
     # Flux differencing in y direction
     for k = 1:size(uh,1)
         ∇fh[k,:] += 2*pi*w[k]*Qsh.*[fS(uL,uR) for uL in uh[k,:], uR in uh[k,:]]*ones(size(uh,2),1)
@@ -123,11 +127,16 @@ function rhs(u,ops,compute_rhstest)
 
     # Spatial term
     ∇f = [Pq Lq]*diagm(1 ./ w)*∇fh
+
     # Flux term
     uM = Vf*u
     uP = [uM[2,:] uM[1,:]]'
     uflux = diagm(nrJ)*(@. fS(uM,uP)-uM*uM/2)
-    rhsu = -(∇f+Lq*uflux)
+
+    # Artificial Viscosity
+    ϵ = 0.05
+    Δf = ϵ*u*D2s'
+    rhsu = -(∇f+Lq*uflux-Δf)
 
     rhstest = 0
     if compute_rhstest
