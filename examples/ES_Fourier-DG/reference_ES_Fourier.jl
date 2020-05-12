@@ -50,6 +50,8 @@ end
 const sp_tol = 1e-12
 # u0(x,y) = @. -sin(pi*x)*sin(y)
 u0(x,y) = @. exp(-1*((y-pi)^2+2*pi*x^2))
+# u0(x,y) = @. exp(-1*((y-pi)^2))
+# u0(x,y) = @. exp(-10*(x^2))
 
 "Program parameters"
 compute_L2_err = false
@@ -59,7 +61,7 @@ N_P = 8;    # The order of approximation in polynomial dimension
 Np_P = N_P+1;
 Np_F = 16;    # The order of approximation in Fourier dimension
 CFL  = 0.2;
-T    = 1.2;  # End time
+T    = 1.0;  # End time
 
 "Time integration Parameters"
 rk4a,rk4b,rk4c = rk45_coeffs()
@@ -131,10 +133,12 @@ function rhs(u,ops,compute_rhstest)
     # Flux term
     uM = Vf*u
     uP = [uM[2,:] uM[1,:]]'
-    uflux = diagm(nrJ)*(@. fS(uM,uP)-uM*uM/2)
+    LF = @. max(abs(uP),abs(uM))*(uP-uM)
+    uflux = diagm(nrJ)*(@. fS(uM,uP)-uM*uM/2)-LF
 
     # Artificial Viscosity
-    ϵ = 0.05
+    # ϵ = 0.05
+    ϵ = 0.0
     Δf = ϵ*u*D2s'
     rhsu = -(∇f+Lq*uflux-Δf)
 
@@ -147,7 +151,6 @@ function rhs(u,ops,compute_rhstest)
 end
 
 u = @. u0(r,s)
-
 # Test single element
 resu = zeros(size(u))
 for i = 1:Nsteps
