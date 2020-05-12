@@ -9,7 +9,7 @@ module EntropyStableEuler
 const γ=1.4
 export γ
 export logmean
-export u_vfun, v_ufun, betafun
+export u_vfun, v_ufun, betafun, Sfun,sfun
 export euler_fluxes, wavespeed
 export vortex, primitive_to_conservative
 
@@ -25,9 +25,9 @@ function vortex(x,y,t,γ=1.4)
     beta = 5
     r2 = @. (x-x0-t)^2 + (y-y0)^2
 
-    u = @. 1 - beta*exp(1.0-r2)*(y-y0)/(2.0*pi)
-    v = @. beta*exp(1.0-r2)*(x-x0-t)/(2.0*pi)
-    rho = @. 1.0 - (1.0/(8.0*γ*pi^2))*(γ-1.0)/2.0*(beta*exp(1.0-r2))^2
+    u = @. 1 - beta*exp(1-r2)*(y-y0)/(2*pi)
+    v = @. beta*exp(1-r2)*(x-x0-t)/(2*pi)
+    rho = @. 1 - (1/(8*γ*pi^2))*(γ-1)/2*(beta*exp(1-r2))^2
     rho = @. rho^(1/(γ-1))
     p = @. rho^γ
 

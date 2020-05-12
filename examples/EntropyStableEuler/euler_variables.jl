@@ -65,6 +65,14 @@ function sfun(rho,rhoU,E)
     return (@. log((γ-1)*rhoe/(rho^γ)))
 end
 
+"Mathematical entropy"
+function Sfun(rho,rhou,rhov,E)
+    return -rho.*sfun(rho,(rhou,rhov),E)
+end
+function Sfun(rho,rhou,rhov,rhow,E)
+    return -rho.*sfun(rho,(rhou,rhov,rhow),E)
+end
+
 "Entropy variables as functions of conservative vars"
 function v_ufun(rho,rhoU,E)
     ρe = rhoefun(rho,rhoU,E)
