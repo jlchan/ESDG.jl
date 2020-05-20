@@ -10,3 +10,5 @@ demo*.jl
 ./*/.DS_Store
 ./*/*/.DS_Store
 .DS_Store
+
+*.png
