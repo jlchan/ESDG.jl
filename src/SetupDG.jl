@@ -1,8 +1,7 @@
 """
 Module Setup2D
 
-Module to aid in setting up reference operators, meshes, geometric terms
-Also provides functions to assemble global DG-SBP operators
+Setup codes for reference element operators, meshes, geometric terms.
 
 """
 
@@ -35,14 +34,43 @@ export init_reference_quad, init_reference_hex
 export init_mesh
 export MeshData, RefElemData
 
-# do we realy need mutable here?  I think we can remove it
+# do we realy need mutable here?  I think we can remove it - we don't modify any types
 # TODO: add type annotation to all of these, switch to immutable struct
+
+mutable struct RefElemData
+
+    Nfaces::Int
+    fv # face vertex tuple list
+
+    # probably won't use nodes, but might as well keep them around
+    r; s; t          # interpolation nodes
+    rq; sq; tq; wq   # volume quadrature
+    rf; sf; tf; wf   # surface quadrature
+    rp; sp; tp       # plotting nodes
+
+    nrJ; nsJ; ntJ # reference scaled normals
+
+    V1          # (bi/tri)-linear interpolation matrix to high order nodes
+    VDM         # Vandermonde matrix (implicitly defines Lagrange bases)
+    Vp          # interpolation matrix to equispaced nodes
+
+    Dr; Ds; Dt  # differentiation matrices
+    Vq; Vf      # quadrature interpolation matrices
+    M; Pq       # mass matrix, L2 projection matrix
+    LIFT        # quadrature-based lift matrix
+
+    RefElemData() = new() # empty initializer
+end
+
 mutable struct MeshData
 
-    VX;VY;VZ # vertex coordinates
-    K::Int # num elems
+    # vertex coordinates
+    VX
+    VY
+    VZ
     EToV # mesh vertex array
     FToF # face connectivity
+    K::Int # num elems
 
     x; y; z # physical points
     xf;yf;zf
@@ -59,33 +87,8 @@ mutable struct MeshData
     nxJ; nyJ; nzJ; sJ
 
     MeshData() = new() # empty initializer
-
-
 end
 
-mutable struct RefElemData
-
-    Nfaces; fv # face vertex tuple list
-
-    V1 # low order interp nodes and matrix
-
-    # probably won't use nodes, but might as well keep them around
-    r; s; t        # interpolation nodes
-    rq; sq; tq; wq # volume quadrature
-    rf; sf; tf; wf # surface quadrature
-    rp; sp; tp     # plotting nodes
-
-    VDM         # Vandermonde matrix
-    Dr; Ds; Dt  # differentiation matrices
-    Vq; Vf      # quadrature interpolation matrices
-    M; Pq       # mass matrix, L2 projection matrix
-    LIFT        # quadrature-based lift matrix
-    Vp          # interp to equispaced nodes
-
-    nrJ; nsJ; ntJ # reference normals
-
-    RefElemData() = new() # empty initializer
-end
 
 function init_reference_interval(N)
     # initialize a new reference element data struct
