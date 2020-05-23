@@ -75,7 +75,7 @@ FiniteDiff.finite_difference_jacobian!(output,d!,u,cache)
 uR,uL = meshgrid(u)
 dxLF(uL,uR) = ForwardDiff.derivative(uL->LF(uL,uR),uL)
 dyLF(uL,uR) = ForwardDiff.derivative(uR->LF(uL,uR),uR)
-jacx = -B.*transpose(dxLF.(uL,uR)) + diagm(vec(sum(B.*transpose(dxLF.(uL,uR)),dims=1)))
+jacx = -B.*transpose(dxLF.(uL,uR)) + diagm(vec(sum(B.* transpose(dxLF.(uL,uR)),dims=1)))
 jacy = B.*dyLF.(uL,uR) - diagm(vec(sum(B.*dyLF.(uL,uR),dims=1)))
 
 dxLFJ(uL,uR) = ForwardDiff.jacobian(uL->LF(uL,uR),uL)

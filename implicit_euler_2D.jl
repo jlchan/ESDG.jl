@@ -12,7 +12,6 @@ using CommonUtils
 using Basis1D
 using Basis2DTri
 using UniformTriMesh
-
 using SetupDG
 using ExplicitJacobians
 
@@ -20,10 +19,10 @@ push!(LOAD_PATH, "./examples/EntropyStableEuler")
 using EntropyStableEuler
 
 "Approximation parameters"
-N = 2 # The order of approximation
+N = 1 # The order of approximation
 K1D = 8
 CFL = 10
-T = .5 # endtime
+T = 1 # endtime
 
 "Mesh related variables"
 VX, VY, EToV = uniform_tri_mesh(K1D)
@@ -89,6 +88,7 @@ Vh   = kron(speye(K),sparse(Vh))
 Ph   = kron(spdiagm(0 => 1 ./ J[1,:]), sparse(Ph))
 VhP  = Vh*Pq
 x,y = (a->a[:]).((x,y))
+wJq = vec(diagm(rd.wq)*(rd.Vq*J))
 
 println("Done building global ops")
 
@@ -131,12 +131,11 @@ function LF(uL,uR,nxL,nyL,nxR,nyR)
 end
 dLF(uL,uR,args...) = ForwardDiff.jacobian(uR->LF(uL,uR,args...),uR)
 
-## transform mappings
-
+## mappings between conservative and entropy variables and vice vera
 dVdU_fun(U) = ForwardDiff.jacobian(U->SVector(v_ufun(U...)...),U)
 dUdV_fun(V) = ForwardDiff.jacobian(V->SVector(u_vfun(V...)...),V)
 
-## nonlinear solver stuff
+## nonlinear solver setup - uses closure to initialize arrays and other things
 function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData)
 
         # set up normals for use in penalty term
@@ -155,13 +154,13 @@ function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData)
         Ax,Ay,AxTr,AyTr,Bx,Vh,Vq,Pq = ops
 
         Nfields = length(Q)
-        Id_fld = speye(Nfields) # for Kronecker expansion to large matrices - fix later with lazy evals
-        Vq_fld = droptol!(kron(Id_fld,Vq),1e-12)
-        VhP    = Vh*Pq
+        Id_fld  = speye(Nfields) # for Kronecker expansion to large matrices - fix later with lazy evals
+        Vq_fld  = droptol!(kron(Id_fld,Vq),1e-12)
+        VhP     = Vh*Pq
         VhP_fld = droptol!(kron(Id_fld,VhP),1e-12)
-        Vh_fld = droptol!(kron(Id_fld,Vh),1e-12)
-        M_fld  = droptol!(kron(Id_fld,M),1e-12)
-        Ph_fld = droptol!(kron(Id_fld,Ph),1e-12)
+        Vh_fld  = droptol!(kron(Id_fld,Vh),1e-12)
+        M_fld   = droptol!(kron(Id_fld,M),1e-12)
+        Ph_fld  = droptol!(kron(Id_fld,Ph),1e-12)
 
         # init jacobian matrix (no need for entropy projection since we'll zero it out later)
         dFdU_h = repeat(I+Ax+Ay,Nfields,Nfields)
@@ -183,12 +182,11 @@ function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData)
                 accum_hadamard_jacobian!(dFdU_h, B,  dLF, Qh, nxh,nyh) # flux term involving normals
                 dVdU_h = banded_matrix_function(dVdU_fun, Uq)
                 dUdV_h = banded_matrix_function(dUdV_fun, VUh)
-
                 dFdU   = droptol!(transpose(Vh_fld)*(dFdU_h*dUdV_h*VhP_fld*dVdU_h*Vq_fld),1e-12)
 
                 # solve and update
                 dQ   = (M_fld + .5*dt*dFdU)\(M_fld*res)
-                # compute damping factor
+                # TODO: compute damping factor
                 Qnew = vcat(Qnew...) - dQ                            # convert Qnew to column vector for update
                 Qnew = columnize(reshape(Qnew,length(Q[1]),Nfields)) # convert back to array of arrays
 
@@ -202,7 +200,8 @@ ops = (Ax,Ay,copy(transpose(Ax)),copy(transpose(Ay)),Bx,Vh,Vq,Pq)
 
 ## init condition, rhs
 
-rho = @. 2 + (abs(x)<.5) #+ exp(-10*(x^2+y^2)) #ones(size(x))
+rho = @. 2 + (abs(x)<.5)
+rho = @. 2 + exp(-10*(x^2+y^2)) #ones(size(x))
 rhou = zeros(size(x))
 rhov = zeros(size(x))
 E = rho.^1.4
@@ -241,10 +240,10 @@ for i = 1:Nsteps
         it_count[i] = iter
         Q = @. 2*Qnew - Q # implicit midpoint rule
 
-        u = Q[1]
-        energy[i] = u'*M*u
+        Qq = (x->Vq*x).(Q)
+        energy[i] = sum(wJq.*Sfun(Qq...))
 
-        if i%10==0 || i==Nsteps
+        if i%5==0 || i==Nsteps
                 println("Number of time steps $i out of $Nsteps")
                 # display(scatter(x,Q[1]))
         end
@@ -258,7 +257,5 @@ gr(aspect_ratio=1, legend=false,
    markerstrokewidth=0, markersize=2)
 xp,yp,up = (x->Vp*reshape(x,size(Vp,2),K)).((x,y,Q[1]))
 # display(scatter(xp,yp,up,zcolor=up,cam=(3,25),axis=false))
-
-# plotly()
 scatter(xp,yp,up,zcolor=up,cam=(0,90),border=:none,axis=false)
 # png("sol_unif_mesh.png")
