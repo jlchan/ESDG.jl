@@ -50,7 +50,6 @@ end
 # include("./CommonUtils/meshgrid.jl")
 include("./geometric_factors.jl")
 include("./connect_mesh.jl")
-include("./build_node_maps.jl")
-include("./build_periodic_boundary_maps.jl")
+include("./node_map_functions.jl")
 
 end
