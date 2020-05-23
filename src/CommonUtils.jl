@@ -9,7 +9,10 @@ module CommonUtils
 using LinearAlgebra # for I matrix in geometricFactors
 using SparseArrays  # for spdiagm
 
+# export meshgrid
+import VectorizedRoutines.Matlab.meshgrid
 export meshgrid
+
 export geometric_factors
 export connect_mesh
 export build_node_maps, build_periodic_boundary_maps, build_periodic_boundary_maps!
@@ -44,10 +47,10 @@ function rk45_coeffs()
     return rk4a,rk4b,rk4c
 end
 
-include("./CommonUtils/meshgrid.jl")
-include("./CommonUtils/geometric_factors.jl")
-include("./CommonUtils/connect_mesh.jl")
-include("./CommonUtils/build_node_maps.jl")
-include("./CommonUtils/build_periodic_boundary_maps.jl")
+# include("./CommonUtils/meshgrid.jl")
+include("./geometric_factors.jl")
+include("./connect_mesh.jl")
+include("./build_node_maps.jl")
+include("./build_periodic_boundary_maps.jl")
 
 end
