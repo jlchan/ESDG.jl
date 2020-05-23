@@ -9,7 +9,7 @@ module EntropyStableEuler
 const γ=1.4
 export γ
 export logmean
-export u_vfun, v_ufun, betafun, Sfun,sfun
+export u_vfun, v_ufun, betafun, Sfun,sfun,pressure_fun
 export euler_fluxes, wavespeed
 export vortex, primitive_to_conservative
 

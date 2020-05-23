@@ -9,22 +9,16 @@ function wavespeed(rho,rhou,E)
     return (@. sqrt(abs(rhou/rho)) + cvel)
 end
 
-
-function Unorm(U)
-    unorm = zeros(eltype(U[1]),size(U[1]))
-    for u in U
-        @. unorm += u^2
-    end
-    return unorm
-end
+Unorm(U) = sum((x->x.^2).(U))
 
 "primitive pressure to conservative vars"
 function primitive_to_conservative(rho,U,p)
-    rhoU = [rho.*u for u in U]
+    rhoU = (x->rho.*x).(U) 
     unorm = Unorm(U)
     E = (@. p/(γ-1) + .5*rho*unorm)
     return (rho,rhoU...,E)
 end
+
 function primitive_to_conservative(rho,u,v,p)
     return primitive_to_conservative(rho,(u,v),p)
 end
@@ -52,6 +46,14 @@ function pfun(rho,rhoU,E)
     rhounorm = Unorm(rhoU)./rho
     return pfun(rho,rhoU,E,rhounorm)
 end
+
+# hack
+function pressure_fun(rho,rhou,rhov,E)
+    rhounorm = @. (rhou^2+rhov^2)/rho
+    return @. (γ-1)*(E-.5*rhounorm)
+    #return pfun(rho,(rhou,rhov),E)
+end
+
 
 "specific energy as a function of conservative variables"
 function rhoefun(rho,rhoU,E)
