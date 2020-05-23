@@ -265,7 +265,7 @@ end
 """
     quad_nodes_tri(N)
 
-Returns quadrature nodeswhich exactly integrate degree N polynomials
+Returns quadrature nodes which exactly integrate degree N polynomials
 
 # Examples
 ```jldoctest
