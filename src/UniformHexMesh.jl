@@ -73,7 +73,7 @@ function hex_face_vertices()
         fv4 = map(x->x[1], findall(@. abs(s-1) < 1e-10))
         fv5 = map(x->x[1], findall(@. abs(t+1) < 1e-10))
         fv6 = map(x->x[1], findall(@. abs(t-1) < 1e-10))
-        return (fv1,fv2,fv3,fv4,fv5,fv6)
+        return [fv1,fv2,fv3,fv4,fv5,fv6]
 end
 
 

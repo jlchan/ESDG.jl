@@ -65,7 +65,7 @@ element to face connectivity.
 
 # ordering matters...
 function quad_face_vertices()
-        return [1,2],[2,4],[3,4],[1,3]
+        return [[1,2],[2,4],[3,4],[1,3]]
 end
 
 
