@@ -76,7 +76,7 @@ end
 
 function nodes_3D(N)
     r1D,w1D = gauss_lobatto_quad(0,0,N)
-    return meshgrid(r1D,r1D,r1D)
+    return vec.(meshgrid(r1D,r1D,r1D))
 end
 
 """
@@ -91,7 +91,7 @@ triangles for polynomial of order N, with Np points
 
 function equi_nodes_3D(N)
     r1D = LinRange(-1,1,N+1)
-    return meshgrid(r1D,r1D,r1D)
+    return vec.(meshgrid(r1D,r1D,r1D))
 end
 
 """
@@ -104,9 +104,9 @@ end
 
 function quad_nodes_3D(N)
     r1D,w1D = gauss_quad(0,0,N)
-    r,s,t = meshgrid(r1D,r1D,r1D)
-    wr,ws,wt = meshgrid(w1D,w1D,w1D)
-    w = wr.*ws.*wt
+    r,s,t = vec.(meshgrid(r1D,r1D,r1D))
+    wr,ws,wt = vec.(meshgrid(w1D,w1D,w1D))
+    w = @. wr*ws*wt
     return r,s,t,w
 end
 

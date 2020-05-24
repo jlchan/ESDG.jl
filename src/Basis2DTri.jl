@@ -229,7 +229,7 @@ function nodes_2D(N)
     y = y + 0*warp1 + sin(2*pi/3)*warp2 + sin(4*pi/3)*warp3
 
     r, s = xytors(x, y)
-    return r, s
+    return r[:], s[:]
 end
 
 """
@@ -258,7 +258,7 @@ function equi_nodes_2D(N)
         end
     end
 
-    return r, s
+    return r[:], s[:]
 end
 
 

@@ -27,12 +27,32 @@ function uniform_hex_mesh(Nx,Ny,Nz)
         Nyp = Ny+1
         Nzp = Nz+1
         Nv = convert(Int,Nxp*Nyp*Nzp)
-        K = convert(Int,Nx*Ny*Nz)
+        K  = convert(Int,Nx*Ny*Nz)
 
         x1D = LinRange(-1,1,Nxp)
         y1D = LinRange(-1,1,Nyp)
         z1D = LinRange(-1,1,Nzp)
-        x, y, z = meshgrid(x1D,y1D,z1D)
+
+        # hack to work with old vertex ordering
+        function mymeshgrid(x1D,y1D,z1D)
+                Np = length(x1D)*length(y1D)*length(z1D)
+                x = zeros(Np)
+                y = zeros(Np)
+                z = zeros(Np)
+                sk = 1
+                for k = 1:length(z1D)
+                        for j = 1:length(y1D)
+                                for i = 1:length(x1D)
+                                        x[sk] = x1D[i]
+                                        y[sk] = y1D[j]
+                                        z[sk] = z1D[k]
+                                        sk += 1
+                                end
+                        end
+                end
+                return x,y,z
+        end
+        x, y, z = mymeshgrid(x1D,y1D,z1D)
 
         EToV = zeros(Int,K,8)
         k = 1
