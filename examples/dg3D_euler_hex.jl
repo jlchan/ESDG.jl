@@ -21,12 +21,15 @@ using SetupDG
 
 N = 2
 K1D = 8
-T = 2/3 # endtime
-CFL = .75
+T = 1/3 # endtime
+CFL = .5
 
 VX,VY,VZ,EToV = uniform_hex_mesh(K1D,K1D,K1D)
 
-rd = init_reference_hex(N,gauss_lobatto_quad(0,0,N))
+# r1D,w1D = gauss_lobatto_quad(0,0,N)
+# r1D *= (1-1e-9) # hack - make Lobatto "interior" nodes
+# rd = init_reference_hex(N,(r1D,w1D))
+rd = init_reference_hex(N,gauss_quad(0,0,N))
 md = init_mesh((VX,VY,VZ),EToV,rd)
 
 # Make hybridized SBP operators
@@ -53,7 +56,7 @@ Qrhskew_sparse = droptol!(sparse(Qrhskew),1e-12)
 Qshskew_sparse = droptol!(sparse(Qshskew),1e-12)
 Qthskew_sparse = droptol!(sparse(Qthskew),1e-12)
 
-# precompute union of sparse ids for Qr, Qs
+# precompute union of sparse ids for Qr, Qs, Qt
 Qnzids = [unique([Qrhskew_sparse[i,:].nzind; Qshskew_sparse[i,:].nzind; Qthskew_sparse[i,:].nzind]) for i = 1:size(Qrhskew,1)]
 
 # make periodic
@@ -66,7 +69,7 @@ mapP[mapB] = mapPB
 
 # add curved mapping
 @unpack x,y,z = md
-a = .05
+a = .0
 dx = @. (x-1)*(x+1)*(y-1)*(y+1)*(z-1)*(z+1)
 x = x + a.*dx
 y = y + a.*dx
@@ -90,7 +93,7 @@ rxJ,sxJ,txJ,ryJ,syJ,tyJ,rzJ,szJ,tzJ = (x->[Vq;Vf]*x).(vgeo)
 @pack! md = rxJ,sxJ,txJ,ryJ,syJ,tyJ,rzJ,szJ,tzJ
 
 # convert to quadrature node basis
-@unpack wq=rd
+@unpack wq = rd
 Vh = droptol!(sparse(vcat(diagm(ones(length(wq))), Ef)),1e-12)
 Ph = droptol!(sparse(2*diagm(@. 1/wq)*transpose(Vh)),1e-12)
 Lf = droptol!(sparse(diagm(@. 1/wq)*(transpose(Ef)*diagm(wf))),1e-12)
@@ -100,12 +103,14 @@ wJq = diagm(wq)*J # recompute for curved
 @pack! md = J,wJq
 
 # initial conditions
-rhoex(x,y,z,t) = @. 2 + .5*sin(pi*(x-t))
+# rhoex(x,y,z,t) = @. 2 + .5*sin(pi*(x-t))
+rhoex(x,y,z,t) = 2 .+ .1 * rand(size(x)...) # for testing EC
 rho = rhoex(xq,yq,zq,0)
 u = ones(size(x))
-v = zeros(size(x))
-w = zeros(size(x))
+v = ones(size(x))
+w = zeros(size(x)) # non EC if i turn on v or w = 1
 p = ones(size(x))
+
 Q = primitive_to_conservative(rho,u,v,w,p)
 
 "timestepping"
@@ -160,6 +165,7 @@ function sparse_hadamard_sum(Qhe,ops,vgeo,flux_fun)
     return rhsQe
 end
 
+
 function rhs(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
 
     # unpack args
@@ -178,6 +184,7 @@ function rhs(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
     beta = betafun(rho,rhou,rhov,rhow,E)
     Qh = (rho,rhou./rho,rhov./rho,rhow./rho,beta) # redefine Q = (rho,U,β)
 
+    # @show size(Qh[1])
     QM = (x->x[Nq+1:end,:]).(Qh)
     QP = (x->x[mapP]).(QM)
 
@@ -185,19 +192,11 @@ function rhs(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
     (rho,rhou,rhov,rhow,E) = Uf
     rhoU_n = @. (rhou*nxJ + rhov*nyJ + rhow*nzJ)/sJ
     lam = abs.(wavespeed(rho,rhoU_n,E))
-    LFc = .5*max.(lam,lam[mapP]).*sJ
+    LFc = 0*.25*max.(lam,lam[mapP]).*sJ
 
     fSx,fSy,fSz = flux_fun(QM,QP)
     normal_flux(fx,fy,fz,uM) = fx.*nxJ + fy.*nyJ + fz.*nzJ - LFc.*(uM[mapP]-uM)
     flux = normal_flux.(fSx,fSy,fSz,Uf)
-    # flux = ntuple(x->zeros(size(mapP)),length(QM))
-    # for i = 1:length(mapP)
-    #     QMi = (x->x[i]).(QM)
-    #     QPi = (x->x[i]).(QP)
-    #     fSx,fSy,fSz = flux_fun(QMi,QPi)
-    #     normal_flux!(f,fx,fy,fz,u) = f[i] = fx*nxJ[i] + fy*nyJ[i] + fz*nzJ[i] - LFc[i]*(u[mapP[i]]-u[i])
-    #     normal_flux!.(flux,fSx,fSy,fSz,Uf)
-    # end
     rhsQ = (x->Lf*x).(flux)
 
     # compute volume contributions using flux differencing
@@ -224,43 +223,46 @@ function rhs(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
     return rhsQ,rhstest # scale by Jacobian
 end
 
+compute_rhstest = true
+rhsQ,rhstest = rhs(Q,md,ops,euler_fluxes,compute_rhstest)
+@show rhstest
 
-# force Q to be an array of arrays for mutability
-Q = collect(Q)
-resQ = [zeros(size(x)) for i in eachindex(Q)]
-for i = 1:Nsteps
-
-    rhstest = 0
-    for INTRK = 1:5
-        compute_rhstest = INTRK==5
-        rhsQ,rhstest = rhs(Q,md,ops,euler_fluxes,compute_rhstest)
-
-        @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
-        @. Q += rk4b[INTRK]*resQ
-    end
-
-    if i%10==0 || i==Nsteps
-        println("Time step: $i out of $Nsteps with rhstest = $rhstest")
-    end
-end
-
-(rho,rhou,rhov,rhow,E) = (x->Pq*x).(Q) # project back to Lobatto nodes
-
-@unpack VDM=rd
-rq2,sq2,tq2,wq2 = quad_nodes_3D(N+2)
-Vq2 = vandermonde_3D(N,rq2,sq2,tq2)/VDM
-(xq2,yq2,zq2) = (x->Vq2*x).((x,y,z))
-wJq2 = abs.(diagm(wq2)*(Vq2*Pq*J)) # recall J = converted to quad node basis
-L2err = sqrt(sum(wJq2.*(Vq2*rho - rhoex(xq2,yq2,zq2,T)).^2))
-# L2err = sqrt(sum(wJq.*(Vq*rho - rhoex(xq,yq,zq,T)).^2))
-@show L2err
-
-# gr(aspect_ratio=1,legend=false,
-#    markerstrokewidth=0,markersize=2)
+# # force Q to be an array of arrays for mutability
+# Q = collect(Q)
+# resQ = [zeros(size(x)) for i in eachindex(Q)]
+# for i = 1:Nsteps
 #
-# @unpack Vp = rd
-# (xp,yp,zp,vv) = (x->Vp*x).((x,y,z,rho))
+#     rhstest = 0
+#     for INTRK = 1:5
+#         compute_rhstest = INTRK==5
+#         rhsQ,rhstest = rhs(Q,md,ops,euler_fluxes,compute_rhstest)
 #
-# ids = map(x->x[1],findall(@. abs(zp[:])<1e-10))
-# (xp,yp,zp,vv) = (x->x[ids]).((xp,yp,zp,vv))
-# scatter(xp,yp,vv,zcolor=vv,camera=(0,90))
+#         @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
+#         @. Q += rk4b[INTRK]*resQ
+#     end
+#
+#     if i%1==0 || i==Nsteps
+#         println("Time step: $i out of $Nsteps with rhstest = $rhstest")
+#     end
+# end
+#
+# (rho,rhou,rhov,rhow,E) = (x->Pq*x).(Q) # project back to Lobatto nodes
+#
+# @unpack VDM=rd
+# rq2,sq2,tq2,wq2 = quad_nodes_3D(N+2)
+# Vq2 = vandermonde_3D(N,rq2,sq2,tq2)/VDM
+# (xq2,yq2,zq2) = (x->Vq2*x).((x,y,z))
+# wJq2 = abs.(diagm(wq2)*(Vq2*Pq*J)) # recall J = converted to quad node basis
+# L2err = sqrt(sum(wJq2.*(Vq2*rho - rhoex(xq2,yq2,zq2,T)).^2))
+# # L2err = sqrt(sum(wJq.*(Vq*rho - rhoex(xq,yq,zq,T)).^2))
+# @show L2err
+#
+# # gr(aspect_ratio=1,legend=false,
+# #    markerstrokewidth=0,markersize=2)
+# #
+# # @unpack Vp = rd
+# # (xp,yp,zp,vv) = (x->Vp*x).((x,y,z,rho))
+# #
+# # ids = map(x->x[1],findall(@. abs(zp[:])<1e-10))
+# # (xp,yp,zp,vv) = (x->x[ids]).((xp,yp,zp,vv))
+# # scatter(xp,yp,vv,zcolor=vv,camera=(0,90))

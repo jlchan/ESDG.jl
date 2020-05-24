@@ -113,33 +113,84 @@ Base.@kwdef mutable struct RefElemData
 end
 
 
-mutable struct MeshData
+# mutable struct MeshData
+#
+#     # vertex coordinates
+#     VX
+#     VY
+#     VZ
+#     EToV # mesh vertex array
+#     FToF # face connectivity
+#     K::Int # num elems
+#
+#     x; y; z # physical points
+#     xf;yf;zf
+#     xq;yq;zq;wJq # phys quad points, Jacobian-scaled weights
+#
+#     mapM; mapP; mapB # connectivity between face nodes
+#
+#     # volume geofacs
+#     rxJ; sxJ; txJ
+#     ryJ; syJ; tyJ
+#     rzJ; szJ; tzJ; J
+#
+#     # surface geofacs
+#     nxJ; nyJ; nzJ; sJ
+#
+#     MeshData() = new() # empty initializer
+# end
 
-    # vertex coordinates
-    VX
-    VY
-    VZ
-    EToV # mesh vertex array
-    FToF # face connectivity
+Base.@kwdef mutable struct MeshData
+
+    # vertex coordinates and mesh connectivity arrays
+    VX::Array{Float64,1}
+    VY::Union{Array{Float64,1},Missing} = missing
+    VZ::Union{Array{Float64,1},Missing} = missing
+    EToV::Array{Int,2} # mesh vertex array
+    FToF::Array{Int,2} # face connectivity
     K::Int # num elems
 
-    x; y; z # physical points
-    xf;yf;zf
-    xq;yq;zq;wJq # phys quad points, Jacobian-scaled weights
+    # physical points
+    x::Array{Float64,2}
+    y::Union{Array{Float64,2},Missing} = missing
+    z::Union{Array{Float64,2},Missing} = missing
 
-    mapM; mapP; mapB # connectivity between face nodes
+    # face points
+    xf::Array{Float64,2}
+    yf::Union{Array{Float64,2},Missing} = missing
+    zf::Union{Array{Float64,2},Missing} = missing
+
+    # phys quad points, Jacobian-scaled weights
+    xq::Array{Float64,2}
+    yq::Union{Array{Float64,2},Missing} = missing
+    zq::Union{Array{Float64,2},Missing} = missing
+    wJq::Array{Float64,2}
+
+    # connectivity maps between face nodes
+    mapM::Array{Int,2}
+    mapP::Array{Int,2}
+    mapB::Array
 
     # volume geofacs
-    rxJ; sxJ; txJ
-    ryJ; syJ; tyJ
-    rzJ; szJ; tzJ; J
+    rxJ::Array{Float64,2}
+    sxJ::Union{Array{Float64,2},Missing} = missing
+    txJ::Union{Array{Float64,2},Missing} = missing
+    ryJ::Union{Array{Float64,2},Missing} = missing
+    syJ::Union{Array{Float64,2},Missing} = missing
+    tyJ::Union{Array{Float64,2},Missing} = missing
+    rzJ::Union{Array{Float64,2},Missing} = missing
+    szJ::Union{Array{Float64,2},Missing} = missing
+    tzJ::Union{Array{Float64,2},Missing} = missing
+    J::Array{Float64,2}
 
     # surface geofacs
-    nxJ; nyJ; nzJ; sJ
+    nxJ::Array{Float64,2}
+    nyJ::Union{Array{Float64,2},Missing} = missing
+    nzJ::Union{Array{Float64,2},Missing} = missing
+    sJ::Array{Float64,2}
 
-    MeshData() = new() # empty initializer
+    # MeshData() = new() # empty initializer
 end
-
 
 function init_reference_interval(N)
 
@@ -329,19 +380,19 @@ end
 
 function init_mesh(VX,VY,EToV,rd::RefElemData)
 
-    # initialize a new mesh data struct
-    md = MeshData()
+    # # initialize a new mesh data struct
+    # md = MeshData()
 
     @unpack fv = rd
     FToF = connect_mesh(EToV,fv)
     Nfaces,K = size(FToF)
-    @pack! md = FToF,K,VX,VY,EToV
+    # @pack! md = FToF,K,VX,VY,EToV
 
     #Construct global coordinates
     @unpack V1 = rd
     x = V1*VX[transpose(EToV)]
     y = V1*VY[transpose(EToV)]
-    @pack! md = x,y
+    # @pack! md = x,y
 
     #Compute connectivity maps: uP = exterior value used in DG numerical fluxes
     @unpack r,s,Vf = rd
@@ -350,26 +401,33 @@ function init_mesh(VX,VY,EToV,rd::RefElemData)
     Nfp = convert(Int,size(Vf,1)/Nfaces)
     mapM = reshape(mapM,Nfp*Nfaces,K)
     mapP = reshape(mapP,Nfp*Nfaces,K)
-    @pack! md = xf,yf,mapM,mapP,mapB
+    # @pack! md = xf,yf,mapM,mapP,mapB
 
     #Compute geometric factors and surface normals
     @unpack Dr,Ds = rd
     rxJ, sxJ, ryJ, syJ, J = geometric_factors(x, y, Dr, Ds)
-    @pack! md = rxJ, sxJ, ryJ, syJ, J
+    # @pack! md = rxJ, sxJ, ryJ, syJ, J
 
     @unpack Vq,wq = rd
     xq,yq = (x->Vq*x).((x,y))
     wJq = diagm(wq)*(Vq*J)
-    @pack! md = xq,yq,wJq
+    # @pack! md = xq,yq,wJq
 
     #physical normals are computed via G*nhatJ, G = matrix of geometric terms
     @unpack nrJ,nsJ = rd
     nxJ = (Vf*rxJ).*nrJ + (Vf*sxJ).*nsJ
     nyJ = (Vf*ryJ).*nrJ + (Vf*syJ).*nsJ
     sJ = @. sqrt(nxJ^2 + nyJ^2)
-    @pack! md = nxJ,nyJ,sJ
+    # @pack! md = nxJ,nyJ,sJ
 
-    return md
+    # return md
+    return MeshData(K=K,VX=VX,VY=VY,
+                EToV=EToV,FToF=FToF,
+                x=x,y=y,xf=xf,yf=yf,
+                mapM=mapM,mapP=mapP,mapB=mapB,
+                rxJ=rxJ,sxJ=sxJ,ryJ=ryJ,syJ=syJ,J=J,
+                nxJ=nxJ,nyJ=nyJ,sJ=sJ,
+                xq=xq,yq=yq,wJq=wJq)
 end
 
 
@@ -453,20 +511,20 @@ end
 
 function init_mesh(VX,VY,VZ,EToV,rd::RefElemData)
 
-    # initialize a new mesh data struct
-    md = MeshData()
+    # # initialize a new mesh data struct
+    # md = MeshData()
 
     @unpack fv = rd
     FToF = connect_mesh(EToV,fv)
     Nfaces,K = size(FToF)
-    @pack! md = FToF,K,VX,VY,VZ,EToV
+    # @pack! md = FToF,K,VX,VY,VZ,EToV
 
     #Construct global coordinates
     @unpack V1 = rd
     x = V1*VX[transpose(EToV)]
     y = V1*VY[transpose(EToV)]
     z = V1*VZ[transpose(EToV)]
-    @pack! md = x,y,z
+    # @pack! md = x,y,z
 
     #Compute connectivity maps: uP = exterior value used in DG numerical fluxes
     @unpack r,s,t,Vf = rd
@@ -475,17 +533,17 @@ function init_mesh(VX,VY,VZ,EToV,rd::RefElemData)
     Nfp = convert(Int,size(Vf,1)/Nfaces)
     mapM = reshape(mapM,Nfp*Nfaces,K)
     mapP = reshape(mapP,Nfp*Nfaces,K)
-    @pack! md = xf,yf,zf,mapM,mapP,mapB
+    # @pack! md = xf,yf,zf,mapM,mapP,mapB
 
     #Compute geometric factors and surface normals
     @unpack Dr,Ds,Dt = rd
     rxJ,sxJ,txJ,ryJ,syJ,tyJ,rzJ,szJ,tzJ,J = geometric_factors(x,y,z,Dr,Ds,Dt)
-    @pack! md = rxJ,sxJ,txJ,ryJ,syJ,tyJ,rzJ,szJ,tzJ,J
+    # @pack! md = rxJ,sxJ,txJ,ryJ,syJ,tyJ,rzJ,szJ,tzJ,J
 
     @unpack Vq,wq = rd
     xq,yq,zq = (x->Vq*x).((x,y,z))
     wJq = diagm(wq)*(Vq*J)
-    @pack! md = xq,yq,zq,wJq
+    # @pack! md = xq,yq,zq,wJq
 
     #physical normals are computed via G*nhatJ, G = matrix of geometric terms
     @unpack nrJ,nsJ,ntJ = rd
@@ -493,9 +551,18 @@ function init_mesh(VX,VY,VZ,EToV,rd::RefElemData)
     nyJ = nrJ.*(Vf*ryJ) + nsJ.*(Vf*syJ) + ntJ.*(Vf*tyJ)
     nzJ = nrJ.*(Vf*rzJ) + nsJ.*(Vf*szJ) + ntJ.*(Vf*tzJ)
     sJ = @. sqrt(nxJ^2 + nyJ^2 + nzJ^2)
-    @pack! md = nxJ,nyJ,nzJ,sJ
+    # @pack! md = nxJ,nyJ,nzJ,sJ
 
-    return md
+    # return md
+    return MeshData(K=K,VX=VX,VY=VY,VZ=VZ,
+                EToV=EToV,FToF=FToF,
+                x=x,y=y,z=z,xf=xf,yf=yf,zf=zf,
+                mapM=mapM,mapP=mapP,mapB=mapB,
+                rxJ=rxJ,sxJ=sxJ,txJ=txJ,
+                ryJ=ryJ,syJ=syJ,tyJ=tyJ,
+                rzJ=rzJ,szJ=szJ,tzJ=tzJ,J=J,
+                nxJ=nxJ,nyJ=nyJ,nzJ=nzJ,sJ=sJ,
+                xq=xq,yq=yq,zq=zq,wJq=wJq)
 end
 
 end
