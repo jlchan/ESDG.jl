@@ -60,9 +60,9 @@ Base.@kwdef mutable struct RefElemData{Tv}
     wf::Union{Array{Tv,1},Missing} = missing
 
     # plotting nodes
-    rp::Array{Tv,1}
-    sp::Union{Array{Tv,1},Missing} = missing
-    tp::Union{Array{Tv,1},Missing} = missing
+    rp::AbstractArray{Tv,1} # includes ranges
+    sp::Union{AbstractArray{Tv,1},Missing} = missing
+    tp::Union{AbstractArray{Tv,1},Missing} = missing
 
     # reference scaled normals
     nrJ::Array{Tv,1}
@@ -86,6 +86,7 @@ Base.@kwdef mutable struct RefElemData{Tv}
     M::AbstractArray{Tv,2}     # mass matrix
     Pq::AbstractArray{Tv,2}    # quadrature L2 projection matrix
     LIFT::AbstractArray{Tv,2}  # quadrature surface lift matrix
+
 end
 
 Base.@kwdef mutable struct MeshData{Tv}
@@ -154,8 +155,8 @@ function init_reference_interval(N)
     M = Vq'*diagm(wq)*Vq
     Pq = M\(Vq'*diagm(wq))
 
-    rf = [-1;1]
-    nrJ = [-1;1]
+    rf = [-1.0;1.0]
+    nrJ = [-1.0;1.0]
     Vf = vandermonde_1D(N,rf)/VDM
     LIFT = M\(transpose(Vf)) # lift matrix
 
@@ -164,12 +165,13 @@ function init_reference_interval(N)
     Vp = vandermonde_1D(N,rp)/VDM
 
     # return rd
+    @show typeof.((r,VDM,V1,rq,wq,Vq,Dr,M,Pq,rf,nrJ,Vf,LIFT,rp,Vp))
     return RefElemData(r=r,VDM=VDM,V1=V1,
-                    rq=rq,wq=wq,Vq=Vq,
-                    Dr=Dr,M=M,Pq=Pq,
-                    rf=rf,nrJ=nrJ,
-                    Vf=Vf,LIFT=LIFT,
-                    rp=rp,Vp=Vp)
+                        rq=rq,wq=wq,Vq=Vq,
+                        Dr=Dr,M=M,Pq=Pq,
+                        rf=rf,nrJ=nrJ,
+                        Vf=Vf,LIFT=LIFT,
+                        rp=rp,Vp=Vp)
 
 end
 
