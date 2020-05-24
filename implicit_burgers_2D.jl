@@ -18,9 +18,9 @@ using ExplicitJacobians
 
 "Approximation parameters"
 N = 2 # The order of approximation
-K1D = 2
-CFL = 250
-T = .1 # endtime
+K1D = 8
+CFL = 100
+T = 1 # endtime
 
 "Mesh related variables"
 VX, VY, EToV = uniform_tri_mesh(K1D)
@@ -80,17 +80,19 @@ Bx   = abs.(Bx) # create LF penalization term
 @unpack x,y,J = md
 VhTr = kron(speye(K),sparse(transpose(Vh)))
 Vh   = kron(speye(K),sparse(Vh))
+M    = kron(spdiagm(0 => J[1,:]),sparse(M))
 Ph   = kron(spdiagm(0 => 1 ./ J[1,:]), sparse(Ph))
 x,y = (a->a[:]).((x,y))
 
 println("Done building global ops")
 
-jacspy = I+Ax+Ay
-jac = droptol!(jacspy,1e-12)
-jac = droptol!(VhTr*jacspy*Vh,1e-12)
-display(spy(jac .!= 0,ms=2.25))
-# title="nnz = $(nnz(jac))",
-error("d")
+# jacspy = I+Ax+Ay
+# jac = droptol!(jacspy,1e-12)
+# jac = droptol!(VhTr*jacspy*Vh,1e-12)
+# display(spy(jac .!= 0,ms=2.25))
+# # title="nnz = $(nnz(jac))",
+# error("d")
+
 ## define Burgers fluxes
 function F(uL,uR)
         Fx = @. (uL^2 + uL*uR + uR^2)/6
@@ -218,9 +220,9 @@ rp, sp = Basis2DTri.equi_nodes_2D(25)
 Vp = Basis2DTri.vandermonde_2D(N,rp,sp)/VDM
 
 xp,yp,up = (x->Vp*reshape(x,size(Vp,2),K)).((x,y,Q[1]))
-# gr(aspect_ratio=1, legend=false,
-#    markerstrokewidth=0, markersize=2)
-# display(scatter(xp,yp,up,zcolor=up,cam=(3,25),axis=false))
-# scatter(xp,yp,up,zcolor=up,cam=(0,90),border=:none,axis=false)
-contourf(xp,yp,up,lw=1,fill=true,levels=20)
+gr(aspect_ratio=1, legend=false,
+   markerstrokewidth=0, markersize=2)
+display(scatter(xp,yp,up,zcolor=up,cam=(3,25),axis=false))
+scatter(xp,yp,up,zcolor=up,cam=(0,90),border=:none,axis=false)
+# contourf(xp,yp,up,lw=1,fill=true,levels=20)
 # png("sol_unif_mesh.png")
