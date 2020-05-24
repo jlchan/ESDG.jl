@@ -1,7 +1,7 @@
 """
-Module CommonUtils
+Module ExplicitJacobians
 
-General purpose utilities usable by all element types
+Computes explicit Jacobians for ESDG methods
 
 """
 
@@ -13,19 +13,18 @@ using StaticArrays
 using SparseArrays
 using UnPack
 using SetupDG
-# using BlockSparseMatrices
 
 export init_jacobian_matrices
 export hadamard_jacobian,accum_hadamard_jacobian!,hadamard_scale!
-export reduce_jacobian!
 export hadamard_sum, hadamard_sum!
 export banded_matrix_function
 export columnize
 
-# for constructing DG matrices
+# for constructing global DG matrices
 export build_rhs_matrix, assemble_global_SBP_matrices_2D
 
-# use w/reshape to convert from matrices to arrays of arrays
+# use w/reshape to convert from matrices to SArray of arrays
+# used to convert from global solution vector to array of field vectors
 columnize(A) = SVector{size(A,2)}([A[:,i] for i in 1:size(A,2)])
 
 ##  hadamard function matrix utilities

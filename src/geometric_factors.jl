@@ -26,6 +26,10 @@ function geometric_factors(x, y, Dr, Ds)
     return rxJ, sxJ, ryJ, syJ, J
 end
 
+" geometric_factors(x, y, z, Dr, Ds, Dt, Filters=(I,I,I))
+    Computes 3D geometric factors given nodal coordinates (x,y,z) and differentiation matrices (Dr,Ds,Dt)
+    Formulas from 'Metric identities and the DG-SEM on curvilinear meshes' (Kopriva 2006)
+"
 # 3D version. Filters = tuple of filtering matrices.
 function geometric_factors(x, y, z, Dr, Ds, Dt, Filters=(I,I,I))
 
