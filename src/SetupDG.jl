@@ -7,13 +7,13 @@ Setup codes for reference element operators, meshes, geometric terms.
 
 module SetupDG
 
-# non-DG modules
 using LinearAlgebra # for diagm
 using SparseArrays # for sparse, droptol
 using UnPack # for easy setting/getting in mutable structs
 
-# matlab-like modules
 using CommonUtils # for I matrix in geometricFactors
+
+# 1D routines
 using Basis1D
 
 # triangular routines
@@ -29,199 +29,139 @@ import Basis3DHex
 import UniformHexMesh # for face vertices
 
 # initialization of mesh/reference element data
-export init_reference_interval, init_reference_tri
-export init_reference_quad, init_reference_hex
+export init_reference_interval
+export init_reference_tri
+export init_reference_quad
+export init_reference_hex
 export init_mesh
 export MeshData, RefElemData
 
-# TODO: add type annotation to all of these
-
-# mutable struct RefElemData
-#
-#     Nfaces::Int
-#     fv # face vertex tuple list
-#
-#     # probably won't use nodes, but might as well keep them around
-#     r; s; t          # interpolation nodes
-#     rq; sq; tq; wq   # volume quadrature
-#     rf; sf; tf; wf   # surface quadrature
-#     rp; sp; tp       # plotting nodes
-#
-#     nrJ; nsJ; ntJ # reference scaled normals
-#
-#     V1          # (bi/tri)-linear interpolation matrix to high order nodes
-#     VDM         # Vandermonde matrix (implicitly defines Lagrange bases)
-#     Vp          # interpolation matrix to equispaced nodes
-#
-#     Dr; Ds; Dt  # differentiation matrices
-#     Vq; Vf      # quadrature interpolation matrices
-#     M; Pq       # mass matrix, L2 projection matrix
-#     LIFT        # quadrature-based lift matrix
-#
-#     RefElemData() = new() # empty initializer
-# end
-
 # mutable in case we need to modify elements (e.g., interpolate to quadrature)
-Base.@kwdef mutable struct RefElemData
+Base.@kwdef mutable struct RefElemData{Tv}
 
     Nfaces::Union{Int,Missing} = missing
-    fv::Union{Array{Array{Int64,1},1},Missing} = missing # face vertex tuple list - only needed for 1D and up
+    fv::Union{Array{Array{Int,1},1},Missing} = missing # face vertex tuple list - only needed for 1D and up
 
     # interpolation nodes - specify at least r (for 1D)
-    r::Array{Float64,1}
-    s::Union{Array{Float64,1},Missing} = missing
-    t::Union{Array{Float64,1},Missing} = missing
+    r::Array{Tv,1}
+    s::Union{Array{Tv,1},Missing} = missing
+    t::Union{Array{Tv,1},Missing} = missing
 
     # volume quadrature nodes/weights
-    rq::Array{Float64,1}
-    sq::Union{Array{Float64,1},Missing} = missing
-    tq::Union{Array{Float64,1},Missing} = missing
-    wq::Array{Float64,1}
+    rq::Array{Tv,1}
+    sq::Union{Array{Tv,1},Missing} = missing
+    tq::Union{Array{Tv,1},Missing} = missing
+    wq::Array{Tv,1}
 
     # surface quadrature nodes/weights
-    rf::Array{Float64,1}
-    sf::Union{Array{Float64,1},Missing} = missing
-    tf::Union{Array{Float64,1},Missing} = missing
-    wf::Union{Array{Float64,1},Missing} = missing
+    rf::Array{Tv,1}
+    sf::Union{Array{Tv,1},Missing} = missing
+    tf::Union{Array{Tv,1},Missing} = missing
+    wf::Union{Array{Tv,1},Missing} = missing
 
     # plotting nodes
-    rp::Array{Float64,1}
-    sp::Union{Array{Float64,1},Missing} = missing
-    tp::Union{Array{Float64,1},Missing} = missing
+    rp::Array{Tv,1}
+    sp::Union{Array{Tv,1},Missing} = missing
+    tp::Union{Array{Tv,1},Missing} = missing
 
     # reference scaled normals
-    nrJ::Array{Float64,1}
-    nsJ::Union{Array{Float64,1},Missing} = missing
-    ntJ::Union{Array{Float64,1},Missing} = missing
+    nrJ::Array{Tv,1}
+    nsJ::Union{Array{Tv,1},Missing} = missing
+    ntJ::Union{Array{Tv,1},Missing} = missing
 
     # interpolation and setup matrices
-    VDM::Array{Float64,2}   # Vandermonde matrix (implicitly defines Lagrange bases)
-    V1::Array{Float64,2}    # (bi/tri)-linear interpolation matrix to high order nodes
-    Vp::Array{Float64,2}    # interpolation matrix to equispaced nodes
+    VDM::Array{Tv,2}   # Vandermonde matrix (implicitly defines Lagrange bases)
+    V1::Array{Tv,2}    # (bi/tri)-linear interpolation matrix to high order nodes
+    Vp::Array{Tv,2}    # interpolation matrix to equispaced nodes
 
+    # let operators be abstract arrays (dense or sparse)
     # differentiation matrices
-    Dr::Array{Float64,2}
-    Ds::Union{Array{Float64,2},Missing} = missing
-    Dt::Union{Array{Float64,2},Missing} = missing
+    Dr::AbstractArray{Tv,2}
+    Ds::Union{AbstractArray{Tv,2},Missing} = missing
+    Dt::Union{AbstractArray{Tv,2},Missing} = missing
 
     # quadrature based matrices
-    Vq::Array{Float64,2}    # interpolate to volume quad nodes
-    Vf::Array{Float64,2}    # interpolate to surface quad nodes
-    M::Array{Float64,2}     # mass matrix
-    Pq::Array{Float64,2}    # quadrature L2 projection matrix
-    LIFT::Array{Float64,2}  # quadrature surface lift matrix
+    Vq::AbstractArray{Tv,2}    # interpolate to volume quad nodes
+    Vf::AbstractArray{Tv,2}    # interpolate to surface quad nodes
+    M::AbstractArray{Tv,2}     # mass matrix
+    Pq::AbstractArray{Tv,2}    # quadrature L2 projection matrix
+    LIFT::AbstractArray{Tv,2}  # quadrature surface lift matrix
 end
 
-
-# mutable struct MeshData
-#
-#     # vertex coordinates
-#     VX
-#     VY
-#     VZ
-#     EToV # mesh vertex array
-#     FToF # face connectivity
-#     K::Int # num elems
-#
-#     x; y; z # physical points
-#     xf;yf;zf
-#     xq;yq;zq;wJq # phys quad points, Jacobian-scaled weights
-#
-#     mapM; mapP; mapB # connectivity between face nodes
-#
-#     # volume geofacs
-#     rxJ; sxJ; txJ
-#     ryJ; syJ; tyJ
-#     rzJ; szJ; tzJ; J
-#
-#     # surface geofacs
-#     nxJ; nyJ; nzJ; sJ
-#
-#     MeshData() = new() # empty initializer
-# end
-
-Base.@kwdef mutable struct MeshData
+Base.@kwdef mutable struct MeshData{Tv}
 
     # vertex coordinates and mesh connectivity arrays
-    VX::Array{Float64,1}
-    VY::Union{Array{Float64,1},Missing} = missing
-    VZ::Union{Array{Float64,1},Missing} = missing
+    VX::Array{Tv,1}
+    VY::Union{Array{Tv,1},Missing} = missing
+    VZ::Union{Array{Tv,1},Missing} = missing
     EToV::Array{Int,2} # mesh vertex array
     FToF::Array{Int,2} # face connectivity
     K::Int # num elems
 
     # physical points
-    x::Array{Float64,2}
-    y::Union{Array{Float64,2},Missing} = missing
-    z::Union{Array{Float64,2},Missing} = missing
+    x::Array{Tv,2}
+    y::Union{Array{Tv,2},Missing} = missing
+    z::Union{Array{Tv,2},Missing} = missing
 
     # face points
-    xf::Array{Float64,2}
-    yf::Union{Array{Float64,2},Missing} = missing
-    zf::Union{Array{Float64,2},Missing} = missing
+    xf::Array{Tv,2}
+    yf::Union{Array{Tv,2},Missing} = missing
+    zf::Union{Array{Tv,2},Missing} = missing
 
     # phys quad points, Jacobian-scaled weights
-    xq::Array{Float64,2}
-    yq::Union{Array{Float64,2},Missing} = missing
-    zq::Union{Array{Float64,2},Missing} = missing
-    wJq::Array{Float64,2}
+    xq::Array{Tv,2}
+    yq::Union{Array{Tv,2},Missing} = missing
+    zq::Union{Array{Tv,2},Missing} = missing
+    wJq::Array{Tv,2}
 
     # connectivity maps between face nodes
     mapM::Array{Int,2}
     mapP::Array{Int,2}
-    mapB::Array
+    mapB::Array # either Array{1,2}
 
     # volume geofacs
-    rxJ::Array{Float64,2}
-    sxJ::Union{Array{Float64,2},Missing} = missing
-    txJ::Union{Array{Float64,2},Missing} = missing
-    ryJ::Union{Array{Float64,2},Missing} = missing
-    syJ::Union{Array{Float64,2},Missing} = missing
-    tyJ::Union{Array{Float64,2},Missing} = missing
-    rzJ::Union{Array{Float64,2},Missing} = missing
-    szJ::Union{Array{Float64,2},Missing} = missing
-    tzJ::Union{Array{Float64,2},Missing} = missing
-    J::Array{Float64,2}
+    rxJ::Array{Tv,2}
+    sxJ::Union{Array{Tv,2},Missing} = missing
+    txJ::Union{Array{Tv,2},Missing} = missing
+    ryJ::Union{Array{Tv,2},Missing} = missing
+    syJ::Union{Array{Tv,2},Missing} = missing
+    tyJ::Union{Array{Tv,2},Missing} = missing
+    rzJ::Union{Array{Tv,2},Missing} = missing
+    szJ::Union{Array{Tv,2},Missing} = missing
+    tzJ::Union{Array{Tv,2},Missing} = missing
+    J::Array{Tv,2}
 
     # surface geofacs
-    nxJ::Array{Float64,2}
-    nyJ::Union{Array{Float64,2},Missing} = missing
-    nzJ::Union{Array{Float64,2},Missing} = missing
-    sJ::Array{Float64,2}
+    nxJ::Array{Tv,2}
+    nyJ::Union{Array{Tv,2},Missing} = missing
+    nzJ::Union{Array{Tv,2},Missing} = missing
+    sJ::Array{Tv,2}
 
     # MeshData() = new() # empty initializer
 end
 
 function init_reference_interval(N)
 
-    # # initialize a new reference element data struct
-    # rd = RefElemData()
-
     # Construct matrices on reference elements
     r,_ = gauss_lobatto_quad(0,0,N)
     VDM = vandermonde_1D(N, r)
     Dr = grad_vandermonde_1D(N, r)/VDM
-    # @pack! rd = r,VDM,Dr
 
     V1 = vandermonde_1D(1,r)/vandermonde_1D(1,[-1;1])
-    # @pack! rd = V1
 
     rq,wq = gauss_quad(0,0,N+1)
     Vq = vandermonde_1D(N, rq)/VDM
     M = Vq'*diagm(wq)*Vq
     Pq = M\(Vq'*diagm(wq))
-    # @pack! rd = rq,wq,Vq,M,Pq
 
     rf = [-1;1]
     nrJ = [-1;1]
     Vf = vandermonde_1D(N,rf)/VDM
     LIFT = M\(transpose(Vf)) # lift matrix
-    # @pack! rd = rf,nrJ,Vf,LIFT
 
     # plotting nodes
     rp = LinRange(-1,1,50)
     Vp = vandermonde_1D(N,rp)/VDM
-    # @pack! rd = rp,Vp
 
     # return rd
     return RefElemData(r=r,VDM=VDM,V1=V1,
@@ -235,12 +175,8 @@ end
 
 function init_reference_tri(N)
 
-    # # initialize a new reference element data struct
-    # rd = RefElemData()
-
     fv = UniformTriMesh.tri_face_vertices() # set faces for triangle
     Nfaces = length(fv)
-    # @pack! rd = fv, Nfaces
 
     # Construct matrices on reference elements
     r, s = Basis2DTri.nodes_2D(N)
@@ -248,12 +184,10 @@ function init_reference_tri(N)
     Vr, Vs = Basis2DTri.grad_vandermonde_2D(N, r, s)
     Dr = Vr/VDM
     Ds = Vs/VDM
-    # @pack! rd = r,s,VDM,Dr,Ds
 
     # low order interpolation nodes
     r1,s1 = Basis2DTri.nodes_2D(1)
     V1 = Basis2DTri.vandermonde_2D(1,r,s)/Basis2DTri.vandermonde_2D(1,r1,s1)
-    # @pack! rd = V1
 
     #Nodes on faces, and face node coordinate
     r1D, w1D = gauss_quad(0,0,N)
@@ -265,25 +199,19 @@ function init_reference_tri(N)
     wf = vec(repeat(w1D,3,1));
     nrJ = [z; e; -e]
     nsJ = [-e; e; z]
-    # @pack! rd = rf,sf,wf,nrJ,nsJ
 
     rq,sq,wq = Basis2DTri.quad_nodes_2D(2*N)
     Vq = Basis2DTri.vandermonde_2D(N,rq,sq)/VDM
     M = transpose(Vq)*diagm(wq)*Vq
     Pq = M\(transpose(Vq)*diagm(wq))
-    # @pack! rd = rq,sq,wq,Vq,M,Pq
 
     Vf = Basis2DTri.vandermonde_2D(N,rf,sf)/VDM # interpolates from nodes to face nodes
     LIFT = M\(transpose(Vf)*diagm(wf)) # lift matrix used in rhs evaluation
-    # @pack! rd = Vf,LIFT
 
     # plotting nodes
     rp, sp = Basis2DTri.equi_nodes_2D(15)
     Vp = Basis2DTri.vandermonde_2D(N,rp,sp)/VDM
-    # @pack! rd = rp,sp,Vp
 
-    # return rd
-    # @show typeof.((r,rq,rf,nrJ,Vf,LIFT,rp))
     return RefElemData(Nfaces=Nfaces,fv=fv,
                     r=r,s=s,
                     VDM=VDM,V1=V1,
@@ -296,16 +224,14 @@ function init_reference_tri(N)
                     rp=rp,sp=sp,Vp=Vp)
 end
 
-# default to full quadrature nodes
-# if quad_nodes_1D=tuple of (r1D,w1D) is supplied, use those nodes
+"
+init_reference_quad(N,quad_nodes_1D = gauss_quad(0,0,N))
+ if quad_nodes_1D=tuple of (r1D,w1D) is supplied, uses those nodes instead
+"
 function init_reference_quad(N,quad_nodes_1D = gauss_quad(0,0,N))
-
-    # # initialize a new reference element data struct
-    # rd = RefElemData()
 
     fv = UniformQuadMesh.quad_face_vertices() # set faces for triangle
     Nfaces = length(fv)
-    # @pack! rd = fv, Nfaces
 
     # Construct matrices on reference elements
     r, s = Basis2DQuad.nodes_2D(N)
@@ -313,17 +239,12 @@ function init_reference_quad(N,quad_nodes_1D = gauss_quad(0,0,N))
     Vr, Vs = Basis2DQuad.grad_vandermonde_2D(N, r, s)
     Dr = Vr/VDM
     Ds = Vs/VDM
-    # @pack! rd = r,s,VDM
 
     # low order interpolation nodes
     r1,s1 = Basis2DQuad.nodes_2D(1)
     V1 = Basis2DQuad.vandermonde_2D(1,r,s)/Basis2DQuad.vandermonde_2D(1,r1,s1)
-    # @pack! rd = V1
 
     #Nodes on faces, and face node coordinate
-    # r1D,w1D = quad_nodes_1D(0,0,N)
-    # r1D,w1D = gauss_lobatto_quad(0,0,N)
-    # r1D,w1D = gauss_quad(0,0,N)
     r1D,w1D = quad_nodes_1D
     Nfp = length(r1D)
     e = ones(size(r1D))
@@ -333,7 +254,6 @@ function init_reference_quad(N,quad_nodes_1D = gauss_quad(0,0,N))
     wf = vec(repeat(w1D,Nfaces,1));
     nrJ = [z; e; z; -e]
     nsJ = [-e; z; e; z]
-    # @pack! rd = rf,sf,wf,nrJ,nsJ
 
     # quadrature nodes - build from 1D nodes.
     # can also use "rq,sq,wq = Basis2DQuad.quad_nodes_2D(2*N)"
@@ -343,7 +263,6 @@ function init_reference_quad(N,quad_nodes_1D = gauss_quad(0,0,N))
     Vq = Basis2DQuad.vandermonde_2D(N,rq,sq)/VDM
     M = transpose(Vq)*diagm(wq)*Vq
     Pq = M\(transpose(Vq)*diagm(wq))
-    # @pack! rd = rq,sq,wq,Vq,M,Pq
 
     Vf = Basis2DQuad.vandermonde_2D(N,rf,sf)/VDM # interpolates from nodes to face nodes
     LIFT = M\(transpose(Vf)*diagm(wf)) # lift matrix used in rhs evaluation
@@ -353,12 +272,10 @@ function init_reference_quad(N,quad_nodes_1D = gauss_quad(0,0,N))
     Ds = droptol!(sparse(Ds), 1e-10)
     Vf = droptol!(sparse(Vf),1e-10)
     LIFT = droptol!(sparse(LIFT),1e-10)
-    # @pack! rd = Dr,Ds,Vf,LIFT
 
     # plotting nodes
     rp, sp = Basis2DQuad.equi_nodes_2D(15)
     Vp = Basis2DQuad.vandermonde_2D(N,rp,sp)/VDM
-    # @pack! rd = rp,sp,Vp
 
     # return rd
     return RefElemData(Nfaces=Nfaces,fv=fv,
