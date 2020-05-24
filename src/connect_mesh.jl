@@ -1,9 +1,16 @@
 """
 connect_mesh(EToV,fv)
 
-Initialize quad elements connectivity matrices, element to element and
-element to face connectivity. Uses fv = array of indices of face vertices
+Initialize element connectivity matrices, element to element and
+element to face connectivity. Works on general element types, so long as
 
+        fv = array of arrays containing (unordered) indices of face vertices
+
+is provided.
+
+# Examples
+- connect_mesh(EToV,UniformTriMesh.fv())
+- connect_mesh(EToV,[[1,2],[2,3],[3,1]])
 ```jldoctest
 ```
 """
