@@ -283,7 +283,7 @@ function init_reference_tri(N)
     # @pack! rd = rp,sp,Vp
 
     # return rd
-    @show typeof.((r,rq,rf,nrJ,Vf,LIFT,rp))
+    # @show typeof.((r,rq,rf,nrJ,Vf,LIFT,rp))
     return RefElemData(Nfaces=Nfaces,fv=fv,
                     r=r,s=s,
                     VDM=VDM,V1=V1,
