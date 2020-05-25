@@ -125,8 +125,8 @@ function init_reference_interval(N)
     Pq = M\(Vq'*diagm(wq))
     @pack! rd = rq,wq,Vq,M,Pq
 
-    rf = [-1;1]
-    nrJ = [-1;1]
+    rf = [-1.0;1.0]
+    nrJ = [-1.0;1.0]
     Vf = vandermonde_1D(N,rf)/VDM
     LIFT = M\(Vf') # lift matrix
     @pack! rd = rf,nrJ,Vf,LIFT
