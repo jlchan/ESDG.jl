@@ -47,7 +47,7 @@ end
 
 
 function tri_face_vertices()
-        return [[1,2],[2,3],[3,1]]
+        return [1,2],[2,3],[3,1]
 end
 
 
