@@ -45,9 +45,13 @@ mutable struct RefElemData
     Vp      # interp to equispaced nodes
 
     r; s; t         # interpolation nodes
-    rq; sq; tq; wq  # volume quadrature
-    rf; sf; tf; wf  # surface quadrature
+    rq; sq; tq      # volume quadrature
+    rf; sf; tf;     # surface quadrature
     rp; sp; tp      # plotting nodes
+
+    # quadrature weights
+    wq::Array{Float64,1}
+    wf::Array{Float64,1}
 
     nrJ; nsJ; ntJ # reference normals
 
@@ -69,14 +73,14 @@ end
 
 mutable struct MeshData
 
-    VX; VY; VZ # vertex coordinates
-    K        # num elems
-    EToV # mesh vertex array
-    FToF # face connectivity
+    VX; VY; VZ              # vertex coordinates
+    K                       # num elems
+    EToV                    # mesh vertex array
+    FToF::Array{Int64,2}    # face connectivity
 
-    x; y; z # physical points
+    x; y; z                 # physical points
     xf; yf; zf
-    xq; yq; zq; wJq # phys quad points, Jacobian-scaled weights
+    xq; yq; zq; wJq         # phys quad points, Jacobian-scaled weights
 
     # annotate types for geofacs + connectivity arrays for speed in RHS evals
 
