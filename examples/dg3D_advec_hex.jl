@@ -10,7 +10,6 @@ using SparseArrays
 # "User defined modules"
 using CommonUtils
 using Basis1D
-using Basis2DQuad
 using Basis3DHex
 using UniformHexMesh
 
@@ -19,10 +18,10 @@ using UnPack
 
 N = 3
 K1D = 8
-CFL = .5
-T = 1 # endtime
+CFL = .75
+T = .25 # endtime
 
-VX,VY,VZ,EToV = uniform_hex_mesh(2*K1D,K1D,K1D)
+VX,VY,VZ,EToV = uniform_hex_mesh(K1D,K1D,K1D)
 
 rd = init_reference_hex(N,gauss_quad(0,0,N))
 md = init_mesh((VX,VY,VZ),EToV,rd)
