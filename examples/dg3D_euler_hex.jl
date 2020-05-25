@@ -1,7 +1,6 @@
-# "Packages"
-using Revise # reduce need for recompile
+# TODO: FIX. Currently broken
+
 using Plots
-using Documenter
 using LinearAlgebra
 using SparseArrays
 using UnPack
@@ -10,7 +9,6 @@ using UnPack
 push!(LOAD_PATH, "./src")
 using CommonUtils
 using Basis1D
-using Basis2DQuad # face trace space
 using Basis3DHex
 using UniformHexMesh
 
@@ -106,10 +104,10 @@ wJq = diagm(wq)*J # recompute for curved
 # rhoex(x,y,z,t) = @. 2 + .5*sin(pi*(x-t))
 rhoex(x,y,z,t) = 2 .+ .1 * rand(size(x)...) # for testing EC
 rho = rhoex(xq,yq,zq,0)
-u = ones(size(x))
+u = zeros(size(x))
 v = ones(size(x))
 w = zeros(size(x)) # non EC if i turn on v or w = 1
-p = ones(size(x))
+p = ones(size(x)) + .1*rand(size(x)...)
 
 Q = primitive_to_conservative(rho,u,v,w,p)
 
