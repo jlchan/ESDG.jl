@@ -61,7 +61,7 @@ N_P = 8;    # The order of approximation in polynomial dimension
 Np_P = N_P+1;
 Np_F = 16;    # The order of approximation in Fourier dimension
 CFL  = 0.2;
-T    = 1.0;  # End time
+T    = 3.0;  # End time
 
 "Time integration Parameters"
 rk4a,rk4b,rk4c = rk45_coeffs()
@@ -124,7 +124,7 @@ function rhs(u,ops,compute_rhstest)
 
     # Flux differencing in y direction
     for k = 1:size(uh,1)
-        ∇fh[k,:] += 2*pi*w[k]*Qsh.*[fS(uL,uR) for uL in uh[k,:], uR in uh[k,:]]*ones(size(uh,2),1)
+        ∇fh[k,:] += 2*pi*[wq;0;0][k]*Qsh.*[fS(uL,uR) for uL in uh[k,:], uR in uh[k,:]]*ones(size(uh,2),1)
     end
 
     # Spatial term
