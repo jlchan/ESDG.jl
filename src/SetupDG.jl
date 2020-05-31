@@ -110,7 +110,7 @@ mutable struct MeshData
     MeshData() = new() # empty initializer
 end
 
-function init_reference_interval(N)
+function init_reference_interval(N;Nq=N+1)
     # initialize a new reference element data struct
     rd = RefElemData()
 
@@ -123,7 +123,7 @@ function init_reference_interval(N)
     V1 = vandermonde_1D(1,r)/vandermonde_1D(1,[-1;1])
     @pack! rd = V1
 
-    rq,wq = gauss_quad(0,0,N+1)
+    rq,wq = gauss_quad(0,0,Nq)
     Vq = vandermonde_1D(N, rq)/VDM
     M = Vq'*diagm(wq)*Vq
     Pq = M\(Vq'*diagm(wq))
@@ -189,7 +189,7 @@ function init_reference_tri(N)
     @pack! rd = Vf,LIFT
 
     # plotting nodes
-    rp, sp = Basis2DTri.equi_nodes_2D(15)
+    rp, sp = Basis2DTri.equi_nodes_2D(10)
     Vp = Basis2DTri.vandermonde_2D(N,rp,sp)/VDM
     @pack! rd = rp,sp,Vp
 
