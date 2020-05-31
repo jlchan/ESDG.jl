@@ -113,13 +113,13 @@ function sparse_hadamard_sum(Qhe,ops,vgeo,flux_fun)
     rhsQe = ntuple(x->zeros(nrows),nfields)
     rhsi = zeros(nfields) # prealloc a small array
     for i = 1:nrows
-        Qi = (x->x[i]).(Qhe)
-        Qlogi = (x->x[i]).(Qlog)
+        Qi = getindex.(Qhe,i)
+        Qlogi = getindex.(Qlog,i)
 
         fill!(rhsi,0) # reset rhsi before accumulation
         for j = Qnzids[i] # nonzero row entries
-            Qj = (x->x[j]).(Qhe)
-            Qlogj = (x->x[j]).(Qlog)
+            Qj = getindex.(Qhe,j)
+            Qlogj = getindex.(Qlog,j)
 
             # assumes affine meshes here!
             Fx,Fy = flux_fun(Qi,Qj,Qlogi,Qlogj)
@@ -155,7 +155,7 @@ function rhs(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
     Qh = (rho, rhou./rho, rhov./rho, beta) # redefine Q = (rho,u,v,β)
 
     # compute face values
-    QM = (x->x[Nq+1:end,:]).(Qh)
+    QM = (x->x[Nq+1:Nh,:]).(Qh)
     QP = (x->x[mapP]).(QM)
 
     # simple lax friedrichs dissipation
@@ -171,8 +171,8 @@ function rhs(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
 
     # compute volume contributions using flux differencing
     for e = 1:K
-        Qhe = tuple((x->x[:,e]).(Qh)...) # force tuples for fast splatting
-        vgeo_local = (x->x[1,e]).((rxJ,sxJ,ryJ,syJ)) # assumes affine elements for now
+        Qhe = tuple(getindex.(Qh,:,e)...) # force tuples for fast splatting
+        vgeo_local = getindex.((rxJ,sxJ,ryJ,syJ),1,e) # assumes affine elements for now
 
         Qops = (Qrh_sparse,Qsh_sparse,Qrsids)
         QFe = sparse_hadamard_sum(Qhe,Qops,vgeo_local,flux_fun)

@@ -17,9 +17,9 @@ using EntropyStableEuler
 
 "Approximation parameters"
 N = 2 # The order of approximation
-K1D = 12
+K1D = 3
 CFL = 2 # CFL goes up to 2.5ish
-T = 1.0 # endtime
+T = .01 #1.0 # endtime
 
 "Mesh related variables"
 Kx = convert(Int,4/3*K1D)
@@ -105,13 +105,13 @@ function dense_hadamard_sum(Qhe,ops,vgeo,flux_fun)
     QF = ntuple(x->zeros(n),nfields)
     QFi = zeros(nfields)
     for i = 1:n
-        Qi = (x->x[i]).(Qhe)
-        Qlogi = (x->x[i]).(Qlog)
+        Qi = getindex.(Qhe,i)
+        Qlogi = getindex.(Qlog,i)
 
         fill!(QFi,0)
         for j = 1:n
-            Qj = (x->x[j]).(Qhe)
-            Qlogj = (x->x[j]).(Qlog)
+            Qj = getindex.(Qhe,j)
+            Qlogj = getindex.(Qlog,j)
 
             Fx,Fy = flux_fun(Qi,Qj,Qlogi,Qlogj)
             @. QFi += QxTr[j,i]*Fx + QyTr[j,i]*Fy
@@ -145,15 +145,15 @@ function rhs(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
     Qh = (rho, rhou./rho, rhov./rho, beta) # redefine Q = (rho,u,v,β)
 
     # compute face values
-    QM = (x->x[Nq+1:end,:]).(Qh)
+    QM = (x->x[Nq+1:Nh,:]).(Qh)
     QP = (x->x[mapP]).(QM)
 
     # simple lax friedrichs dissipation
-    Uf =  (x->x[Nq+1:end,:]).(Uh)
+    Uf =  (x->x[Nq+1:Nh,:]).(Uh)
     (rhoM,rhouM,rhovM,EM) = Uf
     rhoUM_n = @. (rhouM*nxJ + rhovM*nyJ)/sJ
     lam = abs.(wavespeed(rhoM,rhoUM_n,EM))
-    LFc = .5*max.(lam,lam[mapP]).*sJ
+    LFc = .25*max.(lam,lam[mapP]).*sJ
 
     fSx,fSy = flux_fun(QM,QP)
     normal_flux(fx,fy,u) = fx.*nxJ + fy.*nyJ - LFc.*(u[mapP]-u)
@@ -162,8 +162,8 @@ function rhs(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
 
     # compute volume contributions using flux differencing
     for e = 1:K
-        Qhe = tuple((x->x[:,e]).(Qh)...) # force tuples for fast splatting
-        vgeo_local = (x->x[1,e]).((rxJ,sxJ,ryJ,syJ)) # assumes affine elements for now
+        Qhe = tuple(getindex.(Qh,:,e)...) # force tuples for fast splatting
+        vgeo_local = getindex.((rxJ,sxJ,ryJ,syJ),1,e) # assumes affine elements for now
 
         Qops = (Qrh,Qsh)
         QFe = dense_hadamard_sum(Qhe,Qops,vgeo_local,flux_fun)
