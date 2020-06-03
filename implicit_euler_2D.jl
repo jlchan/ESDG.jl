@@ -20,8 +20,8 @@ using EntropyStableEuler
 
 "Approximation parameters"
 N = 1 # The order of approximation
-K1D = 8
-CFL = 10
+K1D = 4
+CFL = 1.0
 T = 1 # endtime
 
 "Mesh related variables"
@@ -40,79 +40,120 @@ mapPB = build_periodic_boundary_maps!(xf,yf,LX,LY,Nfaces*K,mapM,mapP,mapB,FToF)
 mapP[mapB] = mapPB
 
 ## construct hybridized SBP operators
-@unpack M,Dr,Ds,Vq,Pq,Vf,wf,nrJ,nsJ = rd
-Qr = Pq'*M*Dr*Pq
-Qs = Pq'*M*Ds*Pq
-Ef = Vf*Pq
-Br = diagm(wf.*nrJ)
-Bs = diagm(wf.*nsJ)
-Qrh = .5*[Qr-Qr' Ef'*Br;
-        -Br*Ef  Br]
-Qsh = .5*[Qs-Qs' Ef'*Bs;
-        -Bs*Ef  Bs]
 
-Vh = [Vq;Vf]
-Ph = M\transpose(Vh)
-VhP = Vh*Pq
+function build_SBP_ops(rd::RefElemData)
 
-# make sparse skew symmetric versions of the operators"
-Qrhskew = .5*(Qrh-transpose(Qrh))
-Qshskew = .5*(Qsh-transpose(Qsh))
+        @unpack M,Dr,Ds,Vq,Pq,Vf,wf,nrJ,nsJ = rd
+        Qr = Pq'*M*Dr*Pq
+        Qs = Pq'*M*Ds*Pq
+        Ef = Vf*Pq
+        Br = diagm(wf.*nrJ)
+        Bs = diagm(wf.*nsJ)
+        Qrh = .5*[Qr-Qr' Ef'*Br;
+                -Br*Ef  Br]
+        Qsh = .5*[Qs-Qs' Ef'*Bs;
+                -Bs*Ef  Bs]
+
+        Vh = [Vq;Vf]
+        Ph = M\transpose(Vh)
+        VhP = Vh*Pq
+
+        # make skew symmetric versions of the operators"
+        Qrhskew = .5*(Qrh-transpose(Qrh))
+        Qshskew = .5*(Qsh-transpose(Qsh))
+
+        return Qrhskew,Qshskew,Vh,Ph,VhP,M
+end
 
 # interpolate geofacs to both vol/surf nodes
+@unpack Vq,Vf = rd
 @unpack rxJ, sxJ, ryJ, syJ = md
-rxJ, sxJ, ryJ, syJ = (x->Vh*x).((rxJ, sxJ, ryJ, syJ)) # interp to hybridized points
+rxJ, sxJ, ryJ, syJ = (x->[Vq;Vf]*x).((rxJ, sxJ, ryJ, syJ)) # interp to hybridized points
 
 ## global matrices
 
-Ax,Ay,Bx,By,B = assemble_global_SBP_matrices_2D(rd,md,Qrhskew,Qshskew)
+function build_global_ops(rd::RefElemData,md::MeshData)
 
-# add off-diagonal couplings
-Ax += Bx
-Ay += By
+        Qrhskew,Qshskew,Vh,Ph,VhP,M = build_SBP_ops(rd)
 
-Ax *= 2 # for flux differencing
-Ay *= 2
+        Ax,Ay,Bx,By,B = assemble_global_SBP_matrices_2D(rd,md,Qrhskew,Qshskew)
 
-AxTr = sparse(transpose(Ax))
-AyTr = sparse(transpose(Ay))
-Bx   = abs.(Bx) # create LF penalization term
+        # add off-diagonal couplings
+        Ax += Bx
+        Ay += By
 
-# globalize operators and nodes
-@unpack x,y,J = md
-Vq   = kron(speye(K),sparse(Vq))
-Pq   = kron(speye(K),sparse(Pq))
-VhTr = kron(speye(K),sparse(transpose(Vh)))
-M    = kron(spdiagm(0 => J[1,:]),sparse(M))
-Vh   = kron(speye(K),sparse(Vh))
-Ph   = kron(spdiagm(0 => 1 ./ J[1,:]), sparse(Ph))
-VhP  = Vh*Pq
-x,y = (a->a[:]).((x,y))
-wJq = vec(diagm(rd.wq)*(rd.Vq*J))
+        Ax *= 2 # for flux differencing
+        Ay *= 2
 
-println("Done building global ops")
+        AxTr = sparse(transpose(Ax))
+        AyTr = sparse(transpose(Ay))
+        Bx   = abs.(Bx) # create LF penalization term
 
-## define Euler fluxes
-function F(UL,UR)
-    # convert to flux variables
-    function UtoQ(U)
-        rho,rhou,rhov,E = U
-        beta = betafun(U...)
-        return (rho,rhou./rho,rhov./rho,beta),(log.(rho),log.(beta))
-    end
-    QL,QlogL = UtoQ(UL)
-    QR,QlogR = UtoQ(UR)
-    Fx,Fy = euler_fluxes(QL...,QR...,QlogL...,QlogR...)
-    return SVector{length(Fx)}(Fx...),SVector{length(Fy)}(Fy...)
+        # globalize operators and nodes
+        @unpack x,y,J = md
+        VhTr = kron(speye(K),sparse(transpose(Vh)))
+        Vh   = kron(speye(K),sparse(Vh))
+        M    = kron(spdiagm(0 => J[1,:]),sparse(M))
+        Vq   = kron(speye(K),sparse(rd.Vq))
+        Pq   = kron(speye(K),sparse(rd.Pq))
+        Ph   = kron(spdiagm(0 => 1 ./ J[1,:]), sparse(Ph))
+        x,y = (a->a[:]).((x,y))
+
+        return Ax,Ay,AxTr,AyTr,Bx,B,VhTr,Vh,M,Ph,Vq,Pq,x,y
 end
 
-# extract coordinate fluxes
-Fx = (uL,uR)->F(uL,uR)[1]
-Fy = (uL,uR)->F(uL,uR)[2]
+Ax,Ay,AxTr,AyTr,Bx,B,VhTr,Vh,M,Ph,Vq,Pq,x,y =
+        build_global_ops(rd::RefElemData,md::MeshData)
+println("Done building global ops")
+
+# jacspy = I+Ax+Ay
+# jac = droptol!(jacspy,1e-12)
+# jac = droptol!(VhTr*jacspy*Vh,1e-12)
+# display(spy(jac .!= 0,ms=2.25))
+# # title="nnz = $(nnz(jac))",
+# error("d")
+
+## define Euler fluxes for 2D
+# convert to flux variables
+
+# function F(UL,UR)
+#     QL,QlogL = UtoQ(UL)
+#     QR,QlogR = UtoQ(UR)
+#     Fx,Fy = euler_fluxes(QL...,QR...,QlogL...,QlogR...)
+#     # @show Fx,Fy
+#     return SVector{4}(Fx),SVector{4}(Fy)
+#     # return SVector{4}(Fx...),SVector{4}(Fy...)
+# end
+# # extract coordinate fluxes
+# Fx = (uL,uR)->F(uL,uR)[1]
+# Fy = (uL,uR)->F(uL,uR)[2]
+
+function initFxns()
+        function UtoQ(U)
+            rho,rhou,rhov,E = U
+            beta = betafun(U[1],U[2],U[3],U[4])
+            # beta = betafun(U...)
+            return (rho,rhou./rho,rhov./rho,beta),(log.(rho),log.(beta))
+        end
+        function Fx(UL,UR)
+            QL,QlogL = UtoQ(UL)
+            QR,QlogR = UtoQ(UR)
+            Fx = euler_flux_x(QL...,QR...,QlogL...,QlogR...)
+            return SVector{4}(Fx)
+        end
+        function Fy(UL,UR)
+            QL,QlogL = UtoQ(UL)
+            QR,QlogR = UtoQ(UR)
+            Fy = euler_flux_y(QL...,QR...,QlogL...,QlogR...)
+            return SVector{4}(Fy)
+        end
+        return Fx,Fy
+end
+Fx,Fy = initFxns()
 
 # AD for jacobians
-dFx(uL,uR) = ForwardDiff.jacobian(uR->F(uL,uR)[1],uR)
-dFy(uL,uR) = ForwardDiff.jacobian(uR->F(uL,uR)[2],uR)
+dFx(uL,uR) = ForwardDiff.jacobian(uR->Fx(uL,uR),uR)
+dFy(uL,uR) = ForwardDiff.jacobian(uR->Fy(uL,uR),uR)
 
 ## dissipative flux
 
@@ -132,26 +173,28 @@ end
 dLF(uL,uR,args...) = ForwardDiff.jacobian(uR->LF(uL,uR,args...),uR)
 
 ## mappings between conservative and entropy variables and vice vera
-dVdU_fun(U) = ForwardDiff.jacobian(U->SVector(v_ufun(U...)...),U)
-dUdV_fun(V) = ForwardDiff.jacobian(V->SVector(u_vfun(V...)...),V)
+# dVdU_fun(U) = ForwardDiff.jacobian(U->SVector(v_ufun(U...)...),U)
+# dUdV_fun(V) = ForwardDiff.jacobian(V->SVector(u_vfun(V...)...),V)
+dVdU_fun(U) = dVdU_explicit(U)
+dUdV_fun(V) = dUdV_explicit(V)
 
 ## nonlinear solver setup - uses closure to initialize arrays and other things
-function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData)
+function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData,funs,dt)
 
         # set up normals for use in penalty term
-        @unpack Vq,Vf = rd
         @unpack nxJ,nyJ,sJ = md
-        Nq,Np = size(Vq)
-        Nf    = size(Vf,1)
+        Nq,Np = size(rd.Vq)
+        Nf    = size(rd.Vf,1)
         Nh    = Nq + Nf
         fids  = Nq + 1:Nh
-        nxh,nyh = ntuple(x->zeros(Nh,K),2)
-        nxh[fids,:] = @. nxJ/sJ
-        nyh[fids,:] = @. nyJ/sJ
-        nxh,nyh = vec.((nxh,nyh))
+        nxhmat,nyhmat = ntuple(x->zeros(Nh,K),2)
+        nxhmat[fids,:] = @. nxJ/sJ
+        nyhmat[fids,:] = @. nyJ/sJ
+        nxh,nyh = vec.((nxhmat,nyhmat))
 
         # get lengths of arrays
-        Ax,Ay,AxTr,AyTr,Bx,Vh,Vq,Pq = ops
+        Ax,Ay,AxTr,AyTr,Bx,B,M,Vh,Ph,Vq,Pq = ops
+        Fx,Fy,dFx,dFy,LF,dLF = funs
 
         Nfields = length(Q)
         Id_fld  = speye(Nfields) # for Kronecker expansion to large matrices - fix later with lazy evals
@@ -160,7 +203,6 @@ function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData)
         VhP_fld = droptol!(kron(Id_fld,VhP),1e-12)
         Vh_fld  = droptol!(kron(Id_fld,Vh),1e-12)
         M_fld   = droptol!(kron(Id_fld,M),1e-12)
-        Ph_fld  = droptol!(kron(Id_fld,Ph),1e-12)
 
         # init jacobian matrix (no need for entropy projection since we'll zero it out later)
         dFdU_h = repeat(I+Ax+Ay,Nfields,Nfields)
@@ -168,12 +210,14 @@ function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData)
         function midpt_newton_iter!(Qnew, Qprev) # for Burgers' eqn specifically
 
                 # perform entropy projection
-                Uq    = (x->Vq*x).(SVector{Nfields}(Qnew))
-                VUh   = SVector{Nfields}((x->VhP*x).(v_ufun(Uq...)))
-                Qh    = SVector{Nfields}(u_vfun(VUh...))
+                Uq    = SVector((x->Vq*x).(Qnew))
+                # VUh   = SVector((x->VhP*x).(v_ufun(Uq...)))
+                # Qh    = SVector(u_vfun(VUh...))
+                VUh   = SVector((x->VhP*x).(v_ufun(Uq[1],Uq[2],Uq[3],Uq[4]))) # why is this type stable and splatting isn't?
+                Qh    = SVector(u_vfun(VUh[1],VUh[2],VUh[3],VUh[4]))
 
                 ftmp  = hadamard_sum(AxTr,Fx,Qh) + hadamard_sum(AyTr,Fy,Qh) + hadamard_sum(B,LF,Qh,nxh,nyh)
-                f     = Ph_fld*vcat(ftmp...)
+                f     = vcat((x->Ph*x).(ftmp)...)
                 res   = vcat(Qnew...) + .5*dt*f - vcat(Qprev...)
 
                 fill!(dFdU_h.nzval,0.0)
@@ -186,62 +230,70 @@ function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData)
 
                 # solve and update
                 dQ   = (M_fld + .5*dt*dFdU)\(M_fld*res)
-                # TODO: compute damping factor
-                Qnew = vcat(Qnew...) - dQ                            # convert Qnew to column vector for update
-                Qnew = columnize(reshape(Qnew,length(Q[1]),Nfields)) # convert back to array of arrays
+                dQnorm = norm(dQ)/sum(norm.(Qprev))
+                Qtmp = reshape(vcat(Qnew...) - dQ, length(Q[1]), Nfields)   # convert Qnew to column vector for update
 
-                return Qnew,norm(dQ)
+                # return columnize(reshape(Qtmp,length(Q[1]),Nfields)),dQnorm # convert back to array of arrays
+                for fld = 1:length(Qnew)
+                        Qnew[fld] .= Qtmp[:,fld]
+                end
+                return dQnorm
         end
         return midpt_newton_iter!
 end
 
-# pack inputs together
-ops = (Ax,Ay,copy(transpose(Ax)),copy(transpose(Ay)),Bx,Vh,Vq,Pq)
-
 ## init condition, rhs
 
-rho = @. 2 + (abs(x)<.5)
-rho = @. 2 + exp(-10*(x^2+y^2)) #ones(size(x))
+@unpack xq,yq = md
+rho = vec(rd.Pq*(@. 1 + .1*(abs(xq)<.5).*(abs(yq)<.5)))
+# rho = @. 2 + exp(-10*(x^2+y^2)) #ones(size(x))
 rhou = zeros(size(x))
 rhov = zeros(size(x))
-E = rho.^1.4
-Q = @SVector [rho,rhou,rhov,E]
-# rho,u,v,p = vortex(x,y,0)
-# Q = SVector{4}(primitive_to_conservative(rho,u,v,p))
+E = @. rho^1.4
+Q = [rho,rhou,rhov,E]
+Qnew = copy.(Q)
 
+# convert to tuple
+Q = tuple(Q...)
+Qnew = tuple(Qnew...)
 
 # set time-stepping constants
 CN = (N+1)*(N+2)/2  # estimated trace constant
-h = minimum(J)
+h = minimum(md.J[1,:]./md.sJ[1,:]) # ratio of J/Jf = O(h^d/h^d-1)
 dt = CFL * 2 * h / CN
 Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
 # initialize jacobian
-midpt_newton_iter! = init_newton_fxn(Q,ops,rd,md)
+ops = (Ax,Ay,copy(transpose(Ax)),copy(transpose(Ay)),Bx,B,M,Vh,Ph,Vq,Pq) # pack inputs together
+funs = (Fx,Fy,dFx,dFy,LF,dLF)
+midpt_newton_iter! = init_newton_fxn(Q,ops,rd,md,funs,dt)
 
 ## newton time iteration
+
+bcopy!(utarget,u) = utarget .= u
 
 it_count = zeros(Nsteps)
 energy   = zeros(Nsteps)
 for i = 1:Nsteps
-        global Q
+        # global Q,Qnew
 
-        Qnew = copy(Q)  # copy / over-write at each timestep
+        bcopy!.(Qnew,Q)  # copy / over-write at each timestep
         iter = 0
         dQnorm = 1
         while dQnorm > 1e-12
-                Qnew,dQnorm = midpt_newton_iter!(Qnew,Q)
+                # Qnew,dQnorm = midpt_newton_iter!(Qnew,Q)
+                dQnorm = midpt_newton_iter!(Qnew,Q)
                 iter += 1
                 if iter > 15
-                        println("iter = $iter")
+                        println("iter = $iter, ||dQ|| = $dQnorm")
                 end
         end
         it_count[i] = iter
-        Q = @. 2*Qnew - Q # implicit midpoint rule
+        bcopy!.(Q, @. 2*Qnew - Q) # implicit midpoint rule
 
         Qq = (x->Vq*x).(Q)
-        energy[i] = sum(wJq.*Sfun(Qq...))
+        energy[i] = sum(vec(md.wJq).*Sfun(Qq...))
 
         if i%5==0 || i==Nsteps
                 println("Number of time steps $i out of $Nsteps")

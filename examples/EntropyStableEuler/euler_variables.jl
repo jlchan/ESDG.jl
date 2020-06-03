@@ -1,6 +1,5 @@
 """
 Euler functions for entropy variables and more
-
 """
 
 # 1D wavespeed for use in interface fluxes
@@ -13,17 +12,10 @@ Unorm(U) = sum((x->x.^2).(U))
 
 "primitive pressure to conservative vars"
 function primitive_to_conservative(rho,U,p)
-    rhoU = (x->rho.*x).(U) 
+    rhoU = (x->rho.*x).(U)
     unorm = Unorm(U)
     E = (@. p/(γ-1) + .5*rho*unorm)
     return (rho,rhoU...,E)
-end
-
-function primitive_to_conservative(rho,u,v,p)
-    return primitive_to_conservative(rho,(u,v),p)
-end
-function primitive_to_conservative(rho,u,v,w,p)
-    return primitive_to_conservative(rho,(u,v,w),p)
 end
 
 "inverse temperature (used in entropy conservative fluxes)"
@@ -31,58 +23,101 @@ function betafun(rho,rhoU,E)
     p = pfun(rho,rhoU,E)
     return (@. rho/(2*p))
 end
-function betafun(rho,rhou,rhov,E)
-    return betafun(rho,(rhou,rhov),E)
-end
-function betafun(rho,rhou,rhov,rhow,E)
-    return betafun(rho,(rhou,rhov,rhow),E)
-end
 
 "pressure as a function of ρ,u,v,E"
-function pfun(rho,rhoU,E,rhounorm)
-    return @. (γ-1)*(E-.5*rhounorm)
-end
 function pfun(rho,rhoU,E)
     rhounorm = Unorm(rhoU)./rho
-    return pfun(rho,rhoU,E,rhounorm)
-end
-
-# hack
-function pressure_fun(rho,rhou,rhov,E)
-    rhounorm = @. (rhou^2+rhov^2)/rho
     return @. (γ-1)*(E-.5*rhounorm)
-    #return pfun(rho,(rhou,rhov),E)
+end
+function pfun(rho,rhou,rhov,E)
+    return pfun(rho,(rhou,rhov),E)
 end
 
+# # hack
+# function pressure_fun(rho,rhou,rhov,E)
+#     rhounorm = @. (rhou^2+rhov^2)/rho
+#     return @. (γ-1)*(E-.5*rhounorm)
+# end
 
-"specific energy as a function of conservative variables"
-function rhoefun(rho,rhoU,E)
+# specific energy as a function of conservative variables
+function rhoe_ufun(rho,rhoU,E)
     rhoUnorm = Unorm(rhoU)
     return (@. E - .5*rhoUnorm/rho)
 end
 
-"Thermodynamic entropy as a function of conservative variables"
+# Thermodynamic entropy as a function of conservative variables"
 function sfun(rho,rhoU,E)
-    rhoe = rhoefun(rho,rhoU,E)
+    rhoe = rhoe_ufun(rho,rhoU,E)
     return (@. log((γ-1)*rhoe/(rho^γ)))
 end
 
-"Mathematical entropy"
+# Mathematical entropy
+function Sfun(rho,rhou,E)
+    return -rho.*sfun(rho,(rhou,zeros(size(rhou))),E)
+end
+
+# Entropy variables as functions of conservative vars
+function v_ufun(rho,rhoU,E)
+    ρe = rhoe_ufun(rho,rhoU,E)
+    sU = sfun(rho,rhoU,E)
+    v1 = (@. (-E + ρe*(γ + 1 - sU))/ρe)
+    #vU = [@. rhoUi/ρe for rhoUi in rhoU]
+    vU = (x->x./ρe).(rhoU)
+    vE = (@. (-rho)/ρe)
+    return (v1,vU...,vE)
+end
+
+# entropy as function of entropy variables"
+function s_vfun(v1,vU,vE)
+    vUnorm = Unorm(vU)
+    return (@. γ - v1 + vUnorm/(2*vE))
+end
+
+# specific energy as function of entropy variables"
+function rhoe_vfun(v1,vU,vE)
+    s = s_vfun(v1,vU,vE)
+    return (@. ((γ-1)/((-vE)^γ))^(1/(γ-1)) * exp(-s/(γ-1)))
+end
+
+# Conservative vars as functions of entropy variables"
+function u_vfun(v1,vU,vE)
+    rhoeV = rhoe_vfun(v1,vU,vE)
+    vUnorm = Unorm(vU)
+    rho   = (@. rhoeV*(-vE))
+    #rhoU  = [@. rhoeV*(vUi) for vUi in vU]
+    rhoU = (x->rhoeV.*x).(vU)
+    E     = (@. rhoeV*(1-vUnorm/(2*vE)))
+    return (rho,rhoU...,E)
+end
+
+
+# specialize in 1D
+function v_ufun1D(rho,rhou,E)
+    v1,v2,v3,v4 = v_ufun(rho,rhou,zeros(size(rhou)),E)
+    return v1,v2,v4
+end
+
+
+function primitive_to_conservative(rho,u,v,p)
+    return primitive_to_conservative(rho,(u,v),p)
+end
+function primitive_to_conservative(rho,u,v,w,p)
+    return primitive_to_conservative(rho,(u,v,w),p)
+end
+function betafun1D(rho,rhou,E)
+    return betafun(rho,rhou,zeros(size(rhou)),E)
+end
+function betafun(rho,rhou,rhov,E)
+    return betafun(rho,(rhou,rhov),E)
+end
+# function betafun(rho,rhou,rhov,rhow,E)
+#     return betafun(rho,(rhou,rhov,rhow),E)
+# end
 function Sfun(rho,rhou,rhov,E)
     return -rho.*sfun(rho,(rhou,rhov),E)
 end
 function Sfun(rho,rhou,rhov,rhow,E)
     return -rho.*sfun(rho,(rhou,rhov,rhow),E)
-end
-
-"Entropy variables as functions of conservative vars"
-function v_ufun(rho,rhoU,E)
-    ρe = rhoefun(rho,rhoU,E)
-    sU = sfun(rho,rhoU,E)
-    v1 = (@. (-E + ρe*(γ + 1 - sU))/ρe)
-    vU = [@. rhoUi/ρe for rhoUi in rhoU]
-    vE = (@. (-rho)/ρe)
-    return (v1,vU...,vE)
 end
 function v_ufun(rho,rhou,rhov,E)
     return v_ufun(rho,(rhou,rhov),E)
@@ -90,27 +125,10 @@ end
 function v_ufun(rho,rhou,rhov,rhow,E)
     return v_ufun(rho,(rhou,rhov,rhow),E)
 end
-
-"entropy as function of entropy variables"
-function s_vfun(v1,vU,vE)
-    vUnorm = Unorm(vU)
-    return (@. γ - v1 + vUnorm/(2*vE))
-end
-
-"specific energy as function of entropy variables"
-function rhoe_vfun(v1,vU,vE)
-    s = s_vfun(v1,vU,vE)
-    return (@. ((γ-1)/((-vE)^γ))^(1/(γ-1)) * exp(-s/(γ-1)))
-end
-
-"Conservative vars as functions of entropy variables"
-function u_vfun(v1,vU,vE)
-    rhoeV = rhoe_vfun(v1,vU,vE)
-    vUnorm = Unorm(vU)
-    rho   = (@. rhoeV*(-vE))
-    rhoU  = [@. rhoeV*(vUi) for vUi in vU]
-    E     = (@. rhoeV*(1-vUnorm/(2*vE)))
-    return (rho,rhoU...,E)
+# more expensive but since 1D should be OK
+function u_vfun1D(v1,v2,v3)
+    u1,u2,u3,u4 = u_vfun(v1,v2,zeros(size(v2)),v3)
+    return u1,u2,u4
 end
 function u_vfun(v1,v2,v3,v4)
     return u_vfun(v1,(v2,v3),v4)
@@ -118,3 +136,63 @@ end
 function u_vfun(v1,v2,v3,v4,v5)
     return u_vfun(v1,(v2,v3,v4),v5)
 end
+
+function dUdV_explicit(V)
+
+    rho,rhou,rhov,E = u_vfun(V[1],V[2],V[3],V[4])
+    u,v = (x->x./rho).((rhou,rhov))
+    p = pfun(rho,rhou,rhov,E)
+    a2 = γ*p/rho
+    H = a2/(γ-1) + (u^2+v^2)/2
+
+    dUdV = @SMatrix [rho  rhou       rhov        E;
+                    rhou rhou*u + p rhou*v      rhou*H;
+                    rhov rhov*u     rhov*v + p  rhov*H;
+                    E    rhou*H     rhov*H      rho*H^2-a2*p/(γ-1)]
+
+    return dUdV*(1/(γ-1))
+end
+
+function dVdU_explicit(U)
+    #rhoev = rhoe_vfun(V[1],(V[2],V[3]),V[4])
+    rhoe = rhoe_ufun(U[1],(U[2],U[3]),U[4])
+    V = v_ufun(U[1],(U[2],U[3]),U[4])
+    k = .5*(V[2]^2+V[3]^2)/V[4]
+
+    dVdU = @SMatrix [γ+k^2     k*V[2]          k*V[3]         V[4]*(k+1);
+                    k*V[2]     V[2]^2-V[4]     V[2]*V[3]     V[2]*V[4];
+                    k*V[3]     V[2]*V[3]      V[3]^2-V[4]    V[3]*V[4]
+                    V[4]*(k+1) V[2]*V[4]       V[3]*V[4]      V[4]^2]
+    return -dVdU/(rhoe*V[4])
+end
+
+# function dUdV_explicit(V)
+#     dUdV = zeros(4,4)
+#     rho,rhou,rhov,E = u_vfun(V...)
+#     u,v = (x->x./rho).((rhou,rhov))
+#     p = pfun(rho,rhou,rhov,E)
+#     a2 = γ*p/rho
+#     H = a2/(γ-1) + (u^2+v^2)/2
+#
+#     dUdV[1,1] = rho
+#     dUdV[1,2] = rhou
+#     dUdV[1,3] = rhov
+#     dUdV[1,4] = E
+#
+#     dUdV[2,1] = rhou
+#     dUdV[2,2] = rhou*u + p
+#     dUdV[2,3] = rhou*v
+#     dUdV[2,4] = rhou*H
+#
+#     dUdV[3,1] = rhov
+#     dUdV[3,2] = rhov*u
+#     dUdV[3,3] = rhov*v + p
+#     dUdV[3,4] = rhov*H
+#
+#     dUdV[4,1] = E
+#     dUdV[4,2] = rhou*H
+#     dUdV[4,3] = rhov*H
+#     dUdV[4,4] = rho*H^2 - a2*p/(γ-1)
+#
+#     return dUdV*(1/(γ-1))
+# end

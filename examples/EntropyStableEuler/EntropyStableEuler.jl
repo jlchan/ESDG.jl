@@ -5,12 +5,17 @@ Includes general math tools
 """
 
 module EntropyStableEuler
+using StaticArrays
 
 const γ=1.4
 export γ
 export logmean
-export u_vfun, v_ufun, betafun, Sfun,sfun,pressure_fun
+export Unorm
+export dVdU_explicit, dUdV_explicit
+export u_vfun, v_ufun, betafun, Sfun,sfun, pfun #,pressure_fun
+export u_vfun1D, v_ufun1D, betafun1D # specialization
 export euler_fluxes, wavespeed
+export euler_flux_x,euler_flux_y # separate x,y flux for faster implicit assembly using ForwardDiff
 export vortex, primitive_to_conservative
 
 include("./logmean.jl")

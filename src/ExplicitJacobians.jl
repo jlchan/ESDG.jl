@@ -113,10 +113,10 @@ end
 # =============== for residual evaluation ================
 
 # use ATr for faster col access of sparse CSC matrices
-function hadamard_sum(ATr::SparseMatrixCSC,F::Fxn,u,Fargs ...) where Fxn
+function hadamard_sum(ATr::SparseMatrixCSC{Tv,Ti},F::Fxn,u,Fargs ...) where {Tv,Ti,Fxn}
     m, n = size(ATr)
     # rhs = [zeros(n) for i in eachindex(u)]
-    rhs = MVector{length(u)}([zeros(n) for i in eachindex(u)]) # probably faster w/StaticArrays?
+    rhs = MVector{length(u)}([zeros(Tv,n) for i in eachindex(u)]) # probably faster w/StaticArrays?
     hadamard_sum!(rhs,ATr,F,u,Fargs...)
     return rhs
 end
@@ -131,12 +131,12 @@ function hadamard_sum!(rhs, ATr::SparseMatrixCSC, F::Fxn,
     for i = 1:n
         ui = getindex.(u,i)
         val_i = zeros(length(u))
-        Farg_i = getindex.(Fargs,i)
+        #fill!(val_i,0.0)
         for j in nzrange(ATr, i) # column-major: extracts ith col of ATr = ith row of A
             col = cols[j]
             Aij = vals[j]
             uj = getindex.(u,col)
-            val_i += Aij * F(ui,uj,Farg_i...,getindex.(Fargs,col)...)
+            val_i += Aij * F(ui,uj,getindex.(Fargs,i)...,getindex.(Fargs,col)...)
         end
         setindex!.(rhs,val_i,i)
     end
