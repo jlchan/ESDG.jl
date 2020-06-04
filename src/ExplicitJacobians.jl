@@ -1,7 +1,10 @@
 """
 Module ExplicitJacobians
 
-Computes explicit Jacobians for ESDG methods
+Computes explicit Jacobians for ESDG methods.
+
+    - Flux function F is not mutating for reuse
+    - Flux function Jacobian dF! must be mutating
 
 """
 
@@ -17,7 +20,7 @@ using SetupDG
 export init_jacobian_matrices
 export hadamard_jacobian,accum_hadamard_jacobian!,hadamard_scale!
 export hadamard_sum, hadamard_sum!
-export banded_matrix_function
+export banded_matrix_function,banded_matrix_function!
 export columnize
 
 # for constructing global DG matrices
@@ -86,11 +89,10 @@ function accum_hadamard_jacobian!(A, Q, dF::Fxn, U, Fargs ...; scale = -1) where
     num_pts = size(Q,1)
     ids(m) = (1:num_pts) .+ (m-1)*num_pts
     for m = 1:Nfields, n = 1:Nfields
-        Asum = vec(sum(A[ids(m),ids(n)],dims=1))
+        Asum = sum(A[ids(m),ids(n)],dims=1)
         for i = 1:length(Asum)
-            A[ids(m)[i],ids(n)[i]] += Asum[i]
+            A[ids(m)[i],ids(n)[i]] += scale*Asum[i]
         end
-        # A[ids(m),ids(n)] += spdiagm(0=>scale * Asum)
     end
 end
 
@@ -111,6 +113,21 @@ function banded_matrix_function(mat_fun::Fxn, U, Fargs ...) where Fxn
         end
     end
     return A
+end
+
+function banded_matrix_function!(A::SparseMatrixCSC,mat_fun::Fxn, U, Fargs ...) where Fxn
+    Nfields = length(U)
+    num_pts = length(U[1])
+
+    ids(m) = (1:num_pts) .+ (m-1)*num_pts
+    Block(m,n) = CartesianIndices((ids(m),ids(n)))
+
+    for i = 1:num_pts
+        mat_i = mat_fun(getindex.(U,i),getindex.(Fargs,i)...)
+        for n = 1:Nfields, m = 1:Nfields
+            A[Block(m,n)[i,i]] = mat_i[m,n] # TODO: replace with fast sparse constructor
+        end
+    end
 end
 
 # =============== for residual evaluation ================

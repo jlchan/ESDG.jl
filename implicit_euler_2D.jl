@@ -19,8 +19,8 @@ push!(LOAD_PATH, "./examples/EntropyStableEuler")
 using EntropyStableEuler
 
 "Approximation parameters"
-N = 1 # The order of approximation
-K1D = 4
+N = 2 # The order of approximation
+K1D = 8
 CFL = 1
 T = 1 # endtime
 
@@ -112,49 +112,52 @@ println("Done building global ops")
 # display(spy(jac .!= 0,ms=2.25))
 # # title="nnz = $(nnz(jac))",
 # error("d")
+## EC and dissipative fluxes
 
-## define Euler fluxes for 2D
-# convert to flux variables
-
-# function F(UL,UR)
-#     QL,QlogL = UtoQ(UL)
-#     QR,QlogR = UtoQ(UR)
-#     Fx,Fy = euler_fluxes(QL...,QR...,QlogL...,QlogR...)
-#     # @show Fx,Fy
-#     return SVector{4}(Fx),SVector{4}(Fy)
-#     # return SVector{4}(Fx...),SVector{4}(Fy...)
+# function euler_flux_x(rhoL,uL,vL,betaL,rhoR,uR,vR,betaR,
+#                       rhologL,betalogL,rhologR,betalogR)
+#
+#     rholog = logmean.(rhoL,rhoR,rhologL,rhologR)
+#     betalog = logmean.(betaL,betaR,betalogL,betalogR)
+#
+#     # arithmetic avgs
+#     rhoavg = (@. .5*(rhoL+rhoR))
+#     uavg   = (@. .5*(uL+uR))
+#     vavg   = (@. .5*(vL+vR))
+#
+#     unorm = (@. uL*uR + vL*vR)
+#     pa    = (@. rhoavg/(betaL+betaR))
+#     f4aux = (@. rholog/(2*(γ-1)*betalog) + pa + .5*rholog*unorm)
+#
+#     FxS1 = (@. rholog*uavg)
+#     FxS2 = (@. FxS1*uavg + pa)
+#     FxS3 = (@. FxS1*vavg)
+#     FxS4 = (@. f4aux*uavg)
+#
+#     return (FxS1,FxS2,FxS3,FxS4)
 # end
-# # extract coordinate fluxes
-# Fx = (uL,uR)->F(uL,uR)[1]
-# Fy = (uL,uR)->F(uL,uR)[2]
-
-function initFxns()
-        function UtoQ(rho,rhou,rhov,E)
-            beta = betafun(rho,rhou,rhov,E)
-            # beta = betafun(U...)
-            return (rho,rhou./rho,rhov./rho,beta),(log.(rho),log.(beta))
-        end
-        function Fx(UL,UR)
-            QL,QlogL = UtoQ(UL...)
-            QR,QlogR = UtoQ(UR...)
-            Fx1,Fx2,Fx3,Fx4 = euler_flux_x(QL...,QR...,QlogL...,QlogR...)
-            return SVector{4}(Fx1,Fx2,Fx3,Fx4)
-        end
-        function Fy(UL,UR)
-            QL,QlogL = UtoQ(UL...)
-            QR,QlogR = UtoQ(UR...)
-            Fy1,Fy2,Fy3,Fy4 = euler_flux_y(QL...,QR...,QlogL...,QlogR...)
-            return SVector{4}(Fy1,Fy2,Fy3,Fy4)
-        end
-        return Fx,Fy
-end
-Fx,Fy = initFxns()
-
-# AD for jacobians
-dFx(uL,uR) = ForwardDiff.jacobian(uR->Fx(uL,uR),uR)
-dFy(uL,uR) = ForwardDiff.jacobian(uR->Fy(uL,uR),uR)
-
-## dissipative flux
+#
+# function euler_flux_y(rhoL,uL,vL,betaL,rhoR,uR,vR,betaR,
+#                       rhologL,betalogL,rhologR,betalogR)
+#
+#     rholog = logmean.(rhoL,rhoR,rhologL,rhologR)
+#     betalog = logmean.(betaL,betaR,betalogL,betalogR)
+#
+#     # arithmetic avgs
+#     rhoavg = (@. .5*(rhoL+rhoR))
+#     uavg   = (@. .5*(uL+uR))
+#     vavg   = (@. .5*(vL+vR))
+#
+#     unorm = (@. uL*uR + vL*vR)
+#     pa    = (@. rhoavg/(betaL+betaR))
+#     f4aux = (@. rholog/(2*(γ-1)*betalog) + pa + .5*rholog*unorm)
+#
+#     FyS1 = (@. rholog*vavg)
+#     FyS2 = (@. FyS1*uavg)
+#     FyS3 = (@. FyS1*vavg + pa)
+#     FyS4 = (@. f4aux*vavg)
+#     return (FyS1,FyS2,FyS3,FyS4)
+# end
 
 function LF(uL,uR,nxL,nyL,nxR,nyR)
         rhoL,rhouL,rhovL,EL = uL
@@ -164,11 +167,56 @@ function LF(uL,uR,nxL,nyL,nxR,nyR)
         ny = nyL #.5*(nyL+nyR)
         rhoUnL = @. rhouL*nx + rhovL*ny
         rhoUnR = @. rhouR*nx + rhovR*ny
-        cL   = @. wavespeed(rhoL,rhoUnL,EL)
-        cR   = @. wavespeed(rhoR,rhoUnR,ER)
-        lam  = @. max(abs(cL),abs(cR))
+        c2L   = @. wavespeed2(rhoL,rhoUnL,EL)
+        c2R   = @. wavespeed2(rhoR,rhoUnR,ER)
+        lam  = @. max(sqrt(abs(c2L)),sqrt(abs(c2R)))
         return (@. lam*(uL-uR))
 end
+
+
+function initFxns()
+        function UtoQ(rho,rhou,rhov,E)
+            beta = betafun(rho,rhou,rhov,E)
+            # beta = betafun(U...)
+            return (rho,rhou./rho,rhov./rho,beta),(log.(rho),log.(beta))
+        end
+        function Fx(UL,UR)
+            QL,QlogL = UtoQ(UL[1],UL[2],UL[3],UL[4])
+            QR,QlogR = UtoQ(UR[1],UR[2],UR[3],UR[4])
+            Fx1,Fx2,Fx3,Fx4 = euler_flux_x(QL...,QR...,QlogL...,QlogR...)
+            return SVector{4}(Fx1,Fx2,Fx3,Fx4)
+        end
+        function Fy(UL,UR)
+            QL,QlogL = UtoQ(UL[1],UL[2],UL[3],UL[4])
+            QR,QlogR = UtoQ(UR[1],UR[2],UR[3],UR[4])
+            Fy1,Fy2,Fy3,Fy4 = euler_flux_y(QL...,QR...,QlogL...,QlogR...)
+            return SVector{4}(Fy1,Fy2,Fy3,Fy4)
+        end
+        return Fx,Fy
+end
+Fx,Fy = initFxns()
+
+# AD for jacobians
+function initJacobian(F::Fxn,uR) where Fxn
+    cfg = ForwardDiff.JacobianConfig(F, uR, ForwardDiff.Chunk{4}())
+    out = zeros(eltype(uR),length(uR),length(uR))
+
+    function df!(out,uL,uR,args...)
+        ForwardDiff.jacobian!(out, uR->F(uL,uR,args...), uR, cfg)
+        return out
+    end
+    function df(uL,uR,args...)
+        ForwardDiff.jacobian!(out, uR->F(uL,uR,args...), uR, cfg)
+        return out
+    end
+    return df,df!
+end
+
+dFx_cfg,_ = initJacobian(Fx,SVector{4}(zeros(Float64,4)...))
+dFy_cfg,_ = initJacobian(Fy,SVector{4}(zeros(Float64,4)...))
+dLF_cfg,_ = initJacobian(LF,SVector{4}(zeros(Float64,4)...))
+dFx(uL,uR) = ForwardDiff.jacobian(uR->Fx(uL,uR),uR)
+dFy(uL,uR) = ForwardDiff.jacobian(uR->Fy(uL,uR),uR)
 dLF(uL,uR,args...) = ForwardDiff.jacobian(uR->LF(uL,uR,args...),uR)
 
 ## mappings between conservative and entropy variables and vice vera
@@ -205,7 +253,8 @@ function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData,funs,dt)
 
         # init jacobian matrix (no need for entropy projection since we'll zero it out later)
         dFdU_h = repeat(I+Ax+Ay,Nfields,Nfields)
-
+        dVdU_q = repeat(speye(size(Vq,1)),Nfields,Nfields)
+        dUdV_h = repeat(speye(size(Vh,1)),Nfields,Nfields)
         function midpt_newton_iter!(Qnew, Qprev) # for Burgers' eqn specifically
 
                 # perform entropy projection
@@ -222,10 +271,10 @@ function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData,funs,dt)
                 fill!(dFdU_h.nzval,0.0)
                 accum_hadamard_jacobian!(dFdU_h, Ax, dFx, Qh)
                 accum_hadamard_jacobian!(dFdU_h, Ay, dFy, Qh)
-                accum_hadamard_jacobian!(dFdU_h, B,  dLF, Qh, nxh,nyh) # flux term involving normals
-                dVdU_h = banded_matrix_function(dVdU_fun, Uq)
-                dUdV_h = banded_matrix_function(dUdV_fun, VUh)
-                dFdU   = droptol!(transpose(Vh_fld)*(dFdU_h*dUdV_h*VhP_fld*dVdU_h*Vq_fld),1e-12)
+                accum_hadamard_jacobian!(dFdU_h, B,  dLF, Qh, nxh, nyh) # flux term involving normals
+                banded_matrix_function!(dVdU_q,dVdU_fun, Uq)
+                banded_matrix_function!(dUdV_h,dUdV_fun, VUh)
+                dFdU   = droptol!(transpose(Vh_fld)*(dFdU_h*dUdV_h*VhP_fld*dVdU_q*Vq_fld),1e-12)
 
                 # solve and update
                 dQ   = (M_fld + .5*dt*dFdU)\(M_fld*res)
@@ -265,7 +314,8 @@ dt = T/Nsteps
 
 # initialize jacobian
 ops = (Ax,Ay,copy(transpose(Ax)),copy(transpose(Ay)),Bx,B,M,Vh,Ph,Vq,Pq) # pack inputs together
-funs = (Fx,Fy,dFx,dFy,LF,dLF)
+#funs = (Fx,Fy,dFx,dFy,LF,dLF)
+funs = (Fx,Fy,dFx_cfg,dFy_cfg,LF,dLF_cfg)
 midpt_newton_iter! = init_newton_fxn(Q,ops,rd,md,funs,dt)
 
 ## newton time iteration

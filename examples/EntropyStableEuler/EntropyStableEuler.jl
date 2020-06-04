@@ -12,7 +12,7 @@ export γ
 export logmean
 export u_vfun, v_ufun, betafun, pfun
 export dVdU_explicit, dUdV_explicit
-export wavespeed
+export wavespeed, wavespeed2 # c and c^2
 export Sfun, sfun # math/physical entropies
 export u_vfun1D, v_ufun1D, betafun1D # specialization
 export euler_fluxes, euler_flux_x,euler_flux_y # separate x,y flux for faster implicit assembly using ForwardDiff

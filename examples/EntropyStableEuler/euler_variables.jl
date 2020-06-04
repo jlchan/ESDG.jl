@@ -7,6 +7,10 @@ function wavespeed(rho,rhou,E)
     cvel = (@. sqrt(γ*pfun(rho,rhou,E)/rho))
     return (@. sqrt(abs(rhou/rho)) + cvel)
 end
+function wavespeed2(rho,rhou,E)
+    cvel = (@. γ*pfun(rho,rhou,E)/rho)
+    return (@. abs(rhou/rho)) + cvel
+end
 
 "vector_norm(U): computes norm of vector-valued variables
 Example: vector_norm((randn(10),randn(10)))"
