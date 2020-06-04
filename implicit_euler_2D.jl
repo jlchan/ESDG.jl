@@ -22,7 +22,7 @@ using EntropyStableEuler
 N = 2 # The order of approximation
 K1D = 8
 CFL = 1
-T = 1 # endtime
+T = .1 # endtime
 
 "Mesh related variables"
 VX, VY, EToV = uniform_tri_mesh(K1D)
@@ -169,7 +169,7 @@ function LF(uL,uR,nxL,nyL,nxR,nyR)
         rhoUnR = @. rhouR*nx + rhovR*ny
         c2L   = @. wavespeed2(rhoL,rhoUnL,EL)
         c2R   = @. wavespeed2(rhoR,rhoUnR,ER)
-        lam  = @. max(sqrt(abs(c2L)),sqrt(abs(c2R)))
+        lam  = @. (sqrt(c2L+c2R)) # easy for ForwardDiff to deal with
         return (@. lam*(uL-uR))
 end
 
