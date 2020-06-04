@@ -78,20 +78,58 @@ function hadamard_scale!(A::SparseMatrixCSC, Q::SparseMatrixCSC, F::Fxn,
     end
 end
 
+# # compute and accumulate contributions from a Jacobian function dF
+# function accum_hadamard_jacobian!(A, Q, dF::Fxn, U, Fargs ...; scale = -1) where Fxn
+#
+#     # scale A_ij = Q_ij * F(ui,uj)
+#     hadamard_scale!(A,Q,dF,U,Fargs...)
+#
+#     # add diagonal entry assuming Q = - Q^T
+#     Nfields = length(U)
+#     num_pts = size(Q,1)
+#     ids(m) = (1:num_pts) .+ (m-1)*num_pts
+#     for m = 1:Nfields, n = 1:Nfields
+#         Asum = sum(A[ids(m),ids(n)],dims=1)
+#         for i = 1:length(Asum)
+#             A[ids(m)[i],ids(n)[i]] += scale*Asum[i]
+#         end
+#     end
+# end
 # compute and accumulate contributions from a Jacobian function dF
 function accum_hadamard_jacobian!(A, Q, dF::Fxn, U, Fargs ...; scale = -1) where Fxn
 
-    # scale A_ij = Q_ij * F(ui,uj)
-    hadamard_scale!(A,Q,dF,U,Fargs...)
-
-    # add diagonal entry assuming Q = - Q^T
     Nfields = length(U)
     num_pts = size(Q,1)
     ids(m) = (1:num_pts) .+ (m-1)*num_pts
-    for m = 1:Nfields, n = 1:Nfields
-        Asum = sum(A[ids(m),ids(n)],dims=1)
-        for i = 1:length(Asum)
-            A[ids(m)[i],ids(n)[i]] += scale*Asum[i]
+    Block(m,n) = CartesianIndices((ids(m),ids(n)))
+
+    rows = rowvals(Q)
+    vals = nonzeros(Q)
+
+    # loop over columns and non-zero indices in Q
+    dFaccum = zeros(eltype(Q),Nfields,Nfields) # accumulator for sum(Q.*dF,1) over jth column
+    for j = 1:num_pts
+        Uj = getindex.(U,j)
+
+        fill!(dFaccum,zero(eltype(Q)))
+        for id in nzrange(Q,j)
+            i = rows[id]
+            Qij = vals[id]
+            Ui = getindex.(U,i)
+
+            dFij = dF(Ui,Uj,getindex.(Fargs,i)...,getindex.(Fargs,j)...)
+
+            Aij = A[Block(m,n)]
+            for n = 1:length(U), m=1:length(U)
+                dFijQ = dFij[m,n]*Qij
+                A[Block(m,n)[i,j]] += dFijQ
+                dFaccum[m,n] += dFijQ # accumulate column sums on-the-fly
+            end
+        end
+
+        # add diagonal entry for each block
+        for n=1:Nfields, m=1:Nfields
+            A[Block(m,n)[j,j]] += scale*dFaccum[m,n]
         end
     end
 end
