@@ -181,6 +181,8 @@ function initFxns()
             return (rho,rhou./rho,rhov./rho,beta),(log.(rho),log.(beta))
         end
         function Fx(UL,UR)
+        # ForwardDiff behaves better without splatting -
+        # see https://github.com/JuliaDiff/ForwardDiff.jl/issues/89
             QL,QlogL = UtoQ(UL[1],UL[2],UL[3],UL[4])
             QR,QlogR = UtoQ(UR[1],UR[2],UR[3],UR[4])
             Fx1,Fx2,Fx3,Fx4 = euler_flux_x(QL...,QR...,QlogL...,QlogR...)
