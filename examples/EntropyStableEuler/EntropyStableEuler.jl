@@ -10,12 +10,12 @@ using StaticArrays
 const γ=1.4
 export γ
 export logmean
-export Unorm
+export u_vfun, v_ufun, betafun, pfun
 export dVdU_explicit, dUdV_explicit
-export u_vfun, v_ufun, betafun, Sfun,sfun, pfun #,pressure_fun
+export wavespeed
+export Sfun, sfun # math/physical entropies
 export u_vfun1D, v_ufun1D, betafun1D # specialization
-export euler_fluxes, wavespeed
-export euler_flux_x,euler_flux_y # separate x,y flux for faster implicit assembly using ForwardDiff
+export euler_fluxes, euler_flux_x,euler_flux_y # separate x,y flux for faster implicit assembly using ForwardDiff
 export vortex, primitive_to_conservative
 
 include("./logmean.jl")

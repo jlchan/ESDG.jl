@@ -86,8 +86,11 @@ function accum_hadamard_jacobian!(A, Q, dF::Fxn, U, Fargs ...; scale = -1) where
     num_pts = size(Q,1)
     ids(m) = (1:num_pts) .+ (m-1)*num_pts
     for m = 1:Nfields, n = 1:Nfields
-        Asum = sum(A[ids(m),ids(n)],dims=1)
-        A[ids(m),ids(n)] += spdiagm(0=>scale * vec(Asum))
+        Asum = vec(sum(A[ids(m),ids(n)],dims=1))
+        for i = 1:length(Asum)
+            A[ids(m)[i],ids(n)[i]] += Asum[i]
+        end
+        # A[ids(m),ids(n)] += spdiagm(0=>scale * Asum)
     end
 end
 

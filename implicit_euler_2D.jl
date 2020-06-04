@@ -21,7 +21,7 @@ using EntropyStableEuler
 "Approximation parameters"
 N = 1 # The order of approximation
 K1D = 4
-CFL = 1.0
+CFL = 1
 T = 1 # endtime
 
 "Mesh related variables"
@@ -129,23 +129,22 @@ println("Done building global ops")
 # Fy = (uL,uR)->F(uL,uR)[2]
 
 function initFxns()
-        function UtoQ(U)
-            rho,rhou,rhov,E = U
-            beta = betafun(U[1],U[2],U[3],U[4])
+        function UtoQ(rho,rhou,rhov,E)
+            beta = betafun(rho,rhou,rhov,E)
             # beta = betafun(U...)
             return (rho,rhou./rho,rhov./rho,beta),(log.(rho),log.(beta))
         end
         function Fx(UL,UR)
-            QL,QlogL = UtoQ(UL)
-            QR,QlogR = UtoQ(UR)
-            Fx = euler_flux_x(QL...,QR...,QlogL...,QlogR...)
-            return SVector{4}(Fx)
+            QL,QlogL = UtoQ(UL...)
+            QR,QlogR = UtoQ(UR...)
+            Fx1,Fx2,Fx3,Fx4 = euler_flux_x(QL...,QR...,QlogL...,QlogR...)
+            return SVector{4}(Fx1,Fx2,Fx3,Fx4)
         end
         function Fy(UL,UR)
-            QL,QlogL = UtoQ(UL)
-            QR,QlogR = UtoQ(UR)
-            Fy = euler_flux_y(QL...,QR...,QlogL...,QlogR...)
-            return SVector{4}(Fy)
+            QL,QlogL = UtoQ(UL...)
+            QR,QlogR = UtoQ(UR...)
+            Fy1,Fy2,Fy3,Fy4 = euler_flux_y(QL...,QR...,QlogL...,QlogR...)
+            return SVector{4}(Fy1,Fy2,Fy3,Fy4)
         end
         return Fx,Fy
 end
@@ -175,8 +174,8 @@ dLF(uL,uR,args...) = ForwardDiff.jacobian(uR->LF(uL,uR,args...),uR)
 ## mappings between conservative and entropy variables and vice vera
 # dVdU_fun(U) = ForwardDiff.jacobian(U->SVector(v_ufun(U...)...),U)
 # dUdV_fun(V) = ForwardDiff.jacobian(V->SVector(u_vfun(V...)...),V)
-dVdU_fun(U) = dVdU_explicit(U)
-dUdV_fun(V) = dUdV_explicit(V)
+dVdU_fun(U) = dVdU_explicit(U...)
+dUdV_fun(V) = dUdV_explicit(V...)
 
 ## nonlinear solver setup - uses closure to initialize arrays and other things
 function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData,funs,dt)

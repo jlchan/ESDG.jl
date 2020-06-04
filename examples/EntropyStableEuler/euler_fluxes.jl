@@ -14,7 +14,7 @@ function euler_fluxes(UL,UR)
     return euler_fluxes(UL,UR,logL,logR)
 end
 
-# dispatches to 2D/3D
+# dispatches to 2D
 function euler_fluxes(UL,UR,logL,logR)
     return euler_fluxes(UL...,UR...,logL...,logR...)
 end
