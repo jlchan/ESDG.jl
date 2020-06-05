@@ -5,11 +5,7 @@ Euler functions for entropy variables and more
 "wavespeed(rho,rhou,E): 1D wavespeed for use in interface fluxes"
 function wavespeed(rho,rhou,E)
     cvel = (@. sqrt(γ*pfun(rho,rhou,E)/rho))
-    return (@. sqrt(abs(rhou/rho)) + cvel)
-end
-function wavespeed2(rho,rhou,E)
-    cvel = (@. γ*pfun(rho,rhou,E)/rho)
-    return (@. abs(rhou/rho)) + cvel
+    return (@. abs(rhou/rho) + cvel)
 end
 
 "vector_norm(U): computes norm of vector-valued variables

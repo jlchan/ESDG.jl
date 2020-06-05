@@ -20,9 +20,9 @@ using EntropyStableEuler
 
 "Approximation parameters"
 N = 2 # The order of approximation
-K1D = 8
+K1D = 16
 CFL = 1
-T = .1 # endtime
+T = 1 # endtime
 
 "Mesh related variables"
 VX, VY, EToV = uniform_tri_mesh(K1D)
@@ -114,51 +114,6 @@ println("Done building global ops")
 # error("d")
 ## EC and dissipative fluxes
 
-# function euler_flux_x(rhoL,uL,vL,betaL,rhoR,uR,vR,betaR,
-#                       rhologL,betalogL,rhologR,betalogR)
-#
-#     rholog = logmean.(rhoL,rhoR,rhologL,rhologR)
-#     betalog = logmean.(betaL,betaR,betalogL,betalogR)
-#
-#     # arithmetic avgs
-#     rhoavg = (@. .5*(rhoL+rhoR))
-#     uavg   = (@. .5*(uL+uR))
-#     vavg   = (@. .5*(vL+vR))
-#
-#     unorm = (@. uL*uR + vL*vR)
-#     pa    = (@. rhoavg/(betaL+betaR))
-#     f4aux = (@. rholog/(2*(γ-1)*betalog) + pa + .5*rholog*unorm)
-#
-#     FxS1 = (@. rholog*uavg)
-#     FxS2 = (@. FxS1*uavg + pa)
-#     FxS3 = (@. FxS1*vavg)
-#     FxS4 = (@. f4aux*uavg)
-#
-#     return (FxS1,FxS2,FxS3,FxS4)
-# end
-#
-# function euler_flux_y(rhoL,uL,vL,betaL,rhoR,uR,vR,betaR,
-#                       rhologL,betalogL,rhologR,betalogR)
-#
-#     rholog = logmean.(rhoL,rhoR,rhologL,rhologR)
-#     betalog = logmean.(betaL,betaR,betalogL,betalogR)
-#
-#     # arithmetic avgs
-#     rhoavg = (@. .5*(rhoL+rhoR))
-#     uavg   = (@. .5*(uL+uR))
-#     vavg   = (@. .5*(vL+vR))
-#
-#     unorm = (@. uL*uR + vL*vR)
-#     pa    = (@. rhoavg/(betaL+betaR))
-#     f4aux = (@. rholog/(2*(γ-1)*betalog) + pa + .5*rholog*unorm)
-#
-#     FyS1 = (@. rholog*vavg)
-#     FyS2 = (@. FyS1*uavg)
-#     FyS3 = (@. FyS1*vavg + pa)
-#     FyS4 = (@. f4aux*vavg)
-#     return (FyS1,FyS2,FyS3,FyS4)
-# end
-
 function LF(uL,uR,nxL,nyL,nxR,nyR)
         rhoL,rhouL,rhovL,EL = uL
         rhoR,rhouR,rhovR,ER = uR
@@ -167,9 +122,9 @@ function LF(uL,uR,nxL,nyL,nxR,nyR)
         ny = nyL #.5*(nyL+nyR)
         rhoUnL = @. rhouL*nx + rhovL*ny
         rhoUnR = @. rhouR*nx + rhovR*ny
-        c2L   = @. wavespeed2(rhoL,rhoUnL,EL)
-        c2R   = @. wavespeed2(rhoR,rhoUnR,ER)
-        lam  = @. (sqrt(c2L+c2R)) # easy for ForwardDiff to deal with
+        cL   = @. wavespeed(rhoL,rhoUnL,EL)
+        cR   = @. wavespeed(rhoR,rhoUnR,ER)
+        lam  = @. sqrt(.5*(cL^2+cR^2)) # arith avg is type stable with ForwardDiff
         return (@. lam*(uL-uR))
 end
 
@@ -222,6 +177,7 @@ dFy(uL,uR) = ForwardDiff.jacobian(uR->Fy(uL,uR),uR)
 dLF(uL,uR,args...) = ForwardDiff.jacobian(uR->LF(uL,uR,args...),uR)
 
 ## mappings between conservative and entropy variables and vice vera
+
 # dVdU_fun(U) = ForwardDiff.jacobian(U->SVector(v_ufun(U...)...),U)
 # dUdV_fun(V) = ForwardDiff.jacobian(V->SVector(u_vfun(V...)...),V)
 dVdU_fun(U) = dVdU_explicit(U...)
