@@ -119,7 +119,7 @@ function accum_hadamard_jacobian!(A, Q, dF::Fxn, U, Fargs ...; scale = -1) where
 
             dFij = dF(Ui,Uj,getindex.(Fargs,i)...,getindex.(Fargs,j)...)
 
-            Aij = A[Block(m,n)]
+            # Aij = A[Block(m,n)]
             for n = 1:length(U), m=1:length(U)
                 dFijQ = dFij[m,n]*Qij
                 A[Block(m,n)[i,j]] += dFijQ
