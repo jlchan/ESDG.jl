@@ -23,7 +23,7 @@ include("./euler_fluxes.jl")
 include("./euler_variables.jl")
 
 # 2D isentropic vortex solution for testing. assumes domain around [0,20]x[-5,5]
-function vortex(x,y,t,γ=1.4)
+function vortex(x,y,t)
 
     x0 = 5
     y0 = 0
