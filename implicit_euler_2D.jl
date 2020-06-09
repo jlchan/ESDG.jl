@@ -19,14 +19,16 @@ push!(LOAD_PATH, "./examples/EntropyStableEuler")
 using EntropyStableEuler
 
 "Approximation parameters"
-N = 2 # The order of approximation
-K1D = 16
+N = 3 # The order of approximation
+K1D = 8
 CFL = 1
-T = 1 # endtime
+T = 5.0 # endtime
 
 "Mesh related variables"
-VX, VY, EToV = uniform_tri_mesh(K1D)
-# VX = @. VX - .3*sin(pi*VX)
+VX, VY, EToV = uniform_tri_mesh(3*K1D,2*K1D)
+VX = @. VX - .3*sin(pi*VX)
+VX = @. (1+VX)/2 * 15
+VY = @. VY*5
 
 # initialize ref element and mesh
 rd = init_reference_tri(N)
@@ -169,7 +171,7 @@ function initJacobian(F::Fxn,uR) where Fxn
     return df,df!
 end
 
-dFx_cfg,_ = initJacobian(Fx,SVector{4}(zeros(Float64,4)...))
+dFx_cfg,dFx_cfg! = initJacobian(Fx,SVector{4}(zeros(Float64,4)...))
 dFy_cfg,_ = initJacobian(Fy,SVector{4}(zeros(Float64,4)...))
 dLF_cfg,_ = initJacobian(LF,SVector{4}(zeros(Float64,4)...))
 dFx(uL,uR) = ForwardDiff.jacobian(uR->Fx(uL,uR),uR)
@@ -203,11 +205,11 @@ function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData,funs,dt)
 
         Nfields = length(Q)
         Id_fld  = speye(Nfields) # for Kronecker expansion to large matrices - fix later with lazy evals
-        Vq_fld  = droptol!(kron(Id_fld,Vq),1e-12)
+        Vq_fld  = droptol!(kron(Id_fld,Vq),1e-13)
         VhP     = Vh*Pq
-        VhP_fld = droptol!(kron(Id_fld,VhP),1e-12)
-        Vh_fld  = droptol!(kron(Id_fld,Vh),1e-12)
-        M_fld   = droptol!(kron(Id_fld,M),1e-12)
+        VhP_fld = droptol!(kron(Id_fld,VhP),1e-13)
+        Vh_fld  = droptol!(kron(Id_fld,Vh),1e-13)
+        M_fld   = droptol!(kron(Id_fld,M),1e-13)
 
         # init jacobian matrix (no need for entropy projection since we'll zero it out later)
         dFdU_h = repeat(I+Ax+Ay,Nfields,Nfields)
@@ -226,13 +228,18 @@ function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData,funs,dt)
                 f     = vcat((x->Ph*x).(ftmp)...)
                 res   = vcat(Qnew...) + .5*dt*f - vcat(Qprev...)
 
+                # compute RHStest for entropy checks
+                VUproj = (x->Pq*x).(v_ufun(Uq[1],Uq[2],Uq[3],Uq[4]))
+                Mrhs = (x->Vh'*x).(ftmp)
+                rhstest = sum(sum(((x,y)->x.*y).(VUproj,Mrhs)))
+
                 fill!(dFdU_h.nzval,0.0)
                 accum_hadamard_jacobian!(dFdU_h, Ax, dFx, Qh)
                 accum_hadamard_jacobian!(dFdU_h, Ay, dFy, Qh)
                 accum_hadamard_jacobian!(dFdU_h, B,  dLF, Qh, nxh, nyh) # flux term involving normals
                 banded_matrix_function!(dVdU_q,dVdU_fun, Uq)
                 banded_matrix_function!(dUdV_h,dUdV_fun, VUh)
-                dFdU   = droptol!(transpose(Vh_fld)*(dFdU_h*dUdV_h*VhP_fld*dVdU_q*Vq_fld),1e-12)
+                dFdU   = droptol!(transpose(Vh_fld)*(dFdU_h*dUdV_h*VhP_fld*dVdU_q*Vq_fld),1e-13)
 
                 # solve and update
                 dQ   = (M_fld + .5*dt*dFdU)\(M_fld*res)
@@ -243,7 +250,7 @@ function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData,funs,dt)
                 for fld = 1:length(Qnew)
                         Qnew[fld] .= Qtmp[:,fld]
                 end
-                return dQnorm
+                return dQnorm,rhstest
         end
         return midpt_newton_iter!
 end
@@ -251,12 +258,14 @@ end
 ## init condition, rhs
 
 @unpack xq,yq = md
-rho = vec(rd.Pq*(@. 1 + .1*(abs(xq)<.5).*(abs(yq)<.5)))
-# rho = @. 2 + exp(-10*(x^2+y^2)) #ones(size(x))
-rhou = zeros(size(x))
-rhov = zeros(size(x))
-E = @. rho^1.4
-Q = [rho,rhou,rhov,E]
+
+# rho = vec(rd.Pq*(@. 1 + .1*(abs(xq)<.5).*(abs(yq)<.5)))
+# rhou = vec(rd.Pq*(@. .0*(abs(xq)<.5).*(abs(yq)<.5)))
+# rhov = vec(rd.Pq*(@. -.0*(abs(xq)<.5).*(abs(yq)<.5)))
+# E = @. rho^1.4
+# Q = [rho,rhou,rhov,E]
+
+Q = collect(primitive_to_conservative(vortex(x,y,0)...))
 Qnew = copy.(Q)
 
 # convert to tuple
@@ -267,6 +276,7 @@ Qnew = tuple(Qnew...)
 CN = (N+1)*(N+2)/2  # estimated trace constant
 h = minimum(md.J[1,:]./md.sJ[1,:]) # ratio of J/Jf = O(h^d/h^d-1)
 dt = CFL * 2 * h / CN
+dt = .1
 Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
@@ -288,9 +298,10 @@ for i = 1:Nsteps
         bcopy!.(Qnew,Q)  # copy / over-write at each timestep
         iter = 0
         dQnorm = 1
-        while dQnorm > 1e-12
+        rhstest = 0
+        while dQnorm > 1e-11
                 # Qnew,dQnorm = midpt_newton_iter!(Qnew,Q)
-                dQnorm = midpt_newton_iter!(Qnew,Q)
+                dQnorm,rhstest = midpt_newton_iter!(Qnew,Q)
                 iter += 1
                 if iter > 15
                         println("iter = $iter, ||dQ|| = $dQnorm")
@@ -303,7 +314,7 @@ for i = 1:Nsteps
         energy[i] = sum(vec(md.wJq).*Sfun(Qq...))
 
         if i%5==0 || i==Nsteps
-                println("Number of time steps $i out of $Nsteps")
+                println("Number of time steps $i out of $Nsteps, rhstest = $rhstest")
                 # display(scatter(x,Q[1]))
         end
 end
@@ -313,8 +324,23 @@ rp, sp = Basis2DTri.equi_nodes_2D(25)
 Vp = Basis2DTri.vandermonde_2D(N,rp,sp)/VDM
 
 gr(aspect_ratio=1, legend=false,
-   markerstrokewidth=0, markersize=2)
+   markerstrokewidth=0)
 xp,yp,up = (x->Vp*reshape(x,size(Vp,2),K)).((x,y,Q[1]))
 # display(scatter(xp,yp,up,zcolor=up,cam=(3,25),axis=false))
-scatter(xp,yp,up,zcolor=up,cam=(0,90),border=:none,axis=false)
+scatter(xp,yp,-1e-8*ones(size(up)),zcolor=up,cam=(0,90),border=:none,axis=false,markersize=1)
 # png("sol_unif_mesh.png")
+for e = 1:K
+        vids = EToV[e,:]
+        for f = 1:3
+                vx = VX[vids[rd.fv[f]]]
+                vy = VY[vids[rd.fv[f]]]
+                plot!(vx,vy,linewidth=.5,legend=false,linecolor=:black)
+        end
+end
+display(plot!())
+@show energy[end]-energy[1]
+
+@unpack xq,yq,wJq = md
+Qex = primitive_to_conservative(vortex(vec.((xq,yq))...,T)...)
+# err = ((x->Vq*x).(Q) .- Qex)
+@show sqrt(sum(sum.((x->vec(wJq).*x.^2).((x->Vq*x).(Q).-vec.(Qex)))))
