@@ -63,9 +63,9 @@ compute_L2_err = false
 N_P   = 2;    # The order of approximation in polynomial dimension
 Np_P  = Int((N_P+1)*(N_P+2)/2)
 Np_F  = 8;    # The order of approximation in Fourier dimension
-K1D   = 6;   # Number of elements in polynomial (x,y) dimension
-CFL   = 0.5;
-T     = 1.0;  # End time
+K1D   = 10;   # Number of elements in polynomial (x,y) dimension
+CFL   = 1.0;
+T     = 5.0;  # End time
 
 "Time integration Parameters"
 rk4a,rk4b,rk4c = rk45_coeffs()
@@ -245,6 +245,7 @@ u = ones(size(xq))
 v = -1/2*ones(size(xq))
 w = ones(size(xq))
 p = ones(size(xq))
+Q_exact(x,y,z,t) = (ρ_exact(x,y,z,t),u,v,w,p)
 
 # # x direction test case
 # println(" ")
@@ -279,6 +280,9 @@ p = ones(size(xq))
 Q = primitive_to_conservative(ρ,u,v,w,p)
 Q = collect(Q)
 resQ = [zeros(size(Q[1])) for _ in eachindex(Q)]
+# rhs(Q,ops,mesh,param,false)
+# @btime rhs(Q,ops,mesh,param,false)
+@btime begin
 
 for i = 1:Nsteps
     rhstest = 0
@@ -294,21 +298,33 @@ for i = 1:Nsteps
     end
 end
 
-
+end # end time
 
 rq2,sq2,wq2 = quad_nodes_2D(N_P+2)
 Vq2 = vandermonde_2D(N_P,rq2,sq2)/VDM
 xq2,yq2,zq2 = (x->Vq2*x).((x,y,z))
 ρ = Vq2*Pq*Q[1]
 ρ_ex = ρ_exact(xq2,yq2,zq2,T)
-
-# Check velocity and pressure
-println("Velocity (Avg by entries)")
-@show sum(Q[2]./Q[1])/size(Q[1],1)/size(Q[1],2)
-@show sum(Q[3]./Q[1])/size(Q[1],1)/size(Q[1],2)
-@show sum(Q[4]./Q[1])/size(Q[1],1)/size(Q[1],2)
-println("Pressure")
+Q = (x->Vq2*Pq*x).(Q)
 p = pfun(Q[1],(Q[2],Q[3],Q[4]),Q[5])
-@show sum(p/size(Q[1],1))/size(Q[1],2)
-println("L2 error density")
-@show L2_err_ρ = sum(h*J*wq2.*(ρ-ρ_ex).^2)
+Q = (Q[1],Q[2]./Q[1],Q[3]./Q[1],Q[4]./Q[1],p)
+Q_ex = Q_exact(xq2,yq2,zq2,T)
+
+# # Check velocity and pressure
+# println("Velocity (Avg by entries)")
+# @show sum(Q[2]./Q[1])/size(Q[1],1)/size(Q[1],2)
+# @show sum(Q[3]./Q[1])/size(Q[1],1)/size(Q[1],2)
+# @show sum(Q[4]./Q[1])/size(Q[1],1)/size(Q[1],2)
+# println("Pressure")
+# p = pfun(Q[1],(Q[2],Q[3],Q[4]),Q[5])
+# @show sum(p/size(Q[1],1))/size(Q[1],2)
+# println("L2 error density")
+# @show L2_err_ρ = sum(h*J*wq2.*(ρ-ρ_ex).^2)
+#
+
+L2_err = 0.0
+for fld in eachindex(Q)
+    global L2_err
+    L2_err += sum(h*J*wq2.*(Q[fld]-Q_ex[fld]).^2)
+end
+println("L2err at final time T = $T is $L2_err\n")
