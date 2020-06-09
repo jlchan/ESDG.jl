@@ -88,7 +88,7 @@ rxJ, sxJ, ryJ, syJ = (x->Vh*x).((rxJ, sxJ, ryJ, syJ)) # interp to hybridized poi
 @pack! md = rxJ, sxJ, ryJ, syJ
 
 # pack SBP operators into tuple
-ops = (Qrhskew,Qshskew,Qrh_sparse,Qsh_sparse,Qrsids,Ph,Lf)
+ops = (Qrhskew,Qshskew,Qrh_sparse,Qsh_sparse,Qrsids,Ph,Lf,Ef)
 
 "Time integration"
 rk4a,rk4b,rk4c = rk45_coeffs()
@@ -110,7 +110,7 @@ function sparse_hadamard_sum(Qhe,ops,vgeo,flux_fun)
     (rho,u,v,beta) = Qhe
     Qlog = (log.(rho), log.(beta))
 
-    rhsQe = ntuple(x->zeros(nrows),nfields)
+    rhsQe = zero.(Qhe) # make tuple of zero arrays
     rhsi = zeros(nfields) # prealloc a small array
     for i = 1:nrows
         Qi = getindex.(Qhe,i)
@@ -138,16 +138,17 @@ function sparse_hadamard_sum(Qhe,ops,vgeo,flux_fun)
 end
 
 "Qh = (rho,u,v,beta), while Uh = conservative vars"
-function rhs(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
+function rhs(Q,md::MeshData,ops,flux_fun::Fxn,compute_rhstest=false) where Fxn
 
     @unpack rxJ,sxJ,ryJ,syJ,J,wJq = md
     @unpack nxJ,nyJ,sJ,mapP,mapB,K = md
-    Qrh,Qsh,Qrh_sparse,Qsh_sparse,Qrsids,Ph,Lf = ops
+    Qrh,Qsh,Qrh_sparse,Qsh_sparse,Qrsids,Ph,Lf,Ef = ops
     Nq,Nh = size(Ph)
 
     # entropy var projection
     VU = v_ufun(Q...)
-    Uf = u_vfun((x->Ef*x).(VU)...)
+    VUf = (x->Ef*x).(VU)
+    Uf = u_vfun(VUf...)
     (rho,rhou,rhov,E) = vcat.(Q,Uf) # assume volume nodes are collocated
 
     # convert to rho,u,v,beta vars
@@ -170,20 +171,21 @@ function rhs(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
     rhsQ = (x->Lf*x).(flux)
 
     # compute volume contributions using flux differencing
+    mxm_accum!(X,x,e) = X[:,e] += 2*Ph*x
+
     for e = 1:K
-        Qhe = tuple(getindex.(Qh,:,e)...) # force tuples for fast splatting
+        Qhe = getindex.(Qh,:,e) # force tuples for fast splatting
         vgeo_local = getindex.((rxJ,sxJ,ryJ,syJ),1,e) # assumes affine elements for now
 
         Qops = (Qrh_sparse,Qsh_sparse,Qrsids)
         QFe = sparse_hadamard_sum(Qhe,Qops,vgeo_local,flux_fun)
 
-        mxm_accum!(X,x) = X[:,e] += 2*Ph*x
-        mxm_accum!.(rhsQ,QFe)
+        mxm_accum!.(rhsQ,QFe,e)
     end
 
     rhsQ = (x -> -x./J).(rhsQ)
 
-    rhstest = 0
+    rhstest = 0.0
     if compute_rhstest
         for fld in eachindex(rhsQ)
             rhstest += sum(wJq.*VU[fld].*rhsQ[fld])
@@ -193,8 +195,11 @@ function rhs(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
     return rhsQ,rhstest # scale by Jacobian
 end
 
-Q = collect(Q) # make Q,resQ arrays of arrays for mutability
-resQ = [zeros(size(x)) for i in eachindex(Q)]
+# Q = collect(Q) # make Q,resQ arrays of arrays for mutability
+# resQ = [zeros(size(x)) for i in eachindex(Q)]
+resQ = zero.(Q)
+
+bcopy!(x,y) = x .= y
 for i = 1:Nsteps
 
     rhstest = 0
@@ -202,8 +207,8 @@ for i = 1:Nsteps
         compute_rhstest = INTRK==5
         rhsQ,rhstest = rhs(Q,md,ops,euler_fluxes,compute_rhstest)
 
-        @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
-        @. Q += rk4b[INTRK]*resQ
+        bcopy!.(resQ, @. rk4a[INTRK]*resQ + dt*rhsQ)
+        bcopy!.(Q, @. Q + rk4b[INTRK]*resQ)
     end
 
     if i%10==0 || i==Nsteps

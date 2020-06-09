@@ -17,7 +17,7 @@ using EntropyStableEuler
 
 "Approximation parameters"
 N = 2 # The order of approximation
-K1D = 3
+K1D = 12
 CFL = 2 # CFL goes up to 2.5ish
 T = .01 #1.0 # endtime
 
@@ -96,13 +96,11 @@ function dense_hadamard_sum(Qhe,ops,vgeo,flux_fun)
     # precompute logs for logmean
     (rho,u,v,beta) = Qhe
     Qlog = (log.(rho), log.(beta))
-    Qlogi = zeros(length(Qlog))
-    Qlogj = zeros(length(Qlog))
 
     n = size(Qr,1)
     nfields = length(Qhe)
 
-    QF = ntuple(x->zeros(n),nfields)
+    QF = zero.(Qhe) #ntuple(x->zeros(n),nfields)
     QFi = zeros(nfields)
     for i = 1:n
         Qi = getindex.(Qhe,i)
@@ -126,8 +124,9 @@ function dense_hadamard_sum(Qhe,ops,vgeo,flux_fun)
 end
 
 
+
 "Qh = (rho,u,v,beta), while Uh = conservative vars"
-function rhs(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
+function rhs(Q,md::MeshData,ops,flux_fun::Fxn,compute_rhstest=false) where Fxn
 
     @unpack rxJ,sxJ,ryJ,syJ,J,wJq = md
     @unpack nxJ,nyJ,sJ,mapP,mapB,K = md
@@ -160,21 +159,22 @@ function rhs(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
     flux = normal_flux.(fSx,fSy,Uf)
     rhsQ = (x->Lf*x).(flux)
 
+    mxm_accum!(X,x,e) = X[:,e] .+= 2*Ph*x
+
     # compute volume contributions using flux differencing
     for e = 1:K
-        Qhe = tuple(getindex.(Qh,:,e)...) # force tuples for fast splatting
+        Qhe = getindex.(Qh,:,e) # force tuples for fast splatting
         vgeo_local = getindex.((rxJ,sxJ,ryJ,syJ),1,e) # assumes affine elements for now
 
         Qops = (Qrh,Qsh)
         QFe = dense_hadamard_sum(Qhe,Qops,vgeo_local,flux_fun)
 
-        mxm_accum!(X,x) = X[:,e] += 2*Ph*x
-        mxm_accum!.(rhsQ,QFe)
+        mxm_accum!.(rhsQ,QFe,e)
     end
 
     rhsQ = (x -> -x./J).(rhsQ)
 
-    rhstest = 0
+    rhstest = 0.0
     if compute_rhstest
         for fld in eachindex(rhsQ)
             VUq = VU[fld][1:Nq,:]
@@ -185,14 +185,15 @@ function rhs(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
     return rhsQ,rhstest # scale by Jacobian
 end
 
-Q = collect(Q) # make Q,resQ arrays of arrays for mutability
-resQ = [zeros(size(x)) for i in eachindex(Q)]
+# Q = collect(Q) # make Q,resQ arrays of arrays for mutability
+# resQ = [zeros(size(x)) for i in eachindex(Q)]
+resQ = zero.(Q)
 
 # # testing
 # rhsQ,rhstest = rhs(Q,md,ops,euler_fluxes,true)
 # println("Testing: rhstest = $rhstest")
 
-
+bcopy!(x,y) = x .= y
 for i = 1:Nsteps
 
     rhstest = 0
@@ -200,8 +201,10 @@ for i = 1:Nsteps
         compute_rhstest = true # INTRK==5
         rhsQ,rhstest = rhs(Q,md,ops,euler_fluxes,compute_rhstest)
 
-        @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
-        @. Q += rk4b[INTRK]*resQ
+        #@. resQ = rk4a[INTRK]*resQ + dt*rhsQ
+        #@. Q += rk4b[INTRK]*resQ
+        bcopy!.(resQ, @. rk4a[INTRK]*resQ + dt*rhsQ)
+        bcopy!.(Q, @. Q + rk4b[INTRK]*resQ)
     end
 
     if i%10==0 || i==Nsteps

@@ -74,13 +74,14 @@ end
 mutable struct MeshData
 
     VX; VY; VZ              # vertex coordinates
-    K                       # num elems
+    K::Int                  # num elems
     EToV                    # mesh vertex array
     FToF::Array{Int64,2}    # face connectivity
 
     x; y; z                 # physical points
     xf; yf; zf
-    xq; yq; zq; wJq         # phys quad points, Jacobian-scaled weights
+    xq; yq; zq;             # phys quad points, Jacobian-scaled weights
+    wJq::Array{Float64,2}
 
     # annotate types for geofacs + connectivity arrays for speed in RHS evals
 
