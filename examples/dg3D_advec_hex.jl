@@ -35,6 +35,10 @@ mapPB = build_periodic_boundary_maps(xf,yf,zf,LX,LY,LZ,
 mapP[mapB] = mapPB
 @pack! md = mapP
 
+@unpack Dr,Ds,Dt,LIFT,Vf = rd
+sparsify(A) = droptol!(sparse(A),1e-14)
+sparseOps = sparsify.((Dr,Ds,Dt,LIFT,Vf))
+
 "Time integration"
 rk4a,rk4b,rk4c = rk45_coeffs()
 CN = (N+1)*(N+2)*3/2  # estimated trace constant
@@ -42,9 +46,10 @@ dt = CFL * 2 / (CN*K1D)
 Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
-function rhs(u,rd::RefElemData,md::MeshData)
+function rhs(u,rd::RefElemData,md::MeshData,sparseOps)
 
-    @unpack Dr,Ds,Dt,LIFT,Vf = rd
+    # @unpack Dr,Ds,Dt,LIFT,Vf = rd
+    Dr,Ds,Dt,LIFT,Vf = sparseOps
     @unpack rxJ,sxJ,txJ,ryJ,syJ,tyJ,rzJ,szJ,tzJ,J = md
     @unpack nxJ,nyJ,nzJ,sJ = md
     @unpack mapP,mapB = md
@@ -67,7 +72,7 @@ u = @. exp(-25*(x^2+y^2))
 resQ = zeros(size(x))
 for i = 1:Nsteps
     for INTRK = 1:5
-        rhsQ    = rhs(u,rd,md)
+        rhsQ    = rhs(u,rd,md,sparseOps)
         @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
         @. u   += rk4b[INTRK]*resQ
     end

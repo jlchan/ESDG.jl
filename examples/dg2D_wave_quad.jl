@@ -36,6 +36,12 @@ mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces*K,mapM,mapP,mapB)
 mapP[mapB] = mapPB
 @pack! md = mapP
 
+" ====== sparsify operators ====== "
+
+@unpack Dr,Ds,LIFT,Vf = rd
+sparsify(A) = droptol!(sparse(A),1e-14)
+sparseOps = sparsify.((Dr,Ds,LIFT,Vf))
+
 " ====== set up initial conditions ====== "
 
 @unpack x,y = md
@@ -54,10 +60,11 @@ dt = T/Nsteps
 c2 = @. 1 + .5*sin(pi*x)*sin(pi*y)
 # c2 = ones(size(x))
 
-function rhs(Q, rd::RefElemData, md::MeshData, params...)
+function rhs(Q, rd::RefElemData, md::MeshData, sparseOps, params...)
 
     (p,u,v) = Q
-    @unpack Dr,Ds,LIFT,Vf = rd
+    # @unpack Dr,Ds,LIFT,Vf = rd
+    Dr,Ds,LIFT,Vf = sparseOps
     @unpack rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ = md
     @unpack mapP,mapB = md
 
@@ -94,7 +101,7 @@ Q = [p,u,v] # make arrays of arrays for mutability
 resQ = [zeros(size(x)) for i in eachindex(Q)]
 for i = 1:Nsteps
     for INTRK = 1:5
-        rhsQ = rhs(Q,rd,md,c2)
+        rhsQ = rhs(Q,rd,md,sparseOps,c2)
         @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
         @. Q    = Q + rk4b[INTRK]*resQ
     end

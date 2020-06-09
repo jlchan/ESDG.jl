@@ -57,16 +57,15 @@ mutable struct RefElemData
 
     # annotate types for all matrices involved in RHS evaluation
 
-    # differentiation matrices
-    Dr::Union{Array{Float64,2},SparseMatrixCSC{Float64,Int64}}
-    Ds::Union{Array{Float64,2},SparseMatrixCSC{Float64,Int64}}
-    Dt::Union{Array{Float64,2},SparseMatrixCSC{Float64,Int64}}
-    Vq::Union{Array{Float64,2},SparseMatrixCSC{Float64,Int64}}   # quadrature interpolation matrices
-    Vf::Union{Array{Float64,2},SparseMatrixCSC{Float64,Int64}}
-    M::Union{Array{Float64,2},SparseMatrixCSC{Float64,Int64}}    # mass matrix
-    Pq::Union{Array{Float64,2},SparseMatrixCSC{Float64,Int64}}   # L2 projection matrix
-    LIFT::Union{Array{Float64,2},SparseMatrixCSC{Float64,Int64}} # quadrature-based lift matrix
-
+    # differentiation matrices    
+    Dr::Array{Float64,2}
+    Ds::Array{Float64,2}
+    Dt::Array{Float64,2}
+    Vq::Array{Float64,2}        # quadrature interpolation matrices
+    Vf::Array{Float64,2}
+    M::Array{Float64,2}         # mass matrix
+    Pq::Array{Float64,2}        # L2 projection matrix
+    LIFT::Array{Float64,2}      # quadrature-based lift matrix
 
     RefElemData() = new() # empty initializer
 end
@@ -250,10 +249,10 @@ function init_reference_quad(N,quad_nodes_1D = gauss_quad(0,0,N))
     LIFT = M\(Vf'*diagm(wf)) # lift matrix used in rhs evaluation
 
     # expose kronecker product sparsity
-    Dr = droptol!(sparse(Dr), 1e-10)
-    Ds = droptol!(sparse(Ds), 1e-10)
-    Vf = droptol!(sparse(Vf),1e-10)
-    LIFT = droptol!(sparse(LIFT),1e-10)
+    #Dr = droptol!(sparse(Dr), 1e-10)
+    #Ds = droptol!(sparse(Ds), 1e-10)
+    #Vf = droptol!(sparse(Vf),1e-10)
+    #LIFT = droptol!(sparse(LIFT),1e-10)
     @pack! rd = Dr,Ds,Vf,LIFT
 
     # plotting nodes
@@ -368,11 +367,11 @@ function init_reference_hex(N,quad_nodes_1D=gauss_quad(0,0,N))
     LIFT = M\(Vf'*diagm(wf))
 
     # expose kronecker product sparsity
-    Dr = droptol!(sparse(Dr),1e-12)
-    Ds = droptol!(sparse(Ds),1e-12)
-    Dt = droptol!(sparse(Dt),1e-12)
-    Vf = droptol!(sparse(Vf),1e-12)
-    LIFT = droptol!(sparse(LIFT),1e-12)
+    #Dr = droptol!(sparse(Dr),1e-12)
+    #Ds = droptol!(sparse(Ds),1e-12)
+    #Dt = droptol!(sparse(Dt),1e-12)
+    #Vf = droptol!(sparse(Vf),1e-12)
+    #LIFT = droptol!(sparse(LIFT),1e-12)
     @pack! rd = Dr,Ds,Dt,Vf,LIFT
 
     # plotting nodes
