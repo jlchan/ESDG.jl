@@ -143,74 +143,66 @@ function flux_xy!(∇fh,Qh,Qlog,ops_flux,geo_flux,param_flux)
     for k = 1:K
         for nf = 1:Np_F
             j = nf+Np_F*(k-1)
-            update∇fh_xy!(∇fh,Qrh_skew,Qsh_skew,Nh_P,Nd,j,rxJ[1,j],sxJ[1,j],ryJ[1,j],syJ[1,j],Qlog,Qh)
+            update∇fh_xy!(∇fh,Qh,Qlog,Qrh_skew,Qsh_skew,Nh_P,Nd,j,rxJ[1,j],sxJ[1,j],ryJ[1,j],syJ[1,j])
         end
     end
 end
 
 #TODO: clean up function arguments
-function update∇fh_xy!(∇fh,Qrh_skew,Qsh_skew,Nh_P,Nd,j,rxJ,sxJ,ryJ,syJ,Qlog,Qh)
+function update∇fh_xy!(∇fh,Qh,Qlog,Qrh_skew,Qsh_skew,Nh_P,Nd,j,rxJ,sxJ,ryJ,syJ)
     for col_idx = 1:Nh_P
-        for row_idx = 1:Nh_P
-            # Fxj_tmp, Fyj_tmp, _ = euler_fluxes((x->x[row_idx,j]).(Qh),(x->x[col_idx,j]).(Qh),(x->x[row_idx,j]).(Qlog),(x->x[col_idx,j]).(Qlog))
-            Fxj_tmp, Fyj_tmp, _ = euler_fluxes(Qh[1][row_idx,j],Qh[2][row_idx,j],Qh[3][row_idx,j],Qh[4][row_idx,j],Qh[5][row_idx,j],
+        for row_idx = col_idx:Nh_P
+            Fxj_tmp, Fyj_tmp,_ = euler_fluxes(Qh[1][row_idx,j],Qh[2][row_idx,j],Qh[3][row_idx,j],Qh[4][row_idx,j],Qh[5][row_idx,j],
                                                Qh[1][col_idx,j],Qh[2][col_idx,j],Qh[3][col_idx,j],Qh[4][col_idx,j],Qh[5][col_idx,j],
                                                Qlog[1][row_idx,j],Qlog[2][row_idx,j],
                                                Qlog[1][col_idx,j],Qlog[2][col_idx,j])
+            var_Qrh = Qrh_skew[row_idx,col_idx]
+            var_Qsh = Qsh_skew[row_idx,col_idx]
             for i = 1:Nd
-                ∇fh[i][row_idx,j] += 2*((rxJ*Qrh_skew[row_idx,col_idx]+sxJ*Qsh_skew[row_idx,col_idx])*Fxj_tmp[i]
-                                       +(ryJ*Qrh_skew[row_idx,col_idx]+syJ*Qsh_skew[row_idx,col_idx])*Fyj_tmp[i])
+                update_val = 2*((rxJ*var_Qrh+sxJ*var_Qsh)*Fxj_tmp[i]
+                               +(ryJ*var_Qrh+syJ*var_Qsh)*Fyj_tmp[i])
+                ∇fh[i][row_idx,j] += update_val
+                ∇fh[i][col_idx,j] -= update_val
             end
         end
     end
 end
 
 function flux_z!(∇fh,Qh,Qlog,ops_flux,geo_flux,param_flux)
-    K,Nq_P,Nh_P,Np_F,N_d = param_flux
+    K,Nq_P,Nh_P,Np_F,Nd = param_flux
     rxJ,sxJ,ryJ,syJ = geo_flux
     Qrh_skew,Qsh_skew,Qth,wq = ops_flux
-    # TODO: 5 - number of components hardcoded
     for k = 1:K
         j_idx = (k-1)*Np_F+1:k*Np_F
         for nh = 1:Nq_P
-            update∇fh_z!(∇fh,Qth,Np_F,N_d,nh,wq,J,k,Qlog,Qh)
+            update∇fh_z!(∇fh,Qth,Np_F,Nd,nh,wq,J,k,Qlog,Qh)
         end
     end
 end
 
 # TODO: clean up
-# function update∇fh_z!(∇fh::NTuple{5,Array{Float64,2}},Qth::Array{Float64,2},Np_F::Int64,nh::Int64,wq::Array{Float64,1},J::Float64,k::Int64,Qlog,Qh)
-function update∇fh_z!(∇fh,Qth,Np_F,N_d,nh,wq,J,k,Qlog,Qh)
+function update∇fh_z!(∇fh,Qth,Np_F,Nd,nh,wq,J,k,Qlog,Qh)
     j_idx = (k-1)*Np_F+1:k*Np_F
     wqn = 2/J*wq[nh]
     for col_idx = 1:Np_F
-        for row_idx = 1:Np_F
-             #_,_,f_tmp = euler_fluxes((x->x[nh,j_idx[row_idx]]).(Qh),(x->x[nh,j_idx[col_idx]]).(Qh),(x->x[nh,j_idx[row_idx]]).(Qlog),(x->x[nh,j_idx[col_idx]]).(Qlog))
-            _,_,f_tmp = euler_fluxes(Qh[1][nh,j_idx[row_idx]],Qh[2][nh,j_idx[row_idx]],Qh[3][nh,j_idx[row_idx]],Qh[4][nh,j_idx[row_idx]],Qh[5][nh,j_idx[row_idx]],
-                                     Qh[1][nh,j_idx[col_idx]],Qh[2][nh,j_idx[col_idx]],Qh[3][nh,j_idx[col_idx]],Qh[4][nh,j_idx[col_idx]],Qh[5][nh,j_idx[col_idx]],
-                                     Qlog[1][nh,j_idx[row_idx]],Qlog[2][nh,j_idx[row_idx]],
-                                     Qlog[1][nh,j_idx[col_idx]],Qlog[2][nh,j_idx[col_idx]])
-            tmp_val = wqn*Qth[row_idx,col_idx]
-            for i = 1:N_d
-                ∇fh[i][nh,j_idx[row_idx]] += tmp_val*f_tmp[i]#wqn*Qth[row_idx,col_idx]*Fzi[row_idx,col_idx][i]
+        for row_idx = col_idx:Np_F
+            _,_,f_tmp = euler_fluxes((x->x[nh,j_idx[row_idx]]).(Qh),(x->x[nh,j_idx[col_idx]]).(Qh),(x->x[nh,j_idx[row_idx]]).(Qlog),(x->x[nh,j_idx[col_idx]]).(Qlog))
+            var_Qth = wqn*Qth[row_idx,col_idx]
+            for i = 1:Nd
+                ∇fh[i][nh,j_idx[row_idx]] += var_Qth*f_tmp[i]
+                ∇fh[i][nh,j_idx[col_idx]] -= var_Qth*f_tmp[i]
             end
         end
     end
 end
-function update_rhs_flux!(rhsQ,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ)
-#function update_rhs_flux!(flux::Array{Array{Float64,2},1},Nh_P::Int64,Nq_P::Int64,K::Int64,Np_F::Int64,Nfp_P::Int64,mapP::Array{Int64,2},Nd::Int64,Qh::Array{Array{Float64,2},1},nxJ::Array{Float64,2},nyJ::Array{Float64,2})
+
+function update_rhs_flux!(rhsQ,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog)
     for col_idx = 1:K*Np_F
         for row_idx = 1:Nfp_P
             tmp_idx = mapP[row_idx+(col_idx-1)*Nfp_P]
             r_idx = Nq_P+Nh_P*div(tmp_idx-1,Nfp_P)+mod1(tmp_idx,Nfp_P)
-            # TODO: very ugly... why array doesn't work for splatting?
-            tmp_flux_x, tmp_flux_y,_ = euler_fluxes(Qh[1][Nq_P+row_idx,col_idx],Qh[2][Nq_P+row_idx,col_idx],
-                                                    Qh[3][Nq_P+row_idx,col_idx],Qh[4][Nq_P+row_idx,col_idx],
-                                                    Qh[5][Nq_P+row_idx,col_idx],
-                                                    Qh[1][r_idx],Qh[2][r_idx],Qh[3][r_idx],Qh[4][r_idx],Qh[5][r_idx],
-                                                    log.(Qh[1][Nq_P+row_idx,col_idx]),log.(Qh[5][Nq_P+row_idx,col_idx]),
-                                                    log.(Qh[1][r_idx]),log.(Qh[5][r_idx]))
-            # tmp_flux_x, tmp_flux_y,_ = euler_fluxes((x->x[Nq_P+row_idx,col_idx]).(Qh),(x->x[Nq_P+Nh_P*div(tmp_idx-1,Nfp_P)+mod1(tmp_idx,Nfp_P)]).(Qh))
+            tmp_flux_x, tmp_flux_y,_ = euler_fluxes((x->x[Nq_P+row_idx,col_idx]).(Qh),(x->x[r_idx]).(Qh),
+                                                    (x->x[Nq_P+row_idx,col_idx]).(Qlog),(x->x[r_idx]).(Qlog))
             tmp_nxJ = nxJ[row_idx,col_idx]
             tmp_nyJ = nyJ[row_idx,col_idx]
             for d = 1:Nd
@@ -233,9 +225,9 @@ function rhs(Q,ops,mesh,param,compute_rhstest)
     K,Np_P,Nfp_P,Np_F,Nq_P,Nh_P = param
     Nd = length(Q) # number of components
 
-    rhsQ = [zeros(Nfp_P,K*Np_F),zeros(Nfp_P,K*Np_F),zeros(Nfp_P,K*Np_F),zeros(Nfp_P,K*Np_F),zeros(Nfp_P,K*Np_F)]
-    VU = [zeros(Nq_P,K*Np_F),zeros(Nq_P,K*Np_F),zeros(Nq_P,K*Np_F),zeros(Nq_P,K*Np_F),zeros(Nq_P,K*Np_F)]
-    Qh = [zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F)]
+    rhsQ = (zeros(Nfp_P,K*Np_F),zeros(Nfp_P,K*Np_F),zeros(Nfp_P,K*Np_F),zeros(Nfp_P,K*Np_F),zeros(Nfp_P,K*Np_F))
+    VU = (zeros(Nq_P,K*Np_F),zeros(Nq_P,K*Np_F),zeros(Nq_P,K*Np_F),zeros(Nq_P,K*Np_F),zeros(Nq_P,K*Np_F))
+    Qh = (zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F))
     tmp = zeros(Nh_P,K*Np_F)
     tmp2 = zeros(Nh_P,K*Np_F)
     vector_norm(U) = sum((x->x.^2).(U))
@@ -250,10 +242,7 @@ function rhs(Q,ops,mesh,param,compute_rhstest)
     @. VU[5] = -Q[1]/VU[5]
 
     Qh = (x->Ph*x).(VU)
-
     # (ρ,ρu,ρv,ρw,E) = u_vfun(Qh...)
-    # β = betafun(ρ,ρu,ρv,ρw,E)
-    # Qh2 = (ρ,ρu./ρ,ρv./ρ,ρw./ρ,β)
     @. tmp = Qh[2]^2+Qh[3]^2+Qh[4]^2 #vUnorm
     @. tmp2 = (0.4/((-Qh[5])^1.4))^(1/0.4)*exp(-(1.4 - Qh[1] + tmp/(2*Qh[5]))/0.4) # rhoeV
     @. Qh[1] = tmp2.*(-Qh[5])
@@ -262,53 +251,33 @@ function rhs(Q,ops,mesh,param,compute_rhstest)
     @. Qh[4] = tmp2.*Qh[4]
     @. Qh[5] = tmp2.*(1-tmp/(2*Qh[5]))
 
+    # TODO: Lax Friedrichs Dissipation flux
+    # (ρM,ρuM,ρvM,ρwM,EM) = Uf
+    # ρuM_n = @. (ρuM*nxJ+ρvM*nyJ)/sJ # TODO: 3D lax-friedrichs?
+    # lam = abs.(wavespeed(ρM,ρuM_n,EM))
+    # LFc = .5*max.(lam,lam[mapP]).*sJ
+
+    # (Qh[2][Nq_P+1:end,:].*nxJ+Qh[3][Nq_P+1:end,:].*nyJ)./sJ
+
+    # β = betafun(ρ,ρu,ρv,ρw,E)
+    # Qh2 = (ρ,ρu./ρ,ρv./ρ,ρw./ρ,β)
     @. tmp = Qh[1]/(2*0.4*(Qh[5]-.5*(Qh[2]^2+Qh[3]^2+Qh[4]^2)/Qh[1])) #beta
     @. Qh[2] = Qh[2]./Qh[1]
     @. Qh[3] = Qh[3]./Qh[1]
     @. Qh[4] = Qh[4]./Qh[1]
     @. Qh[5] = tmp
 
-    # @show norm(Qh[1]-Qh2[1])
-    # @show norm(Qh[2]-Qh2[2])
-    # @show norm(Qh[3]-Qh2[3])
-    # @show norm(Qh[4]-Qh2[4])
-    # @show norm(Qh[5]-Qh2[5])
-
-    # # Entropy projection
-    # VU = v_ufun(Q...)
-    # vh = (x->[Vq;Vf]*Pq*x).(VU)
-    # (ρ,ρu,ρv,ρw,E) = u_vfun(vh...)
-    # Uf = (x->x[Nq_P+1:end,:]).((ρ,ρu,ρv,ρw,E))
-    # # Convert to rho,u,v,w,beta vars
-    # β = betafun(ρ,ρu,ρv,ρw,E)
-    # Qh = (ρ,ρu./ρ,ρv./ρ,ρw./ρ,β)
-    # # # # Compute face values
-    # # QM = (x->x[Nq_P+1:end,:]).(Qh)
-    # # QP = (x->x[mapP]).(QM)
-
-    # # Lax Friedrichs Dissipation flux
-    # # TODO: Fix Jacobian. incorrect sJ?
-    # (ρM,ρuM,ρvM,ρwM,EM) = Uf
-    # #(ρM,ρuM,ρvM,ρwM,EM) = (x->x[Nq_P+1:end,:]).((ρ,ρu,ρv,ρw,E))
-    # ρuM_n = @. (ρuM*nxJ+ρvM*nyJ)/sJ # TODO: 3D lax-friedrichs?
-    # lam = abs.((@. sqrt(abs(ρuM_n/ρM))+sqrt(γ*pfun(ρM,ρuM_n,EM,ρuM_n^2/ρM)/ρM)))
-    # LFc = .5*max.(lam,lam[mapP]).*sJ
-    LFc = 0 #TODO: TEST
-
-    # fSx,fSy,_ = euler_fluxes(QM,QP)
-    # normal_flux(fx,fy,u) = fx.*nxJ + fy.*nyJ - LFc.*(u[mapP]-u)
-    # flux = normal_flux.(fSx,fSy,Uf)
-    # rhsQ = (x->Vq*Lq*x).(flux)
-
-    update_rhs_flux!(rhsQ,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ)
+    # TODO: implement Lax Friedrichs
+    # TODO: storing flux, so avoid calculate flux on face quad point again?
+    Qlog = (log.(Qh[1]),log.(Qh[5]))
+    update_rhs_flux!(rhsQ,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog)
     rhsQ = (x->Vq*Lq*x).(rhsQ) # TODO: put it into update_rhs_flux!
 
     # Flux differencing
     # TODO: cleaner syntax, avoid storage?
-    ∇fh = tuple(zeros(size(Qh[1])),zeros(size(Qh[1])),zeros(size(Qh[1])),zeros(size(Qh[1])),zeros(size(Qh[1])))
+    ∇fh = (zeros(size(Qh[1])),zeros(size(Qh[1])),zeros(size(Qh[1])),zeros(size(Qh[1])),zeros(size(Qh[1])))
 
     # TODO: fix Jacobian
-    Qlog = (log.(Qh[1]),log.(Qh[5]))
     param_flux = (K,Nq_P,Nh_P,Np_F,Nd)
     geo_flux = (rxJ,sxJ,ryJ,syJ)
     ops_flux = (Qrh_skew,Qsh_skew,Qth,wq)
