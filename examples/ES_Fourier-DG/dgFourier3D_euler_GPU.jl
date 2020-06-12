@@ -51,8 +51,8 @@ compute_L2_err = false
 "Approximation Parameters"
 N_P   = 2;    # The order of approximation in polynomial dimension
 Np_P  = Int((N_P+1)*(N_P+2)/2)
-Np_F  = 10;    # The order of approximation in Fourier dimension
-K1D   = 50;   # Number of elements in polynomial (x,y) dimension
+Np_F  = 8;    # The order of approximation in Fourier dimension
+K1D   = 10;   # Number of elements in polynomial (x,y) dimension
 CFL   = 1.0;
 T     = 0.5;  # End time
 
@@ -251,19 +251,24 @@ function rhs(Q,ops,mesh,param,compute_rhstest,has_gpu)
     K,Np_P,Nfp_P,Np_F,Nq_P,Nh_P = param
     Nd = length(Q) # number of components
 
-    rhsQ = (zeros(Nfp_P,K*Np_F),zeros(Nfp_P,K*Np_F),zeros(Nfp_P,K*Np_F),zeros(Nfp_P,K*Np_F),zeros(Nfp_P,K*Np_F))
-    Qh = (zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F))
-    # TODO: cleaner syntax, avoid storage?
-    ∇fh = (zeros(size(Qh[1])),zeros(size(Qh[1])),zeros(size(Qh[1])),zeros(size(Qh[1])),zeros(size(Qh[1])))
-    VU = (zeros(Nq_P,K*Np_F),zeros(Nq_P,K*Np_F),zeros(Nq_P,K*Np_F),zeros(Nq_P,K*Np_F),zeros(Nq_P,K*Np_F))
-    tmp = zeros(Nh_P,K*Np_F)
-    tmp2 = zeros(Nh_P,K*Np_F)
+    # TODO: cleaner syntax
     if has_gpu
-        rhsQ = (CuArray(rhsQ[1]),CuArray(rhsQ[2]),CuArray(rhsQ[4]),CuArray(rhsQ[4]),CuArray(rhsQ[5]))
+        Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,mapM,mapP = (x->CuArray(x)).((Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,mapM,mapP))
+        rhsQ = (CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)))
         # TODO: why adding this if statement reduces allocation even when has_gpu = false?
-        VU = (CuArray(VU[1]),CuArray(VU[2]),CuArray(VU[3]),CuArray(VU[4]),CuArray(VU[5]))
-        Qh = (CuArray(Qh[1]),CuArray(Qh[2]),CuArray(Qh[3]),CuArray(Qh[4]),CuArray(Qh[5]))
-        ∇fh = (CuArray(∇fh[1]),CuArray(∇fh[2]),CuArray(∇fh[3]),CuArray(∇fh[4]),CuArray(∇fh[5]))
+        Qh = (CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)))
+        ∇fh = (CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)))
+        VU = (CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)))
+        tmp = CuArray(zeros(Nh_P,K*Np_F))
+        tmp2 = CuArray(zeros(Nh_P,K*Np_F))
+    else
+        rhsQ = (zeros(Nfp_P,K*Np_F),zeros(Nfp_P,K*Np_F),zeros(Nfp_P,K*Np_F),zeros(Nfp_P,K*Np_F),zeros(Nfp_P,K*Np_F))
+        Qh = (zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F))
+        # TODO: cleaner syntax, avoid storage?
+        ∇fh = (zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F))
+        VU = (zeros(Nq_P,K*Np_F),zeros(Nq_P,K*Np_F),zeros(Nq_P,K*Np_F),zeros(Nq_P,K*Np_F),zeros(Nq_P,K*Np_F))
+        tmp = zeros(Nh_P,K*Np_F)
+        tmp2 = zeros(Nh_P,K*Np_F)
     end
     vector_norm(U) = sum((x->x.^2).(U))
     # VU = v_ufun(Q...)
@@ -350,38 +355,42 @@ Q_exact(x,y,z,t) = (ρ_exact(x,y,z,t),u,v,w,p)
 Q = primitive_to_conservative(ρ,u,v,w,p)
 Q = collect(Q)
 resQ = [zeros(size(Q[1])) for _ in eachindex(Q)]
-rhs(Q,ops,mesh,param,false,has_gpu)
-@btime rhs(Q,ops,mesh,param,false,has_gpu)
-# @time begin
-# for i = 1:Nsteps
-#     rhstest = 0
-#     for INTRK = 1:5
-#         compute_rhstest = INTRK==5
-#         rhsQ,rhstest = rhs(Q,ops,mesh,param,compute_rhstest,has_gpu)
-#         @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
-#         @. Q += rk4b[INTRK]*resQ
-#     end
-#
-#     if i%10==0 || i==Nsteps
-#         println("Time step: $i out of $Nsteps with rhstest = $rhstest")
-#     end
-# end
-#
-# end # time
-#
-# rq2,sq2,wq2 = quad_nodes_2D(N_P+2)
-# Vq2 = vandermonde_2D(N_P,rq2,sq2)/VDM
-# xq2,yq2,zq2 = (x->Vq2*x).((x,y,z))
-# ρ = Vq2*Pq*Q[1]
-# ρ_ex = ρ_exact(xq2,yq2,zq2,T)
-# Q = (x->Vq2*Pq*x).(Q)
-# p = pfun(Q[1],(Q[2],Q[3],Q[4]),Q[5])
-# Q = (Q[1],Q[2]./Q[1],Q[3]./Q[1],Q[4]./Q[1],p)
-# Q_ex = Q_exact(xq2,yq2,zq2,T)
-#
-# L2_err = 0.0
-# for fld in eachindex(Q)
-#     global L2_err
-#     L2_err += sum(h*J*wq2.*(Q[fld]-Q_ex[fld]).^2)
-# end
-# println("L2err at final time T = $T is $L2_err\n")
+if has_gpu
+    Q = [CuArray(Q[1]),CuArray(Q[2]),CuArray(Q[3]),CuArray(Q[4]),CuArray(Q[5])]
+    resQ = [CuArray(resQ[1]),CuArray(resQ[2]),CuArray(resQ[3]),CuArray(resQ[4]),CuArray(resQ[5])]
+end
+# rhs(Q,ops,mesh,param,false,has_gpu)
+# @btime rhs(Q,ops,mesh,param,false,has_gpu)
+@time begin
+for i = 1:Nsteps
+    rhstest = 0
+    for INTRK = 1:5
+        compute_rhstest = INTRK==5
+        rhsQ,rhstest = rhs(Q,ops,mesh,param,compute_rhstest,has_gpu)
+        @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
+        @. Q += rk4b[INTRK]*resQ
+    end
+
+    if i%10==0 || i==Nsteps
+        println("Time step: $i out of $Nsteps with rhstest = $rhstest")
+    end
+end
+
+end # time
+
+rq2,sq2,wq2 = quad_nodes_2D(N_P+2)
+Vq2 = vandermonde_2D(N_P,rq2,sq2)/VDM
+xq2,yq2,zq2 = (x->Vq2*x).((x,y,z))
+ρ = Vq2*Pq*Q[1]
+ρ_ex = ρ_exact(xq2,yq2,zq2,T)
+Q = (x->Vq2*Pq*x).(Q)
+p = pfun(Q[1],(Q[2],Q[3],Q[4]),Q[5])
+Q = (Q[1],Q[2]./Q[1],Q[3]./Q[1],Q[4]./Q[1],p)
+Q_ex = Q_exact(xq2,yq2,zq2,T)
+
+L2_err = 0.0
+for fld in eachindex(Q)
+    global L2_err
+    L2_err += sum(h*J*wq2.*(Q[fld]-Q_ex[fld]).^2)
+end
+println("L2err at final time T = $T is $L2_err\n")
