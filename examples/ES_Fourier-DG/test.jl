@@ -54,7 +54,7 @@ Np_P  = Int((N_P+1)*(N_P+2)/2)
 Np_F  = 8;    # The order of approximation in Fourier dimension
 K1D   = 15;   # Number of elements in polynomial (x,y) dimension
 CFL   = 1.0;
-T     = 5.0;  # End time
+T     = 1.0;  # End time
 
 "Time integration Parameters"
 rk4a,rk4b,rk4c = rk45_coeffs()
@@ -237,6 +237,9 @@ end
 
 VPh = Vq*[Pq Lq]*diagm(1 ./ [wq;wf])
 # TODO: refactor
+if has_gpu
+    Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,mapM,mapP,VPh = (x->CuArray(x)).((Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,mapM,mapP,VPh))
+end
 ops = (Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh)
 mesh = (rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,JP,JF,J,h,mapM,mapP)
 param = (K,Np_P,Nfp_P,Np_F,Nq_P,Nh_P)
@@ -249,7 +252,6 @@ function rhs(Q,ops,mesh,param,compute_rhstest,has_gpu)
 
     # TODO: cleaner syntax
     if has_gpu
-        Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,mapM,mapP,VPh = (x->CuArray(x)).((Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,mapM,mapP,VPh))
         rhsQ = (CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)))
         # TODO: why adding this if statement reduces allocation even when has_gpu = false?
         Qh = (CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)))
@@ -271,11 +273,13 @@ function rhs(Q,ops,mesh,param,compute_rhstest,has_gpu)
     # VU = v_ufun(Q...)
     @. VU[4] = Q[2]^2+Q[3]^2+Q[4]^2 # rhoUnorm
     @. VU[5] = Q[5]-.5*VU[4]/Q[1] # rhoe
-    # @. VU[1] = CuArrays.log(0.4*VU[5]/(Q[1]^1.4)) # sU #TODO: hardcoded gamma
-    tmp3 = @. CuArrays.log(0.4*VU[5]/(Q[1]^1.4))
-    @. VU[1] = tmp3 # TODO: why need to store in tmp3?
+    if has_gpu
+        tmp3 = @. CuArrays.log(0.4*VU[5]/(Q[1]^1.4))
+        @. VU[1] = tmp3 # TODO: why need to store in tmp3?
+    else
+        @. VU[1] = log(0.4*VU[5]/(Q[1]^1.4)) # sU #TODO: hardcoded gamma
+    end
     @. VU[1] = (-Q[5]+VU[5]*(2.4-VU[1]))/VU[5]
-
     @. VU[2] = Q[2]/VU[5]
     @. VU[3] = Q[3]/VU[5]
     @. VU[4] = Q[4]/VU[5]
@@ -309,8 +313,11 @@ function rhs(Q,ops,mesh,param,compute_rhstest,has_gpu)
 
     # TODO: implement Lax Friedrichs
     # TODO: storing flux, so avoid calculate flux on face quad point again?
-    Qlog = (CuArrays.log.(Qh[1]),CuArrays.log.(Qh[5]))
-#    update_rhs_flux!(rhsQ,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog)
+    if has_gpu
+        Qlog = (CuArrays.log.(Qh[1]),CuArrays.log.(Qh[5]))
+    else
+        Qlog = (log.(Qh[1]),log.(Qh[5]))
+    end
     ev = update_rhs_flux!(rhsQ,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog)
     wait(ev)
     rhsQ = (x->Vq*Lq*x).(rhsQ) # TODO: put it into update_rhs_flux!
@@ -325,9 +332,8 @@ function rhs(Q,ops,mesh,param,compute_rhstest,has_gpu)
     wait(ev2)
     ev3 = flux_differencing_z!(∇fh,Qh,Qlog,ops_flux,geo_flux,param_flux)
     wait(ev3)
-#    ∇f = (x->Vq*[Pq Lq]*diagm(1 ./ [wq;wf])*x).(∇fh)
     ∇f = (x->VPh*x).(∇fh)
-
+    # TODO: why changing K breaks the program?
     rhsQ = @. -(∇f+rhsQ)
 
     rhstest = 0
@@ -336,7 +342,6 @@ function rhs(Q,ops,mesh,param,compute_rhstest,has_gpu)
             rhstest += sum(wq.*VU[fld].*rhsQ[fld])
         end
     end
-#    rhsQ = [CuArray(zeros(size(Q[1]))),CuArray(zeros(size(Q[1]))),CuArray(zeros(size(Q[1]))),CuArray(zeros(size(Q[1]))),CuArray(zeros(size(Q[1])))]
     return rhsQ,rhstest
 end
 
@@ -381,12 +386,14 @@ end # time
 
 rq2,sq2,wq2 = quad_nodes_2D(N_P+2)
 Vq2 = vandermonde_2D(N_P,rq2,sq2)/VDM
-Vq2 = CuArray(Vq2)
-Pq = CuArray(Pq)
+if has_gpu
+    Vq2 = CuArray(Vq2)
+    Pq = CuArray(Pq)
 
-x = CuArray(x)
-y = CuArray(y)
-z = CuArray(z)
+    x = CuArray(x)
+    y = CuArray(y)
+    z = CuArray(z)
+end
 xq2,yq2,zq2 = (x->Vq2*x).((x,y,z))
 ρ = Vq2*Pq*Q[1]
 ρ_ex = ρ_exact(xq2,yq2,zq2,T)
@@ -405,8 +412,10 @@ rhounorm = vector_norm((Q[1],Q[2],Q[3]))./Q[1]
 p = @. 0.4*(Q[5]-.5*rhounorm)
 Q = (Q[1],Q[2]./Q[1],Q[3]./Q[1],Q[4]./Q[1],p)
 Q_ex = Q_exact(xq2,yq2,zq2,T)
-Q_ex = (x->CuArray(x)).(Q_ex)
-wq2 = CuArray(wq2)
+if has_gpu
+    Q_ex = (x->CuArray(x)).(Q_ex)
+    wq2 = CuArray(wq2)
+end
 
 L2_err = 0.0
 for fld in eachindex(Q)
