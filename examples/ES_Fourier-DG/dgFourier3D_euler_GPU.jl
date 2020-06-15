@@ -52,9 +52,9 @@ compute_L2_err = false
 N_P   = 2;    # The order of approximation in polynomial dimension
 Np_P  = Int((N_P+1)*(N_P+2)/2)
 Np_F  = 8;    # The order of approximation in Fourier dimension
-K1D   = 10;   # Number of elements in polynomial (x,y) dimension
+K1D   = 20;   # Number of elements in polynomial (x,y) dimension
 CFL   = 1.0;
-T     = 0.5;  # End time
+T     = 1.0;  # End time
 
 "Time integration Parameters"
 rk4a,rk4b,rk4c = rk45_coeffs()
@@ -143,6 +143,7 @@ Qsh = JF*Qsh
 Qth = JP*Qth
 Qrh_skew = 1/2*(Qrh-Qrh')
 Qsh_skew = 1/2*(Qsh-Qsh')
+VPh = Vq*[Pq Lq]*diagm(1 ./ [wq;wf])
 
 function flux_differencing_xy!(∇fh,Qh,Qlog,ops_flux,geo_flux,param_flux)
     K,Nq_P,Nh_P,Np_F,Nd = param_flux
@@ -184,11 +185,6 @@ function flux_differencing_z!(∇fh,Qh,Qlog,ops_flux,geo_flux,param_flux)
     K,Nq_P,Nh_P,Np_F,Nd = param_flux
     rxJ,sxJ,ryJ,syJ = geo_flux
     Qrh_skew,Qsh_skew,Qth,wq = ops_flux
-    for k = 1:K
-        for nh = 1:Nq_P
-            update∇fh_z!(∇fh,Qth,Np_F,Nd,nh,wq,J,k,Qlog,Qh)
-        end
-    end
     if isa(∇fh[1],Array)
         kernel! = update∇fh_z_kernel!(CPU(),4)
     else
@@ -241,7 +237,7 @@ end
 end
 
 # TODO: refactor
-ops = (Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq)
+ops = (Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh)
 mesh = (rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,JP,JF,J,h,mapM,mapP)
 param = (K,Np_P,Nfp_P,Np_F,Nq_P,Nh_P)
 function rhs(Q,ops,mesh,param,compute_rhstest,has_gpu)
@@ -325,7 +321,7 @@ function rhs(Q,ops,mesh,param,compute_rhstest,has_gpu)
     wait(ev2)
     ev3 = flux_differencing_z!(∇fh,Qh,Qlog,ops_flux,geo_flux,param_flux)
     wait(ev3)
-    ∇f = (x->Vq*[Pq Lq]*diagm(1 ./ [wq;wf])*x).(∇fh)
+    ∇f = (x->VPh*x).(∇fh)
     rhsQ = @. -(∇f+rhsQ)
 
     rhstest = 0

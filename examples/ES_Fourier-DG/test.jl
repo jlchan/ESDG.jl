@@ -237,9 +237,7 @@ end
 
 VPh = Vq*[Pq Lq]*diagm(1 ./ [wq;wf])
 # TODO: refactor
-if has_gpu
-    Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,mapM,mapP,VPh = (x->CuArray(x)).((Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,mapM,mapP,VPh))
-end
+Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,mapM,mapP,VPh = (x->CuArray(x)).((Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,mapM,mapP,VPh))
 ops = (Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh)
 mesh = (rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,JP,JF,J,h,mapM,mapP)
 param = (K,Np_P,Nfp_P,Np_F,Nq_P,Nh_P)
@@ -250,35 +248,19 @@ function rhs(Q,ops,mesh,param,compute_rhstest,has_gpu)
     K,Np_P,Nfp_P,Np_F,Nq_P,Nh_P = param
     Nd = length(Q) # number of components
 
-    # TODO: cleaner syntax
-    if has_gpu
-        rhsQ = (CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)))
-        # TODO: why adding this if statement reduces allocation even when has_gpu = false?
-        Qh = (CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)))
-        ∇fh = (CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)))
-        VU = (CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)))
-        tmp = CuArray(zeros(Nh_P,K*Np_F))
-        tmp2 = CuArray(zeros(Nh_P,K*Np_F))
-    else
-        rhsQ = (zeros(Nfp_P,K*Np_F),zeros(Nfp_P,K*Np_F),zeros(Nfp_P,K*Np_F),zeros(Nfp_P,K*Np_F),zeros(Nfp_P,K*Np_F))
-        Qh = (zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F))
-        # TODO: cleaner syntax, avoid storage?
-        ∇fh = (zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F),zeros(Nh_P,K*Np_F))
-        VU = (zeros(Nq_P,K*Np_F),zeros(Nq_P,K*Np_F),zeros(Nq_P,K*Np_F),zeros(Nq_P,K*Np_F),zeros(Nq_P,K*Np_F))
-        tmp = zeros(Nh_P,K*Np_F)
-        tmp2 = zeros(Nh_P,K*Np_F)
-    end
+    rhsQ = (CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)))
+    # TODO: why adding this if statement reduces allocation even when has_gpu = false?
+    Qh = (CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)))
+    ∇fh = (CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)))
+    VU = (CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)))
+    tmp = CuArray(zeros(Nh_P,K*Np_F))
+    tmp2 = CuArray(zeros(Nh_P,K*Np_F))
 
     vector_norm(U) = sum((x->x.^2).(U))
-    # VU = v_ufun(Q...)
     @. VU[4] = Q[2]^2+Q[3]^2+Q[4]^2 # rhoUnorm
     @. VU[5] = Q[5]-.5*VU[4]/Q[1] # rhoe
-    if has_gpu
-        tmp3 = @. CuArrays.log(0.4*VU[5]/(Q[1]^1.4))
-        @. VU[1] = tmp3 # TODO: why need to store in tmp3?
-    else
-        @. VU[1] = log(0.4*VU[5]/(Q[1]^1.4)) # sU #TODO: hardcoded gamma
-    end
+    tmp3 = @. CuArrays.log(0.4*VU[5]/(Q[1]^1.4))
+    @. VU[1] = tmp3 # TODO: why need to store in tmp3?
     @. VU[1] = (-Q[5]+VU[5]*(2.4-VU[1]))/VU[5]
     @. VU[2] = Q[2]/VU[5]
     @. VU[3] = Q[3]/VU[5]
@@ -286,7 +268,6 @@ function rhs(Q,ops,mesh,param,compute_rhstest,has_gpu)
     @. VU[5] = -Q[1]/VU[5]
 
     Qh = (x->Ph*x).(VU)
-    # (ρ,ρu,ρv,ρw,E) = u_vfun(Qh...)
     @. tmp = Qh[2]^2+Qh[3]^2+Qh[4]^2 #vUnorm
     @. tmp2 = (0.4/((-Qh[5])^1.4))^(1/0.4)*exp(-(1.4 - Qh[1] + tmp/(2*Qh[5]))/0.4) # rhoeV
     @. Qh[1] = tmp2.*(-Qh[5])
@@ -295,16 +276,6 @@ function rhs(Q,ops,mesh,param,compute_rhstest,has_gpu)
     @. Qh[4] = tmp2.*Qh[4]
     @. Qh[5] = tmp2.*(1-tmp/(2*Qh[5]))
 
-    # TODO: Lax Friedrichs Dissipation flux
-    # (ρM,ρuM,ρvM,ρwM,EM) = Uf
-    # ρuM_n = @. (ρuM*nxJ+ρvM*nyJ)/sJ # TODO: 3D lax-friedrichs?
-    # lam = abs.(wavespeed(ρM,ρuM_n,EM))
-    # LFc = .5*max.(lam,lam[mapP]).*sJ
-
-    # (Qh[2][Nq_P+1:end,:].*nxJ+Qh[3][Nq_P+1:end,:].*nyJ)./sJ
-
-    # β = betafun(ρ,ρu,ρv,ρw,E)
-    # Qh2 = (ρ,ρu./ρ,ρv./ρ,ρw./ρ,β)
     @. tmp = Qh[1]/(2*0.4*(Qh[5]-.5*(Qh[2]^2+Qh[3]^2+Qh[4]^2)/Qh[1])) #beta
     @. Qh[2] = Qh[2]./Qh[1]
     @. Qh[3] = Qh[3]./Qh[1]
@@ -313,11 +284,7 @@ function rhs(Q,ops,mesh,param,compute_rhstest,has_gpu)
 
     # TODO: implement Lax Friedrichs
     # TODO: storing flux, so avoid calculate flux on face quad point again?
-    if has_gpu
-        Qlog = (CuArrays.log.(Qh[1]),CuArrays.log.(Qh[5]))
-    else
-        Qlog = (log.(Qh[1]),log.(Qh[5]))
-    end
+    Qlog = (CuArrays.log.(Qh[1]),CuArrays.log.(Qh[5]))
     ev = update_rhs_flux!(rhsQ,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog)
     wait(ev)
     rhsQ = (x->Vq*Lq*x).(rhsQ) # TODO: put it into update_rhs_flux!
@@ -361,10 +328,8 @@ Q_exact(x,y,z,t) = (ρ_exact(x,y,z,t),u,v,w,p)
 Q = primitive_to_conservative(ρ,u,v,w,p)
 Q = collect(Q)
 resQ = [zeros(size(Q[1])) for _ in eachindex(Q)]
-if has_gpu
-    Q = [CuArray(Q[1]),CuArray(Q[2]),CuArray(Q[3]),CuArray(Q[4]),CuArray(Q[5])]
-    resQ = [CuArray(resQ[1]),CuArray(resQ[2]),CuArray(resQ[3]),CuArray(resQ[4]),CuArray(resQ[5])]
-end
+Q = [CuArray(Q[1]),CuArray(Q[2]),CuArray(Q[3]),CuArray(Q[4]),CuArray(Q[5])]
+resQ = [CuArray(resQ[1]),CuArray(resQ[2]),CuArray(resQ[3]),CuArray(resQ[4]),CuArray(resQ[5])]
 # rhs(Q,ops,mesh,param,false,has_gpu)
 # @btime rhs(Q,ops,mesh,param,false,has_gpu)
 @time begin
@@ -386,36 +351,23 @@ end # time
 
 rq2,sq2,wq2 = quad_nodes_2D(N_P+2)
 Vq2 = vandermonde_2D(N_P,rq2,sq2)/VDM
-if has_gpu
-    Vq2 = CuArray(Vq2)
-    Pq = CuArray(Pq)
-
-    x = CuArray(x)
-    y = CuArray(y)
-    z = CuArray(z)
-end
+Vq2 = CuArray(Vq2)
+Pq = CuArray(Pq)
+x = CuArray(x)
+y = CuArray(y)
+z = CuArray(z)
 xq2,yq2,zq2 = (x->Vq2*x).((x,y,z))
 ρ = Vq2*Pq*Q[1]
 ρ_ex = ρ_exact(xq2,yq2,zq2,T)
 Q = (x->Vq2*Pq*x).(Q)
-#=
-function pfun(rho,rhoU,E,rhounorm)
-    return @. (γ-1)*(E-.5*rhounorm)
-end
-function pfun(rho,rhoU,E)
-    rhounorm = Unorm(rhoU)./rho
-    return pfun(rho,rhoU,E,rhounorm)
-end
-=#
-vector_norm(U) = sum((x->x.^2).(U))
+
+vector_norm(U) = CuArrays.sum((x->x.^2).(U))
 rhounorm = vector_norm((Q[1],Q[2],Q[3]))./Q[1]
 p = @. 0.4*(Q[5]-.5*rhounorm)
 Q = (Q[1],Q[2]./Q[1],Q[3]./Q[1],Q[4]./Q[1],p)
 Q_ex = Q_exact(xq2,yq2,zq2,T)
-if has_gpu
-    Q_ex = (x->CuArray(x)).(Q_ex)
-    wq2 = CuArray(wq2)
-end
+Q_ex = (x->CuArray(x)).(Q_ex)
+wq2 = CuArray(wq2)
 
 L2_err = 0.0
 for fld in eachindex(Q)
