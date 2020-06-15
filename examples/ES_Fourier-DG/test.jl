@@ -9,10 +9,8 @@ using ToeplitzMatrices
 
 using KernelAbstractions
 using CUDAapi
-if CUDAapi.has_cuda_gpu()
-    using CuArrays
-    CuArrays.allowscalar(false)
-end
+using CuArrays
+CuArrays.allowscalar(false)
 
 push!(LOAD_PATH, "./src")
 using CommonUtils
@@ -43,18 +41,18 @@ end
 
 "Constants"
 const sp_tol = 1e-12
-const has_gpu = CUDAapi.has_cuda_gpu()
-
+# const has_gpu = CUDAapi.has_cuda_gpu()
+const enable_test = false
 "Program parameters"
 compute_L2_err = false
 
 "Approximation Parameters"
 N_P   = 2;    # The order of approximation in polynomial dimension
 Np_P  = Int((N_P+1)*(N_P+2)/2)
-Np_F  = 8;    # The order of approximation in Fourier dimension
-K1D   = 15;   # Number of elements in polynomial (x,y) dimension
+Np_F  = 10;    # The order of approximation in Fourier dimension
+K1D   = 30;   # Number of elements in polynomial (x,y) dimension
 CFL   = 1.0;
-T     = 1.0;  # End time
+T     = 0.5;  # End time
 
 "Time integration Parameters"
 rk4a,rk4b,rk4c = rk45_coeffs()
@@ -178,6 +176,7 @@ end
             end
         end
     end
+    @synchronize(true)
 end
 
 function flux_differencing_z!(∇fh,Qh,Qlog,ops_flux,geo_flux,param_flux)
@@ -207,19 +206,23 @@ end
             end
         end
     end
+    @synchronize(true)
 end
 
 # Wrapper
-function update_rhs_flux!(rhsQ,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog)
-    if isa(rhsQ[1],Array)
+function update_rhs_flux!(flux,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog)
+    #=
+    if isa(flux[1],Array)
         kernel! = update_rhs_flux_kernel!(CPU(),8)
     else
         kernel! = update_rhs_flux_kernel!(CUDA(),256)
     end
-    kernel!(rhsQ,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog,ndrange=size(rhsQ[1]))
+    =#
+    kernel! = update_rhs_flux_kernel!(CUDA(),256)
+    kernel!(flux,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog,ndrange=size(flux[1]))
 end
 
-@kernel function update_rhs_flux_kernel!(rhsQ,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog)
+@kernel function update_rhs_flux_kernel!(flux,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog)
     row_idx, col_idx = @index(Global,NTuple)
 
     tmp_idx = mapP[row_idx+(col_idx-1)*Nfp_P]
@@ -228,11 +231,12 @@ end
                                             (x->x[Nq_P+row_idx,col_idx]).(Qlog),(x->x[r_idx]).(Qlog))
     tmp_nxJ = nxJ[row_idx,col_idx]
     tmp_nyJ = nyJ[row_idx,col_idx]
-    for d = 1:Nd
+    for d = 1:5
         # normal_flux(fx,fy,u) = fx.*nxJ + fy.*nyJ - LFc.*(u[mapP]-u)
         # TODO: Lax Friedrichs
-        rhsQ[d][row_idx,col_idx] = tmp_flux_x[d]*tmp_nxJ + tmp_flux_y[d]*tmp_nyJ
+        flux[d][row_idx,col_idx] = tmp_flux_x[d]*tmp_nxJ + tmp_flux_y[d]*tmp_nyJ
     end
+    @synchronize(true)
 end
 
 VPh = Vq*[Pq Lq]*diagm(1 ./ [wq;wf])
@@ -241,22 +245,24 @@ Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,mapM
 ops = (Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh)
 mesh = (rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,JP,JF,J,h,mapM,mapP)
 param = (K,Np_P,Nfp_P,Np_F,Nq_P,Nh_P)
-function rhs(Q,ops,mesh,param,compute_rhstest,has_gpu)
+
+function rhs(Q,ops,mesh,param,compute_rhstest)
 
     Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh = ops
     rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,JP,JF,J,h,mapM,mapP = mesh
     K,Np_P,Nfp_P,Np_F,Nq_P,Nh_P = param
     Nd = length(Q) # number of components
 
-    rhsQ = (CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)))
+    # flux = (CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)))
     # TODO: why adding this if statement reduces allocation even when has_gpu = false?
     Qh = (CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)))
     ∇fh = (CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)))
     VU = (CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)))
+    rhsQ = (CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)))
     tmp = CuArray(zeros(Nh_P,K*Np_F))
     tmp2 = CuArray(zeros(Nh_P,K*Np_F))
 
-    vector_norm(U) = sum((x->x.^2).(U))
+    vector_norm(U) = CuArrays.sum((x->x.^2).(U))
     @. VU[4] = Q[2]^2+Q[3]^2+Q[4]^2 # rhoUnorm
     @. VU[5] = Q[5]-.5*VU[4]/Q[1] # rhoe
     tmp3 = @. CuArrays.log(0.4*VU[5]/(Q[1]^1.4))
@@ -266,7 +272,11 @@ function rhs(Q,ops,mesh,param,compute_rhstest,has_gpu)
     @. VU[3] = Q[3]/VU[5]
     @. VU[4] = Q[4]/VU[5]
     @. VU[5] = -Q[1]/VU[5]
-
+if enable_test
+#@show maximum.(VU)
+#@show minimum.(VU)
+@show sum.(VU)
+end
     Qh = (x->Ph*x).(VU)
     @. tmp = Qh[2]^2+Qh[3]^2+Qh[4]^2 #vUnorm
     @. tmp2 = (0.4/((-Qh[5])^1.4))^(1/0.4)*exp(-(1.4 - Qh[1] + tmp/(2*Qh[5]))/0.4) # rhoeV
@@ -275,34 +285,63 @@ function rhs(Q,ops,mesh,param,compute_rhstest,has_gpu)
     @. Qh[3] = tmp2.*Qh[3]
     @. Qh[4] = tmp2.*Qh[4]
     @. Qh[5] = tmp2.*(1-tmp/(2*Qh[5]))
+if enable_test
+#@show maximum.(Qh)
+#@show minimum.(Qh)
+@show sum.(Qh)
+end
 
     @. tmp = Qh[1]/(2*0.4*(Qh[5]-.5*(Qh[2]^2+Qh[3]^2+Qh[4]^2)/Qh[1])) #beta
     @. Qh[2] = Qh[2]./Qh[1]
     @. Qh[3] = Qh[3]./Qh[1]
     @. Qh[4] = Qh[4]./Qh[1]
     @. Qh[5] = tmp
-
+if enable_test
+#@show maximum.(Qh)
+#@show minimum.(Qh)
+@show sum.(Qh)
+end
     # TODO: implement Lax Friedrichs
     # TODO: storing flux, so avoid calculate flux on face quad point again?
     Qlog = (CuArrays.log.(Qh[1]),CuArrays.log.(Qh[5]))
-    ev = update_rhs_flux!(rhsQ,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog)
-    wait(ev)
-    rhsQ = (x->Vq*Lq*x).(rhsQ) # TODO: put it into update_rhs_flux!
+    flux = (CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)))
 
+    event = update_rhs_flux!(flux,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog)
+    wait(event)
+if enable_test
+@show maximum.(flux)
+end
+    flux = (x->Vq*Lq*x).(flux) # TODO: put it into update_rhs_flux!
+if enable_test
+@show maximum.(Qlog)
+@show maximum.(flux)
+end
     # Flux differencing
     # TODO: fix Jacobian
     param_flux = (K,Nq_P,Nh_P,Np_F,Nd)
     geo_flux = (rxJ,sxJ,ryJ,syJ)
     ops_flux = (Qrh_skew,Qsh_skew,Qth,wq)
     # flux_differencing_xy!(∇fh,Qh,Qlog,ops_flux,geo_flux,param_flux)
-    ev2 = flux_differencing_xy!(∇fh,Qh,Qlog,ops_flux,geo_flux,param_flux)
-    wait(ev2)
-    ev3 = flux_differencing_z!(∇fh,Qh,Qlog,ops_flux,geo_flux,param_flux)
-    wait(ev3)
+    event = flux_differencing_xy!(∇fh,Qh,Qlog,ops_flux,geo_flux,param_flux)
+    wait(event)
+if enable_test
+@show "=========== Flux Differencing ============"
+@show maximum.(∇fh)
+end
+    event = flux_differencing_z!(∇fh,Qh,Qlog,ops_flux,geo_flux,param_flux)
+    wait(event)
+if enable_test
+@show maximum.(∇fh)
+end
     ∇f = (x->VPh*x).(∇fh)
+if enable_test
+@show maximum.(∇f)
+end
     # TODO: why changing K breaks the program?
-    rhsQ = @. -(∇f+rhsQ)
-
+    rhsQ = @. -(∇f+flux)
+if enable_test
+@show maximum.(rhsQ)
+end
     rhstest = 0
     if compute_rhstest
 	for fld in eachindex(rhsQ)
@@ -330,14 +369,20 @@ Q = collect(Q)
 resQ = [zeros(size(Q[1])) for _ in eachindex(Q)]
 Q = [CuArray(Q[1]),CuArray(Q[2]),CuArray(Q[3]),CuArray(Q[4]),CuArray(Q[5])]
 resQ = [CuArray(resQ[1]),CuArray(resQ[2]),CuArray(resQ[3]),CuArray(resQ[4]),CuArray(resQ[5])]
-# rhs(Q,ops,mesh,param,false,has_gpu)
-# @btime rhs(Q,ops,mesh,param,false,has_gpu)
+#rhs(Q,ops,mesh,param,false)
+# @btime rhs(Q,ops,mesh,param,false)
+
 @time begin
 for i = 1:Nsteps
     rhstest = 0
     for INTRK = 1:5
+	if enable_test
+	@show "=================================="
+	@show i
+	@show INTRK	
+	end
         compute_rhstest = INTRK==5
-        rhsQ,rhstest = rhs(Q,ops,mesh,param,compute_rhstest,has_gpu)
+        rhsQ,rhstest = rhs(Q,ops,mesh,param,compute_rhstest)
         @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
         @. Q += rk4b[INTRK]*resQ
     end
@@ -375,3 +420,11 @@ for fld in eachindex(Q)
     L2_err += sum(h*J*wq2.*(Q[fld]-Q_ex[fld]).^2)
 end
 println("L2err at final time T = $T is $L2_err\n")
+#=
+@show maximum.(Q)
+@show maximum.(Q_ex)
+@show minimum.(Q)
+@show minimum.(Q_ex)
+@show sum.(Q)
+@show sum.(Q_ex)
+=#
