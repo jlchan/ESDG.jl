@@ -212,7 +212,7 @@ end
 end
 
 # Wrapper
-function update_rhs_flux!(flux,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog)
+function update_rhs_flux!(flux,QM,QP,QlogM,QlogP,Nh_P,Nq_P,K,Np_F,Nfp_P,Nd,Qh,nxJ,nyJ,Qlog)
     #=
     if isa(flux[1],Array)
         kernel! = update_rhs_flux_kernel!(CPU(),8)
@@ -221,16 +221,18 @@ function update_rhs_flux!(flux,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog)
     end
     =#
     kernel! = update_rhs_flux_kernel!(CUDA(),256)
-    kernel!(flux,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog,ndrange=size(flux[1]))
+    kernel!(flux,QM,QP,QlogM,QlogP,Nh_P,Nq_P,K,Np_F,Nfp_P,Nd,Qh,nxJ,nyJ,Qlog,ndrange=size(flux[1]))
 end
 
-@kernel function update_rhs_flux_kernel!(flux,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog)
+@kernel function update_rhs_flux_kernel!(flux,QM,QP,QlogM,QlogP,Nh_P,Nq_P,K,Np_F,Nfp_P,Nd,Qh,nxJ,nyJ,Qlog)
     row_idx, col_idx = @index(Global,NTuple)
 
-    tmp_idx = mapP[row_idx+(col_idx-1)*Nfp_P]
-    r_idx = Nq_P+Nh_P*div(tmp_idx-1,Nfp_P)+mod1(tmp_idx,Nfp_P)
-    tmp_flux_x, tmp_flux_y,_ = euler_fluxes((x->x[Nq_P+row_idx,col_idx]).(Qh),(x->x[r_idx]).(Qh),
-                                            (x->x[Nq_P+row_idx,col_idx]).(Qlog),(x->x[r_idx]).(Qlog))
+    # tmp_idx = mapP[row_idx+(col_idx-1)*Nfp_P]
+    # r_idx = Nq_P+Nh_P*div(tmp_idx-1,Nfp_P)+mod1(tmp_idx,Nfp_P)
+    # tmp_flux_x, tmp_flux_y,_ = euler_fluxes((x->x[Nq_P+row_idx,col_idx]).(Qh),(x->x[r_idx]).(Qh),
+    #                                         (x->x[Nq_P+row_idx,col_idx]).(Qlog),(x->x[r_idx]).(Qlog))
+    tmp_flux_x, tmp_flux_y, _ = euler_fluxes((x->x[row_idx,col_idx]).(QM), (x->x[row_idx,col_idx]).(QP),
+                                             (x->x[row_idx,col_idx]).(QlogM), (x->x[row_idx,col_idx]).(QlogP))
     tmp_nxJ = nxJ[row_idx,col_idx]
     tmp_nyJ = nyJ[row_idx,col_idx]
     for d = 1:5
@@ -274,7 +276,7 @@ end
 
 VPh = Vq*[Pq Lq]*diagm(1 ./ [wq;wf])
 # TODO: refactor
-Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,mapM,mapP,VPh = (x->CuArray(x)).((Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,mapM,mapP,VPh))
+Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,VPh = (x->CuArray(x)).((Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,VPh))
 ops = (Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh)
 mesh = (rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,JP,JF,J,h,mapM,mapP)
 param = (K,Np_P,Nfp_P,Np_F,Nq_P,Nh_P)
@@ -289,19 +291,28 @@ function rhs(Q,ops,mesh,param,compute_rhstest)
     geo_flux = (rxJ,sxJ,ryJ,syJ)
     ops_flux = (Qrh_skew,Qsh_skew,Qth,wq)
     
+    # Entropy projection
     VU = (CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)))
     convert_u_to_v!(VU,Q)
     Qh = (x->Ph*x).(VU)
     convert_v_to_u!(Qh)
-   
+
+    # Surface interpolation
+    Qlog = (CuArrays.log.(Qh[1]),CuArrays.log.(Qh[5]))
+    QM = (x->x[Nq_P+1:end,:]).(Qh)
+    QlogM = (x->x[Nq_P+1:end,:]).(Qlog)
+    QP = (x->x[mapP]).(QM)
+    QlogP = (x->x[mapP]).(QlogM)
+
+    # Surface Kernel 
     # TODO: implement Lax Friedrichs
     # TODO: storing flux, so avoid calculate flux on face quad point again?
-    Qlog = (CuArrays.log.(Qh[1]),CuArrays.log.(Qh[5]))
     flux = (CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)))
-    event = update_rhs_flux!(flux,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog)
+    event = update_rhs_flux!(flux,QM,QP,QlogM,QlogP,Nh_P,Nq_P,K,Np_F,Nfp_P,Nd,Qh,nxJ,nyJ,Qlog)
     wait(event)
     flux = (x->LIFTq*x).(flux) # TODO: put it into update_rhs_flux!
-    
+
+    # Volume Kernel    
     # Flux differencing
     ∇fh = (CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)))
     event = flux_differencing_xy!(∇fh,Qh,Qlog,ops_flux,geo_flux,param_flux)
