@@ -39,6 +39,8 @@ function vandermonde_Sinc(h,r)
     return V
 end
 
+vector_norm(U) = CuArrays.sum((x->x.^2).(U))
+
 "Constants"
 const sp_tol = 1e-12
 # const has_gpu = CUDAapi.has_cuda_gpu()
@@ -49,8 +51,8 @@ compute_L2_err = false
 "Approximation Parameters"
 N_P   = 2;    # The order of approximation in polynomial dimension
 Np_P  = Int((N_P+1)*(N_P+2)/2)
-Np_F  = 10;    # The order of approximation in Fourier dimension
-K1D   = 30;   # Number of elements in polynomial (x,y) dimension
+Np_F  = 8;    # The order of approximation in Fourier dimension
+K1D   = 10;   # Number of elements in polynomial (x,y) dimension
 CFL   = 1.0;
 T     = 0.5;  # End time
 
@@ -126,7 +128,6 @@ Qrh_skew,Qsh_skew = (x->1/2*(x-x')).((Qrh,Qsh))
 Qt = Dt
 Qth = Qt # Not the SBP operator, weighted when flux differencing
 Ph = [Vq;Vf]*Pq # TODO: refactor
-LIFTq = Vq*Lq
 
 # TODO: assume mesh uniform affine, so Jacobian are constants
 # TODO: fix other Jacobian parts
@@ -141,6 +142,7 @@ Qsh = JF*Qsh
 Qth = JP*Qth
 Qrh_skew = 1/2*(Qrh-Qrh')
 Qsh_skew = 1/2*(Qsh-Qsh')
+LIFTq = Vq*Lq
 
 function flux_differencing_xy!(∇fh,Qh,Qlog,ops_flux,geo_flux,param_flux)
     K,Nq_P,Nh_P,Np_F,Nd = param_flux
@@ -209,7 +211,15 @@ end
     @synchronize(true)
 end
 
+# Wrapper
 function update_rhs_flux!(flux,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog)
+    #=
+    if isa(flux[1],Array)
+        kernel! = update_rhs_flux_kernel!(CPU(),8)
+    else
+        kernel! = update_rhs_flux_kernel!(CUDA(),256)
+    end
+    =#
     kernel! = update_rhs_flux_kernel!(CUDA(),256)
     kernel!(flux,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog,ndrange=size(flux[1]))
 end
@@ -217,7 +227,6 @@ end
 @kernel function update_rhs_flux_kernel!(flux,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog)
     row_idx, col_idx = @index(Global,NTuple)
 
-    # TODO: surface interp kernel
     tmp_idx = mapP[row_idx+(col_idx-1)*Nfp_P]
     r_idx = Nq_P+Nh_P*div(tmp_idx-1,Nfp_P)+mod1(tmp_idx,Nfp_P)
     tmp_flux_x, tmp_flux_y,_ = euler_fluxes((x->x[Nq_P+row_idx,col_idx]).(Qh),(x->x[r_idx]).(Qh),
@@ -232,58 +241,39 @@ end
     @synchronize(true)
 end
 
-function entropy_projection!(Q,Qh,VU,Ph)
-    kernel_1! = v_u_kernel!(CUDA(),256)
-    kernel_2! = u_v_kernel!(CUDA(),256)
-    kernel_1!(Q,VU,ndrange=size(VU[1]))
-    Qh = (x->Ph*x).(VU)
-    kernel_2!(Qh,ndrange=size(Qh[1]))
+function convert_u_to_v!(VU,Q)
+    @. VU[4] = Q[2]^2+Q[3]^2+Q[4]^2 # rhoUnorm
+    @. VU[5] = Q[5]-.5*VU[4]/Q[1] # rhoe
+    tmp3 = @. CuArrays.log(0.4*VU[5]/(Q[1]^1.4))
+    @. VU[1] = tmp3 # TODO: why need to store in tmp3?
+    @. VU[1] = (-Q[5]+VU[5]*(2.4-VU[1]))/VU[5]
+    @. VU[2] = Q[2]/VU[5]
+    @. VU[3] = Q[3]/VU[5]
+    @. VU[4] = Q[4]/VU[5]
+    @. VU[5] = -Q[1]/VU[5]
 end
 
-@kernel function v_u_kernel!(Q,VU)
-    i,j = @index(Global,NTuple)
-    rhoUnorm = Q[2][i,j]^2+Q[3][i,j]^2+Q[4][i,j]^2
-    rhoe = Q[5][i,j]-.5*rhoUnorm/Q[1][i,j]
-    tmp = log(0.4*rhoe/(Q[1][i,j]^1.4))
-    VU[1][i,j] = (-Q[5][i,j]+rhoe*(2.4-VU[1][i,j]))/rhoe
-    VU[2][i,j] = Q[2][i,j]/rhoe
-    VU[3][i,j] = Q[3][i,j]/rhoe
-    VU[4][i,j] = Q[4][i,j]/rhoe
-    VU[5][i,j] = -Q[1][i,j]/rhoe
-    @synchronize(true)
-end
+function convert_v_to_u!(Qh)
+    tmp = CuArray(zeros(Nh_P,K*Np_F))
+    tmp2 = CuArray(zeros(Nh_P,K*Np_F))
 
-@kernel function u_v_kernel!(Qh)
-    i,j = @index(Global,NTuple)
-    vUnorm = Qh[2][i,j]^2+Qh[3][i,j]^2+Qh[4][i,j]^2
-    rhoeV = (0.4/((-Qh[5][i,j])^1.4))^(1/0.4)*exp(-(1.4 - Qh[1][i,j] + vUnorm/(2*Qh[5][i,j]))/0.4)
-    Qh[1][i,j] = -Qh[5][i,j]*rhoeV
-    Qh[2][i,j] = Qh[2][i,j]*rhoeV
-    Qh[3][i,j] = Qh[3][i,j]*rhoeV
-    Qh[4][i,j] = Qh[4][i,j]*rhoeV
-    Qh[5][i,j] = (1-vUnorm/(2*Qh[5][i,j]))*rhoeV
-    @synchronize(true)
-end
+    @. tmp = Qh[2]^2+Qh[3]^2+Qh[4]^2 #vUnorm
+    @. tmp2 = (0.4/((-Qh[5])^1.4))^(1/0.4)*exp(-(1.4 - Qh[1] + tmp/(2*Qh[5]))/0.4) # rhoeV
+    @. Qh[1] = tmp2.*(-Qh[5])
+    @. Qh[2] = tmp2.*Qh[2]
+    @. Qh[3] = tmp2.*Qh[3]
+    @. Qh[4] = tmp2.*Qh[4]
+    @. Qh[5] = tmp2.*(1-tmp/(2*Qh[5]))
 
-function convert_flux_var!(Qh)
-    kernel! = convert_flux_var_kernel!(CUDA(),256)
-    kernel!(Qh,ndrange=size(Qh[1]))
+    @. tmp = Qh[1]/(2*0.4*(Qh[5]-.5*(Qh[2]^2+Qh[3]^2+Qh[4]^2)/Qh[1])) #beta
+    @. Qh[2] = Qh[2]./Qh[1]
+    @. Qh[3] = Qh[3]./Qh[1]
+    @. Qh[4] = Qh[4]./Qh[1]
+    @. Qh[5] = tmp
 end
-
-@kernel function convert_flux_var_kernel!(Qh)
-    i,j = @index(Global,NTuple)
-    beta = Qh[1][i,j]/(0.8*(Qh[5][i,j]-.5*(Qh[2][i,j]^2+Qh[3][i,j]^2+Qh[4][i,j]^2)/Qh[1][i,j]))
-    Qh[2][i,j] = Qh[2][i,j]/Qh[1][i,j]
-    Qh[3][i,j] = Qh[3][i,j]/Qh[1][i,j]
-    Qh[4][i,j] = Qh[4][i,j]/Qh[1][i,j]
-    Qh[5][i,j] = beta
-end
-
-vector_norm(U) = CuArrays.sum((x->x.^2).(U))
 
 VPh = Vq*[Pq Lq]*diagm(1 ./ [wq;wf])
 # TODO: refactor
-# TODO: CPU implementation
 Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,mapM,mapP,VPh = (x->CuArray(x)).((Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,mapM,mapP,VPh))
 ops = (Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh)
 mesh = (rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,JP,JF,J,h,mapM,mapP)
@@ -297,56 +287,53 @@ function rhs(Q,ops,mesh,param,compute_rhstest)
     Nd = length(Q) # number of components
     param_flux = (K,Nq_P,Nh_P,Np_F,Nd)
     geo_flux = (rxJ,sxJ,ryJ,syJ)
-    ops_flux = (Qrh_skew,Qsh_skew,Qth,wq) # TODO: change name
-
-    # TODO: fix memory layout
-    # flux = (CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)))
-    # TODO: why adding this if statement reduces allocation even when has_gpu = false?
+    ops_flux = (Qrh_skew,Qsh_skew,Qth,wq)
+    
     VU = (CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)))
-    Qh = (CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)))
-    entropy_projection!(Q,Qh,VU)
-    convert_flux_var!(Qh)
-
-    # Flux kernel
+    convert_u_to_v!(VU,Q)
+    Qh = (x->Ph*x).(VU)
+    convert_v_to_u!(Qh)
+   
     # TODO: implement Lax Friedrichs
+    # TODO: storing flux, so avoid calculate flux on face quad point again?
     Qlog = (CuArrays.log.(Qh[1]),CuArrays.log.(Qh[5]))
     flux = (CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)),CuArray(zeros(Nfp_P,K*Np_F)))
     event = update_rhs_flux!(flux,Nh_P,Nq_P,K,Np_F,Nfp_P,mapP,Nd,Qh,nxJ,nyJ,Qlog)
     wait(event)
-    flux = (x->Vq*Lq*x).(flux) # TODO: put it into update_rhs_flux!
-
-    # Flux differencing kernel
+    flux = (x->LIFTq*x).(flux) # TODO: put it into update_rhs_flux!
+    
+    # Flux differencing
     ∇fh = (CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)),CuArray(zeros(Nh_P,K*Np_F)))
-    rhsQ = (CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)),CuArray(zeros(Nq_P,K*Np_F)))
     event = flux_differencing_xy!(∇fh,Qh,Qlog,ops_flux,geo_flux,param_flux)
     wait(event)
     event = flux_differencing_z!(∇fh,Qh,Qlog,ops_flux,geo_flux,param_flux)
     wait(event)
-    ∇f = (x->VPh*x).(∇fh) # TODO: unnecessary allocation?
-    @. rhsQ = -(∇f+flux)
+    ∇f = (x->VPh*x).(∇fh)
+
+    # TODO: why changing K breaks the program?
+    rhsQ = @. -(∇f+flux)
+
+    if enable_test
+        @show maximum.(VU)
+        @show minimum.(VU)
+        @show sum.(VU)
+        @show maximum.(∇fh)
+        @show minimum.(∇fh)
+        @show sum.(∇fh)
+        @show maximum.(rhsQ)
+        @show minimum.(rhsQ)
+        @show sum.(rhsQ)
+        @show maximum.(flux)
+        @show minimum.(flux)
+        @show sum.(flux)
+    end
 
     rhstest = 0
     if compute_rhstest
 	for fld in eachindex(rhsQ)
-            rhstest += CuArrays.sum(wq.*VU[fld].*rhsQ[fld])
+            rhstest += sum(wq.*VU[fld].*rhsQ[fld])
         end
     end
-
-    if enable_test
-        @show maximum.(Qh)
-        @show minimum.(Qh)
-        @show sum.(Qh)
-        @show maximum.(∇fh)
-        @show minimum.(∇fh)
-        @show sum.(∇fh)
-        @show maximum.(VU)
-        @show minimum.(VU)
-        @show sum.(VU)
-        @show maximum.(rhsQ)
-        @show minimum.(rhsQ)
-        @show sum.(rhsQ)
-    end
-
     return rhsQ,rhstest
 end
 
@@ -378,7 +365,7 @@ for i = 1:Nsteps
 	if enable_test
 	@show "=================================="
 	@show i
-	@show INTRK
+	@show INTRK	
 	end
         compute_rhstest = INTRK==5
         rhsQ,rhstest = rhs(Q,ops,mesh,param,compute_rhstest)
