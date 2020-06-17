@@ -50,8 +50,8 @@ compute_L2_err = false
 "Approximation Parameters"
 N_P   = 2;    # The order of approximation in polynomial dimension
 Np_P  = Int((N_P+1)*(N_P+2)/2)
-Np_F  = 8;    # The order of approximation in Fourier dimension
-K1D   = 10;   # Number of elements in polynomial (x,y) dimension
+Np_F  = 4;    # The order of approximation in Fourier dimension
+K1D   = 4;   # Number of elements in polynomial (x,y) dimension
 CFL   = 1.0;
 T     = 0.5;  # End time
 
@@ -171,14 +171,31 @@ Q = Q_vec[:]
 Q = CuArray(Q_vec)
 
 VU = CUDA.fill(0.0f0,length(Q))
-function v_to_u!(Q,VU)
+function v_to_u!(VU,Q,Nd,Nq)
     index = (blockIdx().x-1)*blockDim().x + threadIdx().x
     stride = blockDim().x*gridDim().x
-    for i = index:stride:length(VU)
-        @inbounds VU[i] = 1.0
+    for i = index:stride:ceil(Int,length(VU)/5)
+        k = div(i-1,Nq) # Current element
+        n = mod1(i,Nq) # Current quad node
+        idx = k*Nd*Nq+n
+        rho = Q[idx]
+        rhou = Q[idx+Nq]
+        rhov = Q[idx+2*Nq]
+        rhow = Q[idx+3*Nq]
+        E = Q[idx+4*Nq]
+        rhoUnorm = rhou^2+rhov^2+rhow^2
+        rhoe = E-.5*rhoUnorm/rho
+        sU = log(0.4*rhoe/rho^1.4)
+        VU[idx] = (-E+rhoe*(2.4-sU))/rhoe
+        VU[idx+Nq] = rhou/rhoe
+        VU[idx+2*Nq] = rhov/rhoe
+        VU[idx+3*Nq] = rhow/rhoe
+        VU[idx+4*Nq] = -rho/rhoe
     end
+
 end
 
-num_blocks = ceil(Int,length(VU)/256)
-@cuda threads=256 blocks = num_blocks v_to_u!(VU)
-@test all(Array(VU) .== 1.0f0)
+Nq = Nq_P*Np_F
+num_blocks = ceil(Int,length(VU)/256/Nd)
+@cuda threads=256 blocks = num_blocks v_to_u!(VU,Q,Nd,Nq)
+@show VU[1:Nq]
