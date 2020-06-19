@@ -17,13 +17,18 @@ export geometric_factors
 export connect_mesh
 export build_node_maps
 export build_periodic_boundary_maps, build_periodic_boundary_maps!
-export rk45_coeffs
+export rk45_coeffs, dopri45_coeffs
 
 export unzip # convert array of tuples to tuples of arrays
 unzip(a) = map(x->getfield.(a, x), fieldnames(eltype(a)))
 export eye,speye
 eye(n) = diagm(ones(n))
 speye(n) = spdiagm(0 => ones(n))
+
+# convenience routines
+export bcopy!, bmult
+bcopy!(x,y) = x .= y
+bmult(x,y) = x .* y
 
 # 4th order 5-stage low storage Runge Kutta from Carpenter/Kennedy.
 function rk45_coeffs()
@@ -48,7 +53,29 @@ function rk45_coeffs()
     return rk4a,rk4b,rk4c
 end
 
-# include("./CommonUtils/meshgrid.jl")
+function dopri45_coeffs()
+    rk4a = [0.0             0.0             0.0             0.0             0.0             0.0         0.0
+            0.2             0.0             0.0             0.0             0.0             0.0         0.0
+            3.0/40.0        9.0/40.0        0.0             0.0             0.0             0.0         0.0
+            44.0/45.0      -56.0/15.0       32.0/9.0        0.0             0.0             0.0         0.0
+            19372.0/6561.0 -25360.0/2187.0  64448.0/6561.0  -212.0/729.0    0.0             0.0         0.0
+            9017.0/3168.0  -355.0/33.0      46732.0/5247.0  49.0/176.0      -5103.0/18656.0 0.0         0.0
+            35.0/384.0      0.0             500.0/1113.0    125.0/192.0     -2187.0/6784.0  11.0/84.0   0.0 ]
+    # rk4a = [0.2             0.0             0.0             0.0             0.0             0.0
+    #         3.0/40.0        9.0/40.0        0.0             0.0             0.0             0.0
+    #         44.0/45.0      -56.0/15.0       32.0/9.0        0.0             0.0             0.0
+    #         19372.0/6561.0 -25360.0/2187.0  64448.0/6561.0  -212.0/729.0    0.0             0.0
+    #         9017.0/3168.0  -355.0/33.0      46732.0/5247.0  49.0/176.0      -5103.0/18656.0 0.0
+    #         35.0/384.0      0.0             500.0/1113.0    125.0/192.0     -2187.0/6784.0  11.0/84.0  ]
+
+    rk4c = vec([0.0 0.2 0.3 0.8 8.0/9.0 1.0 1.0 ])
+
+    # coefficients to evolve error estimator
+    rk4E = vec([71.0/57600.0  0.0 -71.0/16695.0 71.0/1920.0 -17253.0/339200.0 22.0/525.0 -1.0/40.0 ])
+
+    return rk4a,rk4E,rk4c
+end
+
 include("./geometric_factors.jl")
 include("./connect_mesh.jl")
 include("./node_map_functions.jl")
