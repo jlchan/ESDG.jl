@@ -57,7 +57,7 @@ mutable struct RefElemData
 
     # annotate types for all matrices involved in RHS evaluation
 
-    # differentiation matrices    
+    # differentiation matrices
     Dr::Array{Float64,2}
     Ds::Array{Float64,2}
     Dt::Array{Float64,2}
@@ -144,7 +144,7 @@ function init_reference_interval(N;Nq=N+1)
 
 end
 
-function init_reference_tri(N)
+function init_reference_tri(N;Nq=2*N)
 
     # initialize a new reference element data struct
     rd = RefElemData()
@@ -178,7 +178,7 @@ function init_reference_tri(N)
     nsJ = [-e; e; z]
     @pack! rd = rf,sf,wf,nrJ,nsJ
 
-    rq,sq,wq = Basis2DTri.quad_nodes_2D(2*N)
+    rq,sq,wq = Basis2DTri.quad_nodes_2D(Nq)
     Vq = Basis2DTri.vandermonde_2D(N,rq,sq)/VDM
     M = Vq'*diagm(wq)*Vq
     Pq = M\(Vq'*diagm(wq))
