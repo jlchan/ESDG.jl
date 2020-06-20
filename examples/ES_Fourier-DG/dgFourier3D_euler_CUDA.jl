@@ -43,15 +43,15 @@ vector_norm(U) = CuArrays.sum((x->x.^2).(U))
 "Constants"
 const sp_tol = 1e-12
 # const has_gpu = CUDAapi.has_cuda_gpu()
-const enable_test = false
+const enable_test = false 
 "Program parameters"
 compute_L2_err = false
 
 "Approximation Parameters"
 N_P   = 2;    # The order of approximation in polynomial dimension
 Np_P  = Int((N_P+1)*(N_P+2)/2)
-Np_F  = 4;    # The order of approximation in Fourier dimension
-K1D   = 4;   # Number of elements in polynomial (x,y) dimension
+Np_F  = 10;    # The order of approximation in Fourier dimension
+K1D   = 10;   # Number of elements in polynomial (x,y) dimension
 Nd = 5;
 CFL   = 1.0;
 T     = 0.5;  # End time
@@ -146,31 +146,40 @@ VPh = Vq*[Pq Lq]*diagm(1 ./ [wq;wf])
 
 # TODO: refactor
 Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh = (x->CuArray(x)).((Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh))
-ops = (Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh)
-mesh = (rxJ,sxJ,ryJ,syJ,sJ,nxJ,nyJ,JP,JF,J,h,mapM,mapP)
-param = (K,Np_P,Nfp_P,Np_F,Nq_P,Nh_P)
+Nq = Nq_P*Np_F
+Nh = Nh_P*Np_F
+Nfp = Nfp_P*Np_F
+mapP_vec = zeros(Int64,Nfp_P,Np_F,Nd,K)
 
-xq,yq,zq = (x->reshape(x,Nq_P,Np_F,K)).((xq,yq,zq))
-ρ_exact(x,y,z,t) = @. 1+0.2*sin(pi*(x+y+z-3/2*t))
-ρ = @. 1+0.2*sin(pi*(xq+yq+zq))
-u = ones(size(xq))
-v = -1/2*ones(size(xq))
-w = ones(size(xq))
-p = ones(size(xq))
-Q_exact(x,y,z,t) = (ρ_exact(x,y,z,t),u,v,w,p)
-
-Q = primitive_to_conservative(ρ,u,v,w,p)
-Q = collect(Q)
-Q_vec = zeros(Nq_P,Np_F,5,K)
 for k = 1:K
-    for d = 1:5
-        @. Q_vec[:,:,d,k] = Q[d][:,:,k]
+    for j = 1:Np_F
+        for i = 1:Nfp_P
+            val = mapP[i,j,k]
+            elem = div(val-1,Nfp)
+            n = mod1(val,Nfp)
+            mapP_vec[i,j,1,k] = elem*Nd*Nfp+n
+            mapP_vec[i,j,2,k] = elem*Nd*Nfp+n+Nfp
+            mapP_vec[i,j,3,k] = elem*Nd*Nfp+n+2*Nfp
+            mapP_vec[i,j,4,k] = elem*Nd*Nfp+n+3*Nfp
+            mapP_vec[i,j,5,k] = elem*Nd*Nfp+n+4*Nfp
+        end
     end
 end
+mapP_vec = mapP_vec[:]
+nxJ = CuArray(nxJ[:])
+nyJ = CuArray(nyJ[:])
 
-Q = Q_vec[:]
-Q = CuArray(Q_vec)
+rxJ = CuArray(rxJ)
+sxJ = CuArray(sxJ)
+ryJ = CuArray(ryJ)
+syJ = CuArray(syJ)
 
+Winv = CuArray(diagm(1 ./ [Array(wq);Array(wf)])) # TODO: ugly
+Wq = CuArray(diagm(Array(wq)))
+ 
+# ================================= #
+# ============ Routines =========== #
+# ================================= #
 function u_to_v!(VU,Q,Nd,Nq)
     index = (blockIdx().x-1)*blockDim().x + threadIdx().x
     stride = blockDim().x*gridDim().x
@@ -335,10 +344,10 @@ function surface_kernel!(flux,QM,QP,nxJ,nyJ,Nfp,K,Nd)
     end
 end
 
-function volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,Nh,Nh_P,Np_F,K,Nd)
+function volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,Nh,Nh_P,Np_F,K,Nd,Nq_P)
     index = (blockIdx().x-1)*blockDim().x + threadIdx().x
     stride = blockDim().x*gridDim().x
-    for i = index:stride:Nfp*K
+    for i = index:stride:Nh*K
         # TODO: load shared memory
         k = div(i-1,Nh)
         m = mod1(i,Nh)
@@ -349,7 +358,7 @@ function volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,N
         wL    = Qh[k*Nd*Nh+m+3*Nh]
         betaL = Qh[k*Nd*Nh+m+4*Nh]
         rhologL = CUDA.log(rhoL)
-        rhologR = CUDA.log(rhoR)
+        betalogL = CUDA.log(betaL)
 
         t = div(m-1,Nh_P) # Current x-y slice
         s = mod1(m,Nh_P) # Current hybridized node index at x-y slice
@@ -363,42 +372,47 @@ function volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,N
         beta_sum = 0.0
 
         # Assume Affine meshes
-        rxJ_val = rxJ[1,1,k]
-        sxJ_val = sxJ[1,1,k]
-        ryJ_val = ryJ[1,1,k]
-        syJ_val = syJ[1,1,k]
+        rxJ_val = rxJ[1,1,k+1] 
+        sxJ_val = sxJ[1,1,k+1]
+        ryJ_val = ryJ[1,1,k+1]
+        syJ_val = syJ[1,1,k+1]
 
         # TODO: better way to indexing
-        for n = 1:Nh_P
+        for n = 1:Nh
             if n in xy_idx || n in z_idx
                 rhoR  = Qh[k*Nd*Nh+n     ]
                 uR    = Qh[k*Nd*Nh+n+  Nh]
                 vR    = Qh[k*Nd*Nh+n+2*Nh]
                 wR    = Qh[k*Nd*Nh+n+3*Nh]
                 betaR = Qh[k*Nd*Nh+n+4*Nh]
+                rhologR = CUDA.log(rhoR)
+                betalogR = CUDA.log(betaR)
 
-                FxS1,FxS2,FxS3,FxS4,FxS5,FyS1,FyS2,FyS3,FyS4,FyS5,FzS1,FzS2,FzS3,FzS4,FzS5
-                = CU_euler_flux(rhoL,uL,vL,wL,betaL,rhoR,uR,vR,wR,betaR,rhologL,betalogL,rhologR,betalogR)
+                FxS1,FxS2,FxS3,FxS4,FxS5,FyS1,FyS2,FyS3,FyS4,FyS5,FzS1,FzS2,FzS3,FzS4,FzS5 = CU_euler_flux(rhoL,uL,vL,wL,betaL,rhoR,uR,vR,wR,betaR,rhologL,betalogL,rhologR,betalogR)
 
                 if n in xy_idx
-                    # TODO: fix rxJ
-                    Qx_val = 2*(rxJ_val*Qrh_skew[m,n]+sxJ_val*Qsh_skew[m,n])
-                    Qy_val = 2*(ryJ_val*Qrh_skew[m,n]+syJ_val*Qsh_skew[m,n])
+
+                    col_idx = mod1(n,Nh_P)
+                    Qx_val = 2*(rxJ_val*Qrh_skew[s,col_idx]+sxJ_val*Qsh_skew[s,col_idx])
+                    Qy_val = 2*(ryJ_val*Qrh_skew[s,col_idx]+syJ_val*Qsh_skew[s,col_idx])
                     rho_sum += Qx_val*FxS1+Qy_val*FyS1
                     u_sum += Qx_val*FxS2+Qy_val*FyS2
                     v_sum += Qx_val*FxS3+Qy_val*FyS3
                     w_sum += Qx_val*FxS4+Qy_val*FyS4
                     beta_sum += Qx_val*FxS5+Qy_val*FyS5
                 end
-
-                if n in z_idx && t+1 <= Nq_P
-                    Qz_val = 2*wq[t+1]/J*Qth[m,n]
+                
+                # TODO: fix  
+                if n in z_idx && s <= Nq_P
+                    col_idx = div(n-1,Nh_P)+1
+                    wqn = 2/J*wq[s]
+                    Qz_val = wqn*Qth[t+1,col_idx]
                     rho_sum += Qz_val*FzS1
                     u_sum += Qz_val*FzS2
                     v_sum += Qz_val*FzS3
                     w_sum += Qz_val*FzS4
                     beta_sum += Qz_val*FzS5
-                end
+                end  
             end
         end
         gradfh[k*Nd*Nh+m     ] = rho_sum
@@ -406,90 +420,174 @@ function volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,N
         gradfh[k*Nd*Nh+m+2*Nh] = v_sum
         gradfh[k*Nd*Nh+m+3*Nh] = w_sum
         gradfh[k*Nd*Nh+m+4*Nh] = beta_sum
+        
     end
 end
 
+# ================================= #
+# ============ Routines =========== #
+# ================================= #
 
-Nq = Nq_P*Np_F
-Nh = Nh_P*Np_F
-Nfp = Nfp_P*Np_F
-mapP_vec = zeros(Int64,Nfp_P,Np_F,Nd,K)
+
+
+ops = (Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq)
+mesh = (rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,mapP_vec)
+param = (K,Np_P,Nq_P,Nfp_P,Nh_P,Np_F,Nq,Nfp,Nh)
+function rhs(Q,ops,mesh,param,compute_rhstest,enable_test)
+    Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq = ops
+    rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,mapP_vec = mesh
+    K,Np_P,Nq_P,Nfp_P,Nh_P,Np_F,Nq,Nfp,Nh = param
+    
+    # Entropy Projection
+    VU = CUDA.fill(0.0,length(Q))
+    num_blocks = ceil(Int,length(VU)/256/Nd)
+    @cuda threads=256 blocks = num_blocks u_to_v!(VU,Q,Nd,Nq)
+    synchronize()
+
+    Qh = reshape(Ph*reshape(VU,Nq_P,Np_F*Nd*K),Nh*Nd*K)
+    synchronize()
+
+    num_blocks = ceil(Int,length(Qh)/256/Nd)
+    @cuda threads=256 blocks = num_blocks v_to_u!(Qh,Nd,Nh)
+    synchronize()
+
+    @cuda threads=256 blocks = num_blocks u_to_primitive!(Qh,Nd,Nh)
+    synchronize()
+
+    # Compute Surface values
+    QM = CUDA.fill(0.0,Nfp*Nd*K)
+    num_blocks = ceil(Int,length(QM)/256)
+    @cuda threads=256 blocks = num_blocks extract_face_val!(QM,Qh,Nfp_P,Nq_P,Nh_P)
+    synchronize()
+    QP = QM[mapP_vec]
+    synchronize()
+
+    # Surface kernel
+    flux = CUDA.fill(0.0,Nfp*K*Nd)
+    num_blocks = ceil(Int,length(flux)/256/Nd)
+    @cuda threads=256 blocks = num_blocks surface_kernel!(flux,QM,QP,nxJ,nyJ,Nfp,K,Nd)
+    synchronize()
+    flux = reshape(LIFTq*reshape(flux,Nfp_P,Np_F*Nd*K),Nq*Nd*K)
+    synchronize()
+
+    # Volume kernel
+    # TODO: implement share memory
+    gradfh = CUDA.fill(0.0,Nh*Nd*K)
+    num_blocks = ceil(Int,Nh*K/256)
+    @cuda threads=256 blocks = num_blocks volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,Nh,Nh_P,Np_F,K,Nd,Nq_P)
+    synchronize()
+    gradf = reshape(VPh*reshape(gradfh,Nh_P,Np_F*Nd*K),Nq*Nd*K)#reshape(Vq*[Pq Lq]*Winv*reshape(gradfh,Nh_P,Np_F*Nd*K),Nq*Nd*K)
+    synchronize()
+
+    # Combine
+    rhsQ = -(gradf+flux)
+    synchronize()
+
+    # Compute rhstest
+    rhstest = 0
+    compute_rhstest = true
+    if compute_rhstest
+        rhstest = CUDA.sum(Wq*reshape(VU.*rhsQ,Nq_P,Np_F*Nd*K))
+        synchronize()
+    end
+
+    if enable_test
+        @show CUDA.maximum(VU)
+        @show CUDA.minimum(VU)
+        @show CUDA.sum(VU)
+        @show CUDA.maximum(Qh)
+        @show CUDA.minimum(Qh)
+        @show CUDA.sum(Qh)
+        @show CUDA.maximum(QM)
+        @show CUDA.minimum(QM)
+        @show CUDA.sum(QM)
+        @show CUDA.maximum(QP)
+        @show CUDA.minimum(QP)
+        @show CUDA.sum(QP)
+        @show CUDA.maximum(flux)
+        @show CUDA.minimum(flux)
+        @show CUDA.sum(flux)
+        @show CUDA.maximum(gradf)
+        @show CUDA.minimum(gradf)
+        @show CUDA.sum(gradf)
+        @show CUDA.maximum(rhsQ)
+        @show CUDA.minimum(rhsQ)
+        @show CUDA.sum(rhsQ)
+        @show rhstest
+    end
+    return rhsQ,rhstest
+end
+
+xq,yq,zq = (x->reshape(x,Nq_P,Np_F,K)).((xq,yq,zq))
+ρ_exact(x,y,z,t) = @. 1+0.2*sin(pi*(x+y+z-3/2*t))
+ρ = @. 1+0.2*sin(pi*(xq+yq+zq))
+u = ones(size(xq))
+v = -1/2*ones(size(xq))
+w = ones(size(xq))
+p = ones(size(xq))
+Q_exact(x,y,z,t) = (ρ_exact(x,y,z,t),u,v,w,p)
+
+Q = primitive_to_conservative(ρ,u,v,w,p)
+Q = collect(Q)
+Q_vec = zeros(Nq_P,Np_F,Nd,K)
+Q_ex_vec = zeros(Nq_P,Np_F,Nd,K)
+# TODO: clean up
+rq2,sq2,wq2 = quad_nodes_2D(N_P+2)
+Vq2 = vandermonde_2D(N_P,rq2,sq2)/VDM
+xq2,yq2,zq2 = (x->Vq2*reshape(x,Nq_P,Np_F*K)).((x,y,z))
+Q_ex = Q_exact(xq2,yq2,zq2,T)
 
 for k = 1:K
-    for j = 1:Np_F
-        for i = 1:Nfp_P
-            val = mapP[i,j,k]
-            elem = div(val-1,Nfp)
-            n = mod1(val,Nfp)
-            mapP_vec[i,j,1,k] = elem*Nd*Nfp+n
-            mapP_vec[i,j,2,k] = elem*Nd*Nfp+n+Nfp
-            mapP_vec[i,j,3,k] = elem*Nd*Nfp+n+2*Nfp
-            mapP_vec[i,j,4,k] = elem*Nd*Nfp+n+3*Nfp
-            mapP_vec[i,j,5,k] = elem*Nd*Nfp+n+4*Nfp
-        end
+    for d = 1:5
+        @. Q_vec[:,:,d,k] = Q[d][:,:,k]
     end
 end
-mapP_vec = mapP_vec[:]
-nxJ = CuArray(nxJ[:])
-nyJ = CuArray(nyJ[:])
+Q = Q_vec[:]
+Q = CuArray(Q)
+resQ = CUDA.fill(0.0,Nq*Nd*K)
 
-# Entropy Projection
-VU = CUDA.fill(0.0,length(Q))
-num_blocks = ceil(Int,length(VU)/256/Nd)
-@cuda threads=256 blocks = num_blocks u_to_v!(VU,Q,Nd,Nq)
-synchronize()
 
-Qh = reshape(Ph*reshape(VU,Nq_P,Np_F*Nd*K),Nh*Nd*K)
-synchronize()
+# rhs(Q,ops,mesh,param,true,true)
+@time begin
+for i = 1:Nsteps
+    rhstest = 0
+    for INTRK = 1:5
+        if enable_test
+            @show "==============="
+            @show INTRK
+            @show "==============="
+        end
+        compute_rhstest = INTRK==5
+        rhsQ,rhstest = rhs(Q,ops,mesh,param,compute_rhstest,enable_test)
+        resQ .= rk4a[INTRK]*resQ+dt*rhsQ
+        Q .= Q + rk4b[INTRK]*resQ
+    end
 
-num_blocks = ceil(Int,length(Qh)/256/Nd)
-@cuda threads=256 blocks = num_blocks v_to_u!(Qh,Nd,Nh)
-synchronize()
+    if i%10==0 || i==Nsteps
+        println("Time step: $i out of $Nsteps with rhstest = $rhstest") 
+    end
+end
 
-@cuda threads=256 blocks = num_blocks u_to_primitive!(Qh,Nd,Nh)
-synchronize()
+end
 
-# Compute Surface values
-QM = CUDA.fill(0.0,Nfp*Nd*K)
-num_blocks = ceil(Int,length(QM)/256)
-@cuda threads=256 blocks = num_blocks extract_face_val!(QM,Qh,Nfp_P,Nq_P,Nh_P)
-synchronize()
-QP = QM[mapP_vec]
-synchronize()
 
-# Surface kernel
-flux = CUDA.fill(0.0,Nfp*K*Nd)
-num_blocks = ceil(Int,length(flux)/256/Nd)
-@cuda threads=256 blocks = num_blocks surface_kernel!(flux,QM,QP,nxJ,nyJ,Nfp,K,Nd)
-synchronize()
-flux = reshape(Vq*Lq*reshape(flux,Nfp_P,Np_F*Nd*K),Nq*Nd*K)
-synchronize()
+Q = Array(Q)
+Q = reshape(Q,Nq_P,Np_F,Nd,K)
+Q_mat = [zeros(Nq_P,Np_F,K),zeros(Nq_P,Np_F,K),zeros(Nq_P,Np_F,K),zeros(Nq_P,Np_F,K),zeros(Nq_P,Np_F,K)]
+for k = 1:K
+    for d = 1:5
+        Q_mat[d][:,:,k] = Q[:,:,d,k]
+    end
+end
+Pq = Array(Pq)
+Q = (x->Vq2*Pq*reshape(x,Nq_P,Np_F*K)).(Q_mat)
+p = pfun(Q[1],(Q[2],Q[3],Q[4]),Q[5])
+Q = (Q[1],Q[2]./Q[1],Q[3]./Q[1],Q[4]./Q[1],p)
+Q_ex = (x->reshape(x,Nq_P,Np_F*K)).(Q_ex)
 
-# Volume kernel
-# TODO: implement share memory
-gradfh = CUDA.fill(0.0,Nh*Nd*K)
-num_blocks = ceil(Int,Nh*K/256)
-@cuda threads=256 blocks = num_blocks volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,Nh,Nh_P,Np_F,K,Nd)
-synchronize()
-gradf = reshape(Vq*[Pq Lq]*diagm(1 ./ w)*reshape(gradfh,Nh_P,Np_F*Nd*K),Nh*Nd*K)
-synchronize()
-
-# For testing
-@show CUDA.maximum(VU)
-@show CUDA.minimum(VU)
-@show CUDA.sum(VU)
-@show CUDA.maximum(Qh)
-@show CUDA.minimum(Qh)
-@show CUDA.sum(Qh)
-@show CUDA.maximum(QM)
-@show CUDA.minimum(QM)
-@show CUDA.sum(QM)
-@show CUDA.maximum(QP)
-@show CUDA.minimum(QP)
-@show CUDA.sum(QP)
-@show CUDA.maximum(flux)
-@show CUDA.minimum(flux)
-@show CUDA.sum(flux)
-@show CUDA.maximum(gradf)
-@show CUDA.minimum(gradf)
-@show CUDA.sum(gradf)
+L2_err = 0.0
+for fld in 1:Nd
+    global L2_err
+    L2_err += sum(h*J*wq2.*(Q[fld]-Q_ex[fld]).^2)
+end
+println("L2err at final time T = $T is $L2_err\n")
