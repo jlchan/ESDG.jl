@@ -54,7 +54,7 @@ const K1D   = 10;   # Number of elements in polynomial (x,y) dimension
 const Nd = 5;
 const num_threads=256
 const CFL   = 1.0;
-const T     = 2.0;  # End time
+const T     = 1.0;  # End time
 
 "Time integration Parameters"
 rk4a,rk4b,rk4c = rk45_coeffs()
@@ -344,20 +344,37 @@ function surface_kernel!(flux,QM,QP,nxJ,nyJ,Nfp,K,Nd)
     end
 end
 
-function volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,Nh,Nh_P,Np_F,K,Nd,Nq_P,num_threads)
+function volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,Nh,Nh_P,Np_F,K,Nd,Nq_P,num_threads,Nk_max)
     index = (blockIdx().x-1)*blockDim().x + threadIdx().x
     stride = blockDim().x*gridDim().x
+    #TODO: using stride to avoid possible insufficient blocks?
+    tid_start = (blockIdx().x-1)*blockDim().x + 1 # starting threadid of current block
+    tid_end = (blockIdx().x-1)*blockDim().x + 256 # ending threadid of current block
+    k_start = div(tid_start-1,Nh) # starting elementid of current block
+    k_end = tid_end < Nh*K ? div(tid_end-1,Nh) : K-1 # ending elementid of current block
+    Nk = k_end-k_start+1 # Number of elements in current block
+
+    # Parallel read
+    Qh_shared = @cuDynamicSharedMem(Float32,Nh*Nd*Nk_max)
+    load_size = div(Nh*Nd*Nk-1,num_threads)+1 # size of read of each thread
     
-    for i = index:stride:Nh*K
-        # TODO: load shared memory
+    for r_id in (threadIdx().x-1)*load_size+1:min(threadIdx().x*load_size,Nh*Nd*Nk)
+        Qh_shared[r_id] = Qh[k_start*Nd*Nh+r_id]
+    end
+    sync_threads()
+
+    if index <= Nh*K
+        i = index
         k = div(i-1,Nh)
         m = mod1(i,Nh)
 
-        rhoL  = Qh[k*Nd*Nh+m     ]
-        uL    = Qh[k*Nd*Nh+m+  Nh]
-        vL    = Qh[k*Nd*Nh+m+2*Nh]
-        wL    = Qh[k*Nd*Nh+m+3*Nh]
-        betaL = Qh[k*Nd*Nh+m+4*Nh]
+        k_offset = k-k_start
+        rhoL  = Qh_shared[k_offset*Nd*Nh+m     ]
+        uL    = Qh_shared[k_offset*Nd*Nh+m+  Nh]
+        vL    = Qh_shared[k_offset*Nd*Nh+m+2*Nh]
+        wL    = Qh_shared[k_offset*Nd*Nh+m+3*Nh]
+        betaL = Qh_shared[k_offset*Nd*Nh+m+4*Nh]
+        
         rhologL = CUDA.log(rhoL)
         betalogL = CUDA.log(betaL)
 
@@ -381,18 +398,17 @@ function volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,N
         # TODO: better way to indexing
         for n = 1:Nh
             if n in xy_idx || n in z_idx
-                rhoR  = Qh[k*Nd*Nh+n     ]
-                uR    = Qh[k*Nd*Nh+n+  Nh]
-                vR    = Qh[k*Nd*Nh+n+2*Nh]
-                wR    = Qh[k*Nd*Nh+n+3*Nh]
-                betaR = Qh[k*Nd*Nh+n+4*Nh]
+                rhoR  = Qh_shared[k_offset*Nd*Nh+n     ]
+                uR    = Qh_shared[k_offset*Nd*Nh+n+  Nh]
+                vR    = Qh_shared[k_offset*Nd*Nh+n+2*Nh]
+                wR    = Qh_shared[k_offset*Nd*Nh+n+3*Nh]
+                betaR = Qh_shared[k_offset*Nd*Nh+n+4*Nh]
                 rhologR = CUDA.log(rhoR)
                 betalogR = CUDA.log(betaR)
 
                 FxS1,FxS2,FxS3,FxS4,FxS5,FyS1,FyS2,FyS3,FyS4,FyS5,FzS1,FzS2,FzS3,FzS4,FzS5 = CU_euler_flux(rhoL,uL,vL,wL,betaL,rhoR,uR,vR,wR,betaR,rhologL,betalogL,rhologR,betalogR)
 
                 if n in xy_idx
-
                     col_idx = mod1(n,Nh_P)
                     Qx_val = 2*(rxJ_val*Qrh_skew[s,col_idx]+sxJ_val*Qsh_skew[s,col_idx])
                     Qy_val = 2*(ryJ_val*Qrh_skew[s,col_idx]+syJ_val*Qsh_skew[s,col_idx])
@@ -403,7 +419,6 @@ function volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,N
                     beta_sum += Qx_val*FxS5+Qy_val*FyS5
                 end
                 
-                # TODO: fix  
                 if n in z_idx && s <= Nq_P
                     col_idx = div(n-1,Nh_P)+1
                     wqn = 2/J*wq[s]
@@ -413,7 +428,7 @@ function volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,N
                     v_sum += Qz_val*FzS3
                     w_sum += Qz_val*FzS4
                     beta_sum += Qz_val*FzS5
-                end  
+                end
             end
         end
         gradfh[k*Nd*Nh+m     ] = rho_sum
@@ -421,8 +436,8 @@ function volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,N
         gradfh[k*Nd*Nh+m+2*Nh] = v_sum
         gradfh[k*Nd*Nh+m+3*Nh] = w_sum
         gradfh[k*Nd*Nh+m+4*Nh] = beta_sum
-        
     end
+    return
 end
 
 # ================================= #
@@ -438,7 +453,6 @@ function rhs(Q,ops,mesh,param,num_threads,compute_rhstest,enable_test)
     Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq = ops
     rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,mapP_vec = mesh
     K,Np_P,Nq_P,Nfp_P,Nh_P,Np_F,Nq,Nfp,Nh = param
-    # TODO: hardcoded number of threads
     # Entropy Projection
     VU = CUDA.fill(0.0,length(Q))
     num_blocks = ceil(Int,length(VU)/num_threads/Nd)
@@ -472,10 +486,10 @@ function rhs(Q,ops,mesh,param,num_threads,compute_rhstest,enable_test)
     synchronize()
 
     # Volume kernel
-    # TODO: implement share memory
     gradfh = CUDA.fill(0.0,Nh*Nd*K)
     num_blocks = ceil(Int,Nh*K/num_threads)
-    @cuda threads=num_threads blocks = num_blocks volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,Nh,Nh_P,Np_F,K,Nd,Nq_P,num_threads)
+    Nk_max = num_threads == 1 ? 1 : div(num_threads-2,Nh)+2 # Max amount of element in a block
+    @cuda threads=num_threads blocks = num_blocks shmem = sizeof(Float32)*Nh*Nd*Nk_max volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,Nh,Nh_P,Np_F,K,Nd,Nq_P,num_threads,Nk_max)
     synchronize()
     gradf = reshape(VPh*reshape(gradfh,Nh_P,Np_F*Nd*K),Nq*Nd*K)#reshape(Vq*[Pq Lq]*Winv*reshape(gradfh,Nh_P,Np_F*Nd*K),Nq*Nd*K)
     synchronize()
@@ -548,7 +562,8 @@ Q = CuArray(Q)
 resQ = CUDA.fill(0.0,Nq*Nd*K)
 
 
-# rhs(Q,ops,mesh,param,true,true)
+#rhs(Q,ops,mesh,param,num_threads,true,true)
+
 @time begin
 for i = 1:Nsteps
     rhstest = 0
@@ -585,7 +600,6 @@ Q = (x->Vq2*Pq*reshape(x,Nq_P,Np_F*K)).(Q_mat)
 p = pfun(Q[1],(Q[2],Q[3],Q[4]),Q[5])
 Q = (Q[1],Q[2]./Q[1],Q[3]./Q[1],Q[4]./Q[1],p)
 Q_ex = (x->reshape(x,Nq_P,Np_F*K)).(Q_ex)
-
 L2_err = 0.0
 for fld in 1:Nd
     global L2_err
@@ -609,3 +623,4 @@ println("L2err at final time T = $T is $L2_err\n")
 @show sum(Q[4])
 @show sum(Q[5])
 @show maximum(Q[5])
+
