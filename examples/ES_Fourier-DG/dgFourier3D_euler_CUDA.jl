@@ -49,12 +49,12 @@ compute_L2_err = false
 "Approximation Parameters"
 const N_P   = 2;    # The order of approximation in polynomial dimension
 const Np_P  = Int((N_P+1)*(N_P+2)/2)
-const Np_F  = 8;    # The order of approximation in Fourier dimension
-const K1D   = 10;   # Number of elements in polynomial (x,y) dimension
+const Np_F  = 10;    # The order of approximation in Fourier dimension
+const K1D   = 30;   # Number of elements in polynomial (x,y) dimension
 const Nd = 5;
 const num_threads=256
 const CFL   = 1.0;
-const T     = 1.0;  # End time
+const T     = 2.0;  # End time
 
 "Time integration Parameters"
 rk4a,rk4b,rk4c = rk45_coeffs()
@@ -79,6 +79,9 @@ Nq_P = length(rq)
 Nfp_P = length(rf)
 Nh_P = Nq_P+Nfp_P # Number of hybridized points
 Lq = LIFT
+Nq = Nq_P*Np_F
+Nh = Nh_P*Np_F
+Nfp = Nfp_P*Np_F
 
 "Mesh related variables"
 # First initialize 2D triangular mesh
@@ -109,6 +112,23 @@ mapP = reshape(repeat(mapP_2D,inner=(1,Np_F)),Nfp_P,Np_F,K)
 for j = 1:Np_F
     mapP[:,j,:] = mapP[:,j,:].+(j-1)*Nfp_P
 end
+mapP_vec = zeros(Int32,Nfp_P,Np_F,Nd,K)
+for k = 1:K
+    for j = 1:Np_F
+        for i = 1:Nfp_P
+            val = mapP[i,j,k]
+            elem = div(val-1,Nfp)
+            n = mod1(val,Nfp)
+            mapP_vec[i,j,1,k] = elem*Nd*Nfp+n
+            mapP_vec[i,j,2,k] = elem*Nd*Nfp+n+Nfp
+            mapP_vec[i,j,3,k] = elem*Nd*Nfp+n+2*Nfp
+            mapP_vec[i,j,4,k] = elem*Nd*Nfp+n+3*Nfp
+            mapP_vec[i,j,5,k] = elem*Nd*Nfp+n+4*Nfp
+        end
+    end
+end
+mapP_vec = mapP_vec[:]
+
 
 # scale by Fourier dimension
 M = h*M
@@ -143,29 +163,26 @@ Qrh_skew = 1/2*(Qrh-Qrh')
 Qsh_skew = 1/2*(Qsh-Qsh')
 LIFTq = Vq*Lq
 VPh = Vq*[Pq Lq]*diagm(1 ./ [wq;wf])
+Winv = diagm(1 ./ [wq;wf])
+Wq = diagm(wq)
 
+ops = (Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq)
+mesh = (rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,mapP_vec)
+param = (K,Np_P,Nq_P,Nfp_P,Nh_P,Np_F,Nq,Nfp,Nh)
+
+# TODO: messy. a lot to clean up...
+# To single precision
+ops = (A->convert.(Float32,A)).(ops)
+Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq = ops
+rxJ,sxJ,ryJ,syJ,nxJ,nyJ = (A->convert.(Float32,A)).((rxJ,sxJ,ryJ,syJ,nxJ,nyJ))
+J,h = (x->convert(Float32,x)).((J,h))
+mesh = (rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,mapP_vec)
+#param = (x->convert(Int32,x)).(param)
+rk4a,rk4b = (A->convert.(Float32,A)).((rk4a,rk4b))
+
+ 
 # TODO: refactor
-Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh = (x->CuArray(x)).((Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh))
-Nq = Nq_P*Np_F
-Nh = Nh_P*Np_F
-Nfp = Nfp_P*Np_F
-mapP_vec = zeros(Int64,Nfp_P,Np_F,Nd,K)
-
-for k = 1:K
-    for j = 1:Np_F
-        for i = 1:Nfp_P
-            val = mapP[i,j,k]
-            elem = div(val-1,Nfp)
-            n = mod1(val,Nfp)
-            mapP_vec[i,j,1,k] = elem*Nd*Nfp+n
-            mapP_vec[i,j,2,k] = elem*Nd*Nfp+n+Nfp
-            mapP_vec[i,j,3,k] = elem*Nd*Nfp+n+2*Nfp
-            mapP_vec[i,j,4,k] = elem*Nd*Nfp+n+3*Nfp
-            mapP_vec[i,j,5,k] = elem*Nd*Nfp+n+4*Nfp
-        end
-    end
-end
-mapP_vec = mapP_vec[:]
+Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,Winv = (x->CuArray(x)).((Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,Winv))
 nxJ = CuArray(nxJ[:])
 nyJ = CuArray(nyJ[:])
 
@@ -174,9 +191,10 @@ sxJ = CuArray(sxJ)
 ryJ = CuArray(ryJ)
 syJ = CuArray(syJ)
 
-Winv = CuArray(diagm(1 ./ [Array(wq);Array(wf)])) # TODO: ugly
-Wq = CuArray(diagm(Array(wq)))
- 
+ops = (Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq)
+mesh = (rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,mapP_vec)
+param = (K,Np_P,Nq_P,Nfp_P,Nh_P,Np_F,Nq,Nfp,Nh)
+
 # ================================= #
 # ============ Routines =========== #
 # ================================= #
@@ -195,9 +213,9 @@ function u_to_v!(VU,Q,Nd,Nq)
         E = Q[idx+4*Nq]
         rhoUnorm = rhou^2+rhov^2+rhow^2
         rhoe = E-.5*rhoUnorm/rho
-        sU = CUDA.log(0.4*rhoe/CUDA.exp(1.4*CUDA.log(rho)))
+        sU = CUDA.log(0.4f0*rhoe/CUDA.exp(1.4f0*CUDA.log(rho)))
 
-        VU[idx] = (-E+rhoe*(2.4-sU))/rhoe
+        VU[idx] = (-E+rhoe*(2.4f0-sU))/rhoe
         VU[idx+Nq] = rhou/rhoe
         VU[idx+2*Nq] = rhov/rhoe
         VU[idx+3*Nq] = rhow/rhoe
@@ -221,13 +239,13 @@ function v_to_u!(Qh,Nd,Nh)
         E = Qh[idx+4*Nh]
 
         vUnorm = rhou^2+rhov^2+rhow^2
-        rhoeV = CUDA.exp(2.5*CUDA.log(0.4/CUDA.exp(1.4*CUDA.log(-E))))*CUDA.exp(-(1.4-rho+vUnorm/(2*E))/0.4)
+        rhoeV = CUDA.exp(2.5f0*CUDA.log(0.4f0/CUDA.exp(1.4f0*CUDA.log(-E))))*CUDA.exp(-(1.4f0-rho+vUnorm/(2f0*E))/0.4f0)
 
         Qh[idx] = -rhoeV*E
         Qh[idx+Nh] = rhoeV*rhou
         Qh[idx+2*Nh] = rhoeV*rhov
         Qh[idx+3*Nh] = rhoeV*rhow
-        Qh[idx+4*Nh] = rhoeV*(1-vUnorm/(2*E))
+        Qh[idx+4*Nh] = rhoeV*(1.0f0-vUnorm/(2.0f0*E))
     end
 end
 
@@ -246,7 +264,7 @@ function u_to_primitive!(Qh,Nd,Nh)
         rhow = Qh[idx+3*Nh]
         E = Qh[idx+4*Nh]
 
-        beta = rho/(0.8*(E-.5*(rhou^2+rhov^2+rhow^2)/rho))
+        beta = rho/(0.8f0*(E-.5*(rhou^2+rhov^2+rhow^2)/rho))
 
         Qh[idx+Nh] = rhou/rho
         Qh[idx+2*Nh] = rhov/rho
@@ -267,11 +285,11 @@ end
 
 function CU_logmean(uL,uR,logL,logR)
     da = uR-uL
-    aavg = .5*(uL+uR)
+    aavg = .5f0*(uL+uR)
     f = da/aavg
     if CUDA.abs(f)<1e-4
         v = f^2
-        return aavg*(1 + v*(-.2-v*(.0512 - v*0.026038857142857)))
+        return aavg*(1.0f0 + v*(-.2f0-v*(.0512f0 - v*0.026038857142857f0)))
     else
         return -da/(logL-logR)
     end
@@ -282,14 +300,14 @@ function CU_euler_flux(rhoM,uM,vM,wM,betaM,rhoP,uP,vP,wP,betaP,rhologM,betalogM,
     betalog = CU_logmean(betaM,betaP,betalogM,betalogP)
 
     # TODO: write in functions
-    rhoavg = .5*(rhoM+rhoP)
-    uavg = .5*(uM+uP)
-    vavg = .5*(vM+vP)
-    wavg = .5*(wM+wP)
+    rhoavg = .5f0*(rhoM+rhoP)
+    uavg = .5f0*(uM+uP)
+    vavg = .5f0*(vM+vP)
+    wavg = .5f0*(wM+wP)
 
     unorm = uM*uP+vM*vP+wM*wP
     pa = rhoavg/(betaM+betaP)
-    E_plus_p = rholog/(0.8*betalog) + pa + .5*rholog*unorm
+    E_plus_p = rholog/(0.8f0*betalog) + pa + .5f0*rholog*unorm
 
     FxS1 = (@. rholog*uavg)
     FxS2 = (@. FxS1*uavg + pa)
@@ -383,11 +401,11 @@ function volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,N
         xy_idx = t*Nh_P+1:(t+1)*Nh_P # Nonzero index for Qrh, Qsh
         z_idx = s:Nh_P:s+(Np_F-1)*Nh_P
 
-        rho_sum = 0.0
-        u_sum = 0.0
-        v_sum = 0.0
-        w_sum = 0.0
-        beta_sum = 0.0
+        rho_sum = 0.0f0
+        u_sum = 0.0f0
+        v_sum = 0.0f0
+        w_sum = 0.0f0
+        beta_sum = 0.0f0
 
         # Assume Affine meshes
         rxJ_val = rxJ[1,1,k+1] 
@@ -410,8 +428,8 @@ function volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,N
 
                 if n in xy_idx
                     col_idx = mod1(n,Nh_P)
-                    Qx_val = 2*(rxJ_val*Qrh_skew[s,col_idx]+sxJ_val*Qsh_skew[s,col_idx])
-                    Qy_val = 2*(ryJ_val*Qrh_skew[s,col_idx]+syJ_val*Qsh_skew[s,col_idx])
+                    Qx_val = 2.0f0*(rxJ_val*Qrh_skew[s,col_idx]+sxJ_val*Qsh_skew[s,col_idx])
+                    Qy_val = 2.0f0*(ryJ_val*Qrh_skew[s,col_idx]+syJ_val*Qsh_skew[s,col_idx])
                     rho_sum += Qx_val*FxS1+Qy_val*FyS1
                     u_sum += Qx_val*FxS2+Qy_val*FyS2
                     v_sum += Qx_val*FxS3+Qy_val*FyS3
@@ -421,7 +439,7 @@ function volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,N
                 
                 if n in z_idx && s <= Nq_P
                     col_idx = div(n-1,Nh_P)+1
-                    wqn = 2/J*wq[s]
+                    wqn = 2.0f0/J*wq[s]
                     Qz_val = wqn*Qth[t+1,col_idx]
                     rho_sum += Qz_val*FzS1
                     u_sum += Qz_val*FzS2
@@ -444,25 +462,20 @@ end
 # ============ Routines =========== #
 # ================================= #
 
-
-
-ops = (Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq)
-mesh = (rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,mapP_vec)
-param = (K,Np_P,Nq_P,Nfp_P,Nh_P,Np_F,Nq,Nfp,Nh)
 function rhs(Q,ops,mesh,param,num_threads,compute_rhstest,enable_test)
     Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq = ops
     rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,mapP_vec = mesh
     K,Np_P,Nq_P,Nfp_P,Nh_P,Np_F,Nq,Nfp,Nh = param
     # Entropy Projection
-    VU = CUDA.fill(0.0,length(Q))
-    num_blocks = ceil(Int,length(VU)/num_threads/Nd)
+    VU = CUDA.fill(0.0f0,length(Q))
+    num_blocks = ceil(Int32,length(VU)/num_threads/Nd)
     @cuda threads=num_threads blocks = num_blocks u_to_v!(VU,Q,Nd,Nq)
     synchronize()
-
+    
     Qh = reshape(Ph*reshape(VU,Nq_P,Np_F*Nd*K),Nh*Nd*K)
     synchronize()
 
-    num_blocks = ceil(Int,length(Qh)/num_threads/Nd)
+    num_blocks = ceil(Int32,length(Qh)/num_threads/Nd)
     @cuda threads=num_threads blocks = num_blocks v_to_u!(Qh,Nd,Nh)
     synchronize()
 
@@ -470,24 +483,24 @@ function rhs(Q,ops,mesh,param,num_threads,compute_rhstest,enable_test)
     synchronize()
 
     # Compute Surface values
-    QM = CUDA.fill(0.0,Nfp*Nd*K)
-    num_blocks = ceil(Int,length(QM)/num_threads)
+    QM = CUDA.fill(0.0f0,Nfp*Nd*K)
+    num_blocks = ceil(Int32,length(QM)/num_threads)
     @cuda threads=num_threads blocks = num_blocks extract_face_val!(QM,Qh,Nfp_P,Nq_P,Nh_P)
     synchronize()
     QP = QM[mapP_vec]
     synchronize()
 
     # Surface kernel
-    flux = CUDA.fill(0.0,Nfp*K*Nd)
-    num_blocks = ceil(Int,length(flux)/num_threads/Nd)
+    flux = CUDA.fill(0.0f0,Nfp*K*Nd)
+    num_blocks = ceil(Int32,length(flux)/num_threads/Nd)
     @cuda threads=num_threads blocks = num_blocks surface_kernel!(flux,QM,QP,nxJ,nyJ,Nfp,K,Nd)
     synchronize()
     flux = reshape(LIFTq*reshape(flux,Nfp_P,Np_F*Nd*K),Nq*Nd*K)
     synchronize()
 
     # Volume kernel
-    gradfh = CUDA.fill(0.0,Nh*Nd*K)
-    num_blocks = ceil(Int,Nh*K/num_threads)
+    gradfh = CUDA.fill(0.0f0,Nh*Nd*K)
+    num_blocks = ceil(Int32,Nh*K/num_threads)
     Nk_max = num_threads == 1 ? 1 : div(num_threads-2,Nh)+2 # Max amount of element in a block
     @cuda threads=num_threads blocks = num_blocks shmem = sizeof(Float32)*Nh*Nd*Nk_max volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,Nh,Nh_P,Np_F,K,Nd,Nq_P,num_threads,Nk_max)
     synchronize()
@@ -529,15 +542,23 @@ function rhs(Q,ops,mesh,param,num_threads,compute_rhstest,enable_test)
         @show CUDA.minimum(rhsQ)
         @show CUDA.sum(rhsQ)
         @show rhstest
+        @show typeof(Q)
+        @show typeof(VU)
+        @show typeof(Qh)
+        @show typeof(QM)
+        @show typeof(QP)
+        @show typeof(flux)
+        @show typeof(gradf)
+        @show typeof(rhsQ)
     end
     return rhsQ,rhstest
 end
 
 xq,yq,zq = (x->reshape(x,Nq_P,Np_F,K)).((xq,yq,zq))
-ρ_exact(x,y,z,t) = @. 1+0.2*sin(pi*(x+y+z-3/2*t))
-ρ = @. 1+0.2*sin(pi*(xq+yq+zq))
+ρ_exact(x,y,z,t) = @. 1.0f0+0.2f0*sin(pi*(x+y+z-3/2*t))
+ρ = @. 1.0f0+0.2f0*sin(pi*(xq+yq+zq))
 u = ones(size(xq))
-v = -1/2*ones(size(xq))
+v = -0.5f0*ones(size(xq))
 w = ones(size(xq))
 p = ones(size(xq))
 Q_exact(x,y,z,t) = (ρ_exact(x,y,z,t),u,v,w,p)
@@ -558,15 +579,18 @@ for k = 1:K
     end
 end
 Q = Q_vec[:]
+Q = convert.(Float32,Q)
 Q = CuArray(Q)
-resQ = CUDA.fill(0.0,Nq*Nd*K)
+resQ = CUDA.fill(0.0f0,Nq*Nd*K)
 
-
-#rhs(Q,ops,mesh,param,num_threads,true,true)
+################################
+######   Time stepping   #######
+################################
 
 @time begin
 for i = 1:Nsteps
     rhstest = 0
+
     for INTRK = 1:5
         if enable_test
             @show "==============="
