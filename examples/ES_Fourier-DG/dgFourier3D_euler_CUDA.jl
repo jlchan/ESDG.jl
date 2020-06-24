@@ -60,41 +60,43 @@ const T     = 2.0;  # End time
 
 "Time integration Parameters"
 rk4a,rk4b,rk4c = rk45_coeffs()
-CN = (N_P+1)*(N_P+2)*3/2  # estimated trace constant for CFL
-dt = CFL * 2 / CN / K1D
-Nsteps = convert(Int,ceil(T/dt))
-dt = T/Nsteps
+CN             = (N_P+1)*(N_P+2)*3/2  # estimated trace constant for CFL
+dt             = CFL * 2 / CN / K1D
+Nsteps         = convert(Int,ceil(T/dt))
+dt             = T/Nsteps
 
 "Initialize Reference Element in Fourier dimension"
-h = 2*pi/Np_F
-column = [0; .5*(-1).^(1:Np_F-1).*cot.((1:Np_F-1)*h/2)]
+h       = 2*pi/Np_F
+column  = [0; .5*(-1).^(1:Np_F-1).*cot.((1:Np_F-1)*h/2)]
 column2 = [-pi^2/3/h^2-1/6; -((-1).^(1:Np_F-1)./(2*(sin.((1:Np_F-1)*h/2)).^2))]
-Dt = Array{Float64,2}(Toeplitz(column,column[[1;Np_F:-1:2]]))
-D2t = Array{Float64,2}(Toeplitz(column2,column2[[1;Np_F:-1:2]]))
-t = LinRange(h,2*pi,Np_F)
-
+Dt      = Array{Float64,2}(Toeplitz(column,column[[1;Np_F:-1:2]]))
+D2t     = Array{Float64,2}(Toeplitz(column2,column2[[1;Np_F:-1:2]]))
+t       = LinRange(h,2*pi,Np_F)
 
 "Initialize Reference Element in polynomial dimension"
 rd = init_reference_tri(N_P);
 @unpack fv,Nfaces,r,s,VDM,V1,Dr,Ds,rf,sf,wf,nrJ,nsJ,rq,sq,wq,Vq,M,Pq,Vf,LIFT = rd
-Nq_P = length(rq)
-Nfp_P = length(rf)
-Nh_P = Nq_P+Nfp_P # Number of hybridized points
-Lq = LIFT
-Nq = Nq_P*Np_F
-Nh = Nh_P*Np_F
-Nfp = Nfp_P*Np_F
+Lq    = LIFT
+
+"Problem parameters"
+Nq_P   = length(rq)
+Nfp_P  = length(rf)
+Nh_P   = Nq_P+Nfp_P # Number of hybridized points
+Nq     = Nq_P*Np_F
+Nh     = Nh_P*Np_F
+Nfp    = Nfp_P*Np_F
 Nk_max = num_threads == 1 ? 1 : div(num_threads-2,Nh)+2 # Max amount of element in a block
 
 "Mesh related variables"
-# First initialize 2D triangular mesh
+# Initialize 2D triangular mesh
 VX,VY,EToV = uniform_tri_mesh(K1D,K1D)
 @. VX = 1+VX
 @. VY = 1+VY
-md = init_mesh((VX,VY),EToV,rd)
-VX = repeat(VX,2)
-VY = repeat(VY,2)
-VZ = [2/Np_F*ones((K1D+1)*(K1D+1),1); 2*ones((K1D+1)*(K1D+1),1)]
+md   = init_mesh((VX,VY),EToV,rd)
+# Intialize triangular prism
+VX   = repeat(VX,2)
+VY   = repeat(VY,2)
+VZ   = [2/Np_F*ones((K1D+1)*(K1D+1),1); 2*ones((K1D+1)*(K1D+1),1)]
 EToV = [EToV EToV.+(K1D+1)*(K1D+1)]
 
 # Make domain periodic
@@ -103,7 +105,6 @@ EToV = [EToV EToV.+(K1D+1)*(K1D+1)]
 LX,LY = (x->maximum(x)-minimum(x)).((VX,VY)) # find lengths of domain
 mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces*K,mapM,mapP,mapB)
 mapP[mapB] = mapPB
-@pack! md = mapP
 
 # Initialize 3D mesh
 @unpack x,y,xf,yf,xq,yq,rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ,mapM,mapP,mapB = md
@@ -133,6 +134,10 @@ end
 mapP_vec = mapP_vec[:]
 
 
+#############################################
+######  Construct hybridized operators ######
+#############################################
+
 # scale by Fourier dimension
 M = h*M
 wq = h*wq
@@ -149,7 +154,7 @@ Qrh,Qsh = (x->1/2*[x[1]-x[1]' Ef'*x[2];
 Qrh_skew,Qsh_skew = (x->1/2*(x-x')).((Qrh,Qsh))
 Qt = Dt
 Qth = Qt # Not the SBP operator, weighted when flux differencing
-Ph = [Vq;Vf]*Pq # TODO: refactor
+Ph = [Vq;Vf]*Pq
 
 # TODO: assume mesh uniform affine, so Jacobian are constants
 # TODO: fix other Jacobian parts
@@ -169,30 +174,15 @@ VPh = Vq*[Pq Lq]*diagm(1 ./ [wq;wf])
 Winv = diagm(1 ./ [wq;wf])
 Wq = diagm(wq)
 
-ops = (Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq)
-mesh = (rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,mapP_vec)
-param = (K,Np_P,Nq_P,Nfp_P,Nh_P,Np_F,Nq,Nfp,Nh,Nk_max)
-
-# TODO: messy. a lot to clean up...
 # To single precision
 if enable_single_precision
-    ops = (A->convert.(Float32,A)).(ops)
-    Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq = ops
-    rxJ,sxJ,ryJ,syJ,nxJ,nyJ = (A->convert.(Float32,A)).((rxJ,sxJ,ryJ,syJ,nxJ,nyJ))
-    J,h = (x->convert(Float32,x)).((J,h))
-    mesh = (rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,mapP_vec)
-    rk4a,rk4b = (A->convert.(Float32,A)).((rk4a,rk4b))
+    Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,rk4a,rk4b = (A->convert.(Float32,A)).((Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,rk4a,rk4b))
 end
  
 # TODO: refactor
-Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,Winv = (x->CuArray(x)).((Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,Winv))
+Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,Winv,rxJ,sxJ,ryJ,syJ = (x->CuArray(x)).((Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,Winv,rxJ,sxJ,ryJ,syJ))
 nxJ = CuArray(nxJ[:])
 nyJ = CuArray(nyJ[:])
-
-rxJ = CuArray(rxJ)
-sxJ = CuArray(sxJ)
-ryJ = CuArray(ryJ)
-syJ = CuArray(syJ)
 
 ops = (Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq)
 mesh = (rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,mapP_vec)
