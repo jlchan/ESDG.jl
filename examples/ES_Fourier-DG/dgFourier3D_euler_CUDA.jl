@@ -44,6 +44,7 @@ vector_norm(U) = CuArrays.sum((x->x.^2).(U))
 const sp_tol      = 1e-12
 const num_threads = 256
 const enable_test = false
+const gamma       = 1.4f0
 "Program parameters"
 compute_L2_err          = false
 enable_single_precision = true
@@ -217,9 +218,9 @@ function u_to_v!(VU,Q,Nd,Nq)
         E = Q[idx+4*Nq]
         rhoUnorm = rhou^2+rhov^2+rhow^2
         rhoe = E-.5*rhoUnorm/rho
-        sU = CUDA.log(0.4f0*rhoe/CUDA.exp(1.4f0*CUDA.log(rho)))
+        sU = CUDA.log((gamma-1.0f0)*rhoe/CUDA.exp(gamma*CUDA.log(rho)))
 
-        VU[idx] = (-E+rhoe*(2.4f0-sU))/rhoe
+        VU[idx] = (-E+rhoe*(gamma+1.0f0-sU))/rhoe
         VU[idx+Nq] = rhou/rhoe
         VU[idx+2*Nq] = rhov/rhoe
         VU[idx+3*Nq] = rhow/rhoe
@@ -245,7 +246,8 @@ function v_to_u!(Qh,Nd,Nh)
         rhow = Qh[idx+3*Nh]
         E = Qh[idx+4*Nh]
         vUnorm = rhou^2+rhov^2+rhow^2
-        rhoeV = CUDA.exp(2.5f0*CUDA.log(0.4f0/CUDA.exp(1.4f0*CUDA.log(-E))))*CUDA.exp(-(1.4f0-rho+vUnorm/(2f0*E))/0.4f0)
+        rhoeV =
+CUDA.exp(1.0f0/(gamma-1.0f0)*CUDA.log((gamma-1.0f0)/CUDA.exp(gamma*CUDA.log(-E))))*CUDA.exp(-(gamma-rho+vUnorm/(2.0f0*E))/(gamma-1.0f0))
 
         Qh[idx] = -rhoeV*E
         Qh[idx+Nh] = rhoeV*rhou
@@ -274,7 +276,7 @@ function u_to_primitive!(Qh,Nd,Nh)
         rhow = Qh[idx+3*Nh]
         E = Qh[idx+4*Nh]
 
-        beta = rho/(0.8f0*(E-.5*(rhou^2+rhov^2+rhow^2)/rho))
+        beta = rho/(2.0f0*(gamma-1.0f0)*(E-.5*(rhou^2+rhov^2+rhow^2)/rho))
 
         Qh[idx+Nh] = rhou/rho
         Qh[idx+2*Nh] = rhov/rho
@@ -321,7 +323,7 @@ function CU_euler_flux(rhoM,uM,vM,wM,betaM,rhoP,uP,vP,wP,betaP,rhologM,betalogM,
 
     unorm = uM*uP+vM*vP+wM*wP
     pa = rhoavg/(betaM+betaP)
-    E_plus_p = rholog/(0.8f0*betalog) + pa + .5f0*rholog*unorm
+    E_plus_p = rholog/(2.0f0*(gamma-1.0f0)*betalog) + pa + .5f0*rholog*unorm
 
     FxS1 = (@. rholog*uavg)
     FxS2 = (@. FxS1*uavg + pa)
