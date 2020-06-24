@@ -41,10 +41,11 @@ end
 vector_norm(U) = CuArrays.sum((x->x.^2).(U))
 
 "Constants"
-const sp_tol = 1e-12
+const sp_tol      = 1e-12
+const num_threads = 256
 const enable_test = false
 "Program parameters"
-compute_L2_err = false
+compute_L2_err          = false
 enable_single_precision = true
 
 "Approximation Parameters"
@@ -52,8 +53,7 @@ const N_P   = 2;    # The order of approximation in polynomial dimension
 const Np_P  = Int((N_P+1)*(N_P+2)/2)
 const Np_F  = 10;    # The order of approximation in Fourier dimension
 const K1D   = 30;   # Number of elements in polynomial (x,y) dimension
-const Nd = 5;
-const num_threads=256
+const Nd    = 5;
 const CFL   = 1.0;
 const T     = 2.0;  # End time
 
@@ -203,6 +203,8 @@ param = (K,Np_P,Nq_P,Nfp_P,Nh_P,Np_F,Nq,Nfp,Nh,Nk_max)
 function u_to_v!(VU,Q,Nd,Nq)
     index = (blockIdx().x-1)*blockDim().x + threadIdx().x
     stride = blockDim().x*gridDim().x
+
+    @inbounds begin
     for i = index:stride:ceil(Int,length(VU)/Nd)
         k = div(i-1,Nq) # Current element
         n = mod1(i,Nq) # Current quad node
@@ -223,11 +225,14 @@ function u_to_v!(VU,Q,Nd,Nq)
         VU[idx+3*Nq] = rhow/rhoe
         VU[idx+4*Nq] = -rho/rhoe
     end
+    end
 end
 
 function v_to_u!(Qh,Nd,Nh)
     index = (blockIdx().x-1)*blockDim().x + threadIdx().x
     stride = blockDim().x*gridDim().x
+
+    @inbounds begin
     for i = index:stride:ceil(Int,length(Qh)/Nd)
         k = div(i-1,Nh) # Current element
         n = mod1(i,Nh) # Current hybridized node
@@ -239,7 +244,6 @@ function v_to_u!(Qh,Nd,Nh)
         rhov = Qh[idx+2*Nh]
         rhow = Qh[idx+3*Nh]
         E = Qh[idx+4*Nh]
-
         vUnorm = rhou^2+rhov^2+rhow^2
         rhoeV = CUDA.exp(2.5f0*CUDA.log(0.4f0/CUDA.exp(1.4f0*CUDA.log(-E))))*CUDA.exp(-(1.4f0-rho+vUnorm/(2f0*E))/0.4f0)
 
@@ -249,17 +253,21 @@ function v_to_u!(Qh,Nd,Nh)
         Qh[idx+3*Nh] = rhoeV*rhow
         Qh[idx+4*Nh] = rhoeV*(1.0f0-vUnorm/(2.0f0*E))
     end
+    end
 end
 
 #TODO: combine with v_to_u
 function u_to_primitive!(Qh,Nd,Nh)
     index = (blockIdx().x-1)*blockDim().x + threadIdx().x
     stride = blockDim().x*gridDim().x
+
+    @inbounds begin
     for i = index:stride:ceil(Int,length(Qh)/Nd)
         k = div(i-1,Nh) # Current element
         n = mod1(i,Nh) # Current hybridized node
         # TODO: wrong varaible names
         idx = k*Nd*Nh+n
+
         rho = Qh[idx]
         rhou = Qh[idx+Nh]
         rhov = Qh[idx+2*Nh]
@@ -273,15 +281,19 @@ function u_to_primitive!(Qh,Nd,Nh)
         Qh[idx+3*Nh] = rhow/rho
         Qh[idx+4*Nh] = beta
     end
+    end
 end
 
 function extract_face_val!(QM,Qh,Nfp_P,Nq_P,Nh_P)
     index = (blockIdx().x-1)*blockDim().x + threadIdx().x
     stride = blockDim().x*gridDim().x
+
+    @inbounds begin
     for i = index:stride:length(QM)
         k = div(i-1,Nfp_P)
         n = mod1(index,Nfp_P)
         QM[i] = Qh[k*Nh_P+Nq_P+n]
+    end
     end
 end
 
@@ -333,6 +345,8 @@ end
 function surface_kernel!(flux,QM,QP,nxJ,nyJ,Nfp,K,Nd)
     index = (blockIdx().x-1)*blockDim().x + threadIdx().x
     stride = blockDim().x*gridDim().x
+
+    @inbounds begin
     for i = index:stride:Nfp*K
         k = div(i-1,Nfp)
         n = mod1(i,Nfp)
@@ -356,11 +370,13 @@ function surface_kernel!(flux,QM,QP,nxJ,nyJ,Nfp,K,Nd)
         betalogP = CUDA.log(betaP)
 
         FxS1,FxS2,FxS3,FxS4,FxS5,FyS1,FyS2,FyS3,FyS4,FyS5,_,_,_,_,_ = CU_euler_flux(rhoM,uM,vM,wM,betaM,rhoP,uP,vP,wP,betaP,rhologM,betalogM,rhologP,betalogP)
+
         flux[k*Nd*Nfp+n      ] = nxJ_val*FxS1+nyJ_val*FyS1
         flux[k*Nd*Nfp+n+  Nfp] = nxJ_val*FxS2+nyJ_val*FyS2
         flux[k*Nd*Nfp+n+2*Nfp] = nxJ_val*FxS3+nyJ_val*FyS3
         flux[k*Nd*Nfp+n+3*Nfp] = nxJ_val*FxS4+nyJ_val*FyS4
         flux[k*Nd*Nfp+n+4*Nfp] = nxJ_val*FxS5+nyJ_val*FyS5
+    end
     end
 end
 
@@ -378,23 +394,26 @@ function volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,N
     Qh_shared = @cuDynamicSharedMem(Float32,Nh*Nd*Nk_max)
     load_size = div(Nh*Nd*Nk-1,num_threads)+1 # size of read of each thread
     
+    @inbounds begin
     for r_id in (threadIdx().x-1)*load_size+1:min(threadIdx().x*load_size,Nh*Nd*Nk)
         Qh_shared[r_id] = Qh[k_start*Nd*Nh+r_id]
     end
+    end
     sync_threads()
 
+    @inbounds begin
     if index <= Nh*K
         i = index
         k = div(i-1,Nh)
         m = mod1(i,Nh)
 
         k_offset = k-k_start
+
         rhoL  = Qh_shared[k_offset*Nd*Nh+m     ]
         uL    = Qh_shared[k_offset*Nd*Nh+m+  Nh]
         vL    = Qh_shared[k_offset*Nd*Nh+m+2*Nh]
         wL    = Qh_shared[k_offset*Nd*Nh+m+3*Nh]
         betaL = Qh_shared[k_offset*Nd*Nh+m+4*Nh]
-        
         rhologL = CUDA.log(rhoL)
         betalogL = CUDA.log(betaL)
 
@@ -410,6 +429,7 @@ function volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,N
         beta_sum = 0.0f0
 
         # Assume Affine meshes
+
         rxJ_val = rxJ[1,1,k+1] 
         sxJ_val = sxJ[1,1,k+1]
         ryJ_val = ryJ[1,1,k+1]
@@ -418,6 +438,7 @@ function volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,N
         # TODO: better way to indexing
         for n = 1:Nh
             if n in xy_idx || n in z_idx
+
                 rhoR  = Qh_shared[k_offset*Nd*Nh+n     ]
                 uR    = Qh_shared[k_offset*Nd*Nh+n+  Nh]
                 vR    = Qh_shared[k_offset*Nd*Nh+n+2*Nh]
@@ -451,11 +472,13 @@ function volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,N
                 end
             end
         end
+
         gradfh[k*Nd*Nh+m     ] = rho_sum
         gradfh[k*Nd*Nh+m+  Nh] = u_sum
         gradfh[k*Nd*Nh+m+2*Nh] = v_sum
         gradfh[k*Nd*Nh+m+3*Nh] = w_sum
         gradfh[k*Nd*Nh+m+4*Nh] = beta_sum
+    end
     end
     return
 end
@@ -578,6 +601,8 @@ resQ = CUDA.fill(0.0f0,Nq*Nd*K)
 ################################
 
 @time begin
+
+@inbounds begin
 for i = 1:Nsteps
     rhstest = 0
 
@@ -597,8 +622,9 @@ for i = 1:Nsteps
         println("Time step: $i out of $Nsteps with rhstest = $rhstest") 
     end
 end
+end # end @inbounds
 
-end
+end # end @time
 
 
 Q = Array(Q)
