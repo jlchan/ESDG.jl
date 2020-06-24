@@ -42,9 +42,10 @@ vector_norm(U) = CuArrays.sum((x->x.^2).(U))
 
 "Constants"
 const sp_tol = 1e-12
-const enable_test = false 
+const enable_test = false
 "Program parameters"
 compute_L2_err = false
+enable_single_precision = true
 
 "Approximation Parameters"
 const N_P   = 2;    # The order of approximation in polynomial dimension
@@ -82,6 +83,7 @@ Lq = LIFT
 Nq = Nq_P*Np_F
 Nh = Nh_P*Np_F
 Nfp = Nfp_P*Np_F
+Nk_max = num_threads == 1 ? 1 : div(num_threads-2,Nh)+2 # Max amount of element in a block
 
 "Mesh related variables"
 # First initialize 2D triangular mesh
@@ -168,18 +170,18 @@ Wq = diagm(wq)
 
 ops = (Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq)
 mesh = (rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,mapP_vec)
-param = (K,Np_P,Nq_P,Nfp_P,Nh_P,Np_F,Nq,Nfp,Nh)
+param = (K,Np_P,Nq_P,Nfp_P,Nh_P,Np_F,Nq,Nfp,Nh,Nk_max)
 
 # TODO: messy. a lot to clean up...
 # To single precision
-ops = (A->convert.(Float32,A)).(ops)
-Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq = ops
-rxJ,sxJ,ryJ,syJ,nxJ,nyJ = (A->convert.(Float32,A)).((rxJ,sxJ,ryJ,syJ,nxJ,nyJ))
-J,h = (x->convert(Float32,x)).((J,h))
-mesh = (rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,mapP_vec)
-#param = (x->convert(Int32,x)).(param)
-rk4a,rk4b = (A->convert.(Float32,A)).((rk4a,rk4b))
-
+if enable_single_precision
+    ops = (A->convert.(Float32,A)).(ops)
+    Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq = ops
+    rxJ,sxJ,ryJ,syJ,nxJ,nyJ = (A->convert.(Float32,A)).((rxJ,sxJ,ryJ,syJ,nxJ,nyJ))
+    J,h = (x->convert(Float32,x)).((J,h))
+    mesh = (rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,mapP_vec)
+    rk4a,rk4b = (A->convert.(Float32,A)).((rk4a,rk4b))
+end
  
 # TODO: refactor
 Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,Winv = (x->CuArray(x)).((Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,Winv))
@@ -193,7 +195,7 @@ syJ = CuArray(syJ)
 
 ops = (Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq)
 mesh = (rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,mapP_vec)
-param = (K,Np_P,Nq_P,Nfp_P,Nh_P,Np_F,Nq,Nfp,Nh)
+param = (K,Np_P,Nq_P,Nfp_P,Nh_P,Np_F,Nq,Nfp,Nh,Nk_max)
 
 # ================================= #
 # ============ Routines =========== #
@@ -465,58 +467,44 @@ end
 function rhs(Q,ops,mesh,param,num_threads,compute_rhstest,enable_test)
     Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq = ops
     rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,mapP_vec = mesh
-    K,Np_P,Nq_P,Nfp_P,Nh_P,Np_F,Nq,Nfp,Nh = param
-    # Entropy Projection
-    VU = CUDA.fill(0.0f0,length(Q))
-    num_blocks = ceil(Int32,length(VU)/num_threads/Nd)
-    @cuda threads=num_threads blocks = num_blocks u_to_v!(VU,Q,Nd,Nq)
-    synchronize()
+    K,Np_P,Nq_P,Nfp_P,Nh_P,Np_F,Nq,Nfp,Nh,Nk_max = param
+
+    VU = CUDA.fill(0.0f0,Nq*Nd*K)
+    QM = CUDA.fill(0.0f0,Nfp*Nd*K)
+    flux = CUDA.fill(0.0f0,Nfp*K*Nd)
+    gradfh = CUDA.fill(0.0f0,Nh*Nd*K)
     
+    # Entropy Projection
+    @cuda threads=num_threads blocks = ceil(Int,Nq*K/num_threads) u_to_v!(VU,Q,Nd,Nq)
+    synchronize()
     Qh = reshape(Ph*reshape(VU,Nq_P,Np_F*Nd*K),Nh*Nd*K)
+    @cuda threads=num_threads blocks = ceil(Int,Nh*K/num_threads) v_to_u!(Qh,Nd,Nh)
     synchronize()
-
-    num_blocks = ceil(Int32,length(Qh)/num_threads/Nd)
-    @cuda threads=num_threads blocks = num_blocks v_to_u!(Qh,Nd,Nh)
-    synchronize()
-
-    @cuda threads=num_threads blocks = num_blocks u_to_primitive!(Qh,Nd,Nh)
+    @cuda threads=num_threads blocks = ceil(Int,Nh*K/num_threads) u_to_primitive!(Qh,Nd,Nh)
     synchronize()
 
     # Compute Surface values
-    QM = CUDA.fill(0.0f0,Nfp*Nd*K)
-    num_blocks = ceil(Int32,length(QM)/num_threads)
-    @cuda threads=num_threads blocks = num_blocks extract_face_val!(QM,Qh,Nfp_P,Nq_P,Nh_P)
+    @cuda threads=num_threads blocks = ceil(Int,Nfp*Nd*K/num_threads) extract_face_val!(QM,Qh,Nfp_P,Nq_P,Nh_P)
     synchronize()
     QP = QM[mapP_vec]
-    synchronize()
 
     # Surface kernel
-    flux = CUDA.fill(0.0f0,Nfp*K*Nd)
-    num_blocks = ceil(Int32,length(flux)/num_threads/Nd)
-    @cuda threads=num_threads blocks = num_blocks surface_kernel!(flux,QM,QP,nxJ,nyJ,Nfp,K,Nd)
+    @cuda threads=num_threads blocks = ceil(Int,Nfp*K/num_threads) surface_kernel!(flux,QM,QP,nxJ,nyJ,Nfp,K,Nd)
     synchronize()
     flux = reshape(LIFTq*reshape(flux,Nfp_P,Np_F*Nd*K),Nq*Nd*K)
-    synchronize()
 
     # Volume kernel
-    gradfh = CUDA.fill(0.0f0,Nh*Nd*K)
-    num_blocks = ceil(Int32,Nh*K/num_threads)
-    Nk_max = num_threads == 1 ? 1 : div(num_threads-2,Nh)+2 # Max amount of element in a block
-    @cuda threads=num_threads blocks = num_blocks shmem = sizeof(Float32)*Nh*Nd*Nk_max volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,Nh,Nh_P,Np_F,K,Nd,Nq_P,num_threads,Nk_max)
+    @cuda threads=num_threads blocks = ceil(Int,Nh*K/num_threads) shmem = sizeof(Float32)*Nh*Nd*Nk_max volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,Nh,Nh_P,Np_F,K,Nd,Nq_P,num_threads,Nk_max)
     synchronize()
     gradf = reshape(VPh*reshape(gradfh,Nh_P,Np_F*Nd*K),Nq*Nd*K)#reshape(Vq*[Pq Lq]*Winv*reshape(gradfh,Nh_P,Np_F*Nd*K),Nq*Nd*K)
-    synchronize()
 
     # Combine
     rhsQ = -(gradf+flux)
-    synchronize()
 
     # Compute rhstest
     rhstest = 0
-    compute_rhstest = true
     if compute_rhstest
         rhstest = CUDA.sum(Wq*reshape(VU.*rhsQ,Nq_P,Np_F*Nd*K))
-        synchronize()
     end
 
     if enable_test
@@ -561,7 +549,7 @@ u = ones(size(xq))
 v = -0.5f0*ones(size(xq))
 w = ones(size(xq))
 p = ones(size(xq))
-Q_exact(x,y,z,t) = (ρ_exact(x,y,z,t),u,v,w,p)
+Q_exact(x,y,z,t) = (ρ_exact(x,y,z,t),ones(size(x)),-0.5f0*ones(size(x)),ones(size(x)),ones(size(x)))
 
 Q = primitive_to_conservative(ρ,u,v,w,p)
 Q = collect(Q)
@@ -570,7 +558,7 @@ Q_ex_vec = zeros(Nq_P,Np_F,Nd,K)
 # TODO: clean up
 rq2,sq2,wq2 = quad_nodes_2D(N_P+2)
 Vq2 = vandermonde_2D(N_P,rq2,sq2)/VDM
-xq2,yq2,zq2 = (x->Vq2*reshape(x,Nq_P,Np_F*K)).((x,y,z))
+xq2,yq2,zq2 = (x->Vq2*reshape(x,Np_P,Np_F*K)).((x,y,z))
 Q_ex = Q_exact(xq2,yq2,zq2,T)
 
 for k = 1:K
@@ -579,7 +567,9 @@ for k = 1:K
     end
 end
 Q = Q_vec[:]
-Q = convert.(Float32,Q)
+if enable_single_precision
+    Q = convert.(Float32,Q)
+end
 Q = CuArray(Q)
 resQ = CUDA.fill(0.0f0,Nq*Nd*K)
 
@@ -623,7 +613,7 @@ Pq = Array(Pq)
 Q = (x->Vq2*Pq*reshape(x,Nq_P,Np_F*K)).(Q_mat)
 p = pfun(Q[1],(Q[2],Q[3],Q[4]),Q[5])
 Q = (Q[1],Q[2]./Q[1],Q[3]./Q[1],Q[4]./Q[1],p)
-Q_ex = (x->reshape(x,Nq_P,Np_F*K)).(Q_ex)
+Q_ex = (x->reshape(x,length(rq2),Np_F*K)).(Q_ex)
 L2_err = 0.0
 for fld in 1:Nd
     global L2_err
@@ -631,6 +621,7 @@ for fld in 1:Nd
 end
 println("L2err at final time T = $T is $L2_err\n")
 
+#=
 @show maximum(Q[1])
 @show maximum(Q[2])
 @show maximum(Q[3])
@@ -647,4 +638,4 @@ println("L2err at final time T = $T is $L2_err\n")
 @show sum(Q[4])
 @show sum(Q[5])
 @show maximum(Q[5])
-
+=#
