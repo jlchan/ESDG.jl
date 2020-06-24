@@ -46,8 +46,9 @@ const num_threads = 256
 const enable_test = false
 const gamma       = 1.4f0
 "Program parameters"
-compute_L2_err          = false
-enable_single_precision = true
+const compute_L2_err          = false
+const enable_single_precision = true
+const add_LF_dissipation      = true
 
 "Approximation Parameters"
 const N_P   = 2;    # The order of approximation in polynomial dimension
@@ -116,22 +117,23 @@ mapP = reshape(repeat(mapP_2D,inner=(1,Np_F)),Nfp_P,Np_F,K)
 for j = 1:Np_F
     mapP[:,j,:] = mapP[:,j,:].+(j-1)*Nfp_P
 end
-mapP_vec = zeros(Int32,Nfp_P,Np_F,Nd,K)
+mapP_d = zeros(Int32,Nfp_P,Np_F,Nd,K)
 for k = 1:K
     for j = 1:Np_F
         for i = 1:Nfp_P
             val = mapP[i,j,k]
             elem = div(val-1,Nfp)
             n = mod1(val,Nfp)
-            mapP_vec[i,j,1,k] = elem*Nd*Nfp+n
-            mapP_vec[i,j,2,k] = elem*Nd*Nfp+n+Nfp
-            mapP_vec[i,j,3,k] = elem*Nd*Nfp+n+2*Nfp
-            mapP_vec[i,j,4,k] = elem*Nd*Nfp+n+3*Nfp
-            mapP_vec[i,j,5,k] = elem*Nd*Nfp+n+4*Nfp
+            mapP_d[i,j,1,k] = elem*Nd*Nfp+n
+            mapP_d[i,j,2,k] = elem*Nd*Nfp+n+Nfp
+            mapP_d[i,j,3,k] = elem*Nd*Nfp+n+2*Nfp
+            mapP_d[i,j,4,k] = elem*Nd*Nfp+n+3*Nfp
+            mapP_d[i,j,5,k] = elem*Nd*Nfp+n+4*Nfp
         end
     end
 end
-mapP_vec = mapP_vec[:]
+mapP = mapP[:]
+mapP_d = mapP_d[:] 
 
 
 #############################################
@@ -176,16 +178,17 @@ Wq = diagm(wq)
 
 # To single precision
 if enable_single_precision
-    Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,rk4a,rk4b = (A->convert.(Float32,A)).((Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,rk4a,rk4b))
+    Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,rxJ,sxJ,ryJ,syJ,nxJ,nyJ,sJ,J,h,rk4a,rk4b = (A->convert.(Float32,A)).((Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,rxJ,sxJ,ryJ,syJ,nxJ,nyJ,sJ,J,h,rk4a,rk4b))
 end
  
 # TODO: refactor
 Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,Winv,rxJ,sxJ,ryJ,syJ = (x->CuArray(x)).((Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,Winv,rxJ,sxJ,ryJ,syJ))
 nxJ = CuArray(nxJ[:])
 nyJ = CuArray(nyJ[:])
+sJ  = CuArray(sJ[:])
 
 ops = (Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq)
-mesh = (rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,mapP_vec)
+mesh = (rxJ,sxJ,ryJ,syJ,nxJ,nyJ,sJ,J,h,mapP,mapP_d)
 param = (K,Np_P,Nq_P,Nfp_P,Nh_P,Np_F,Nq,Nfp,Nh,Nk_max)
 
 # ================================= #
@@ -276,6 +279,19 @@ function u_to_primitive!(Qh,Nd,Nh)
     end
 end
 
+function extract_face_val_conservative!(Uf,Qh,Nfp_P,Nq_P,Nh_P)
+    index = (blockIdx().x-1)*blockDim().x + threadIdx().x
+    stride = blockDim().x*gridDim().x
+
+    @inbounds begin
+    for i = index:stride:length(Uf)
+        k = div(i-1,Nfp_P)
+        n = mod1(i,Nfp_P)
+        Uf[i] = Qh[k*Nh_P+Nq_P+n]
+    end
+    end
+end
+
 function extract_face_val!(QM,Qh,Nfp_P,Nq_P,Nh_P)
     index = (blockIdx().x-1)*blockDim().x + threadIdx().x
     stride = blockDim().x*gridDim().x
@@ -283,7 +299,7 @@ function extract_face_val!(QM,Qh,Nfp_P,Nq_P,Nh_P)
     @inbounds begin
     for i = index:stride:length(QM)
         k = div(i-1,Nfp_P)
-        n = mod1(index,Nfp_P)
+        n = mod1(i,Nfp_P)
         QM[i] = Qh[k*Nh_P+Nq_P+n]
     end
     end
@@ -334,10 +350,32 @@ function CU_euler_flux(rhoM,uM,vM,wM,betaM,rhoP,uP,vP,wP,betaP,rhologM,betalogM,
     return FxS1,FxS2,FxS3,FxS4,FxS5,FyS1,FyS2,FyS3,FyS4,FyS5,FzS1,FzS2,FzS3,FzS4,FzS5
 end
 
-function surface_kernel!(flux,QM,QP,nxJ,nyJ,Nfp,K,Nd)
+function construct_lam!(lam,Uf,nxJ,nyJ,sJ,Nfp,K,Nd)
     index = (blockIdx().x-1)*blockDim().x + threadIdx().x
     stride = blockDim().x*gridDim().x
 
+    @inbounds begin
+    for i = index:stride:Nfp*K
+        k = div(i-1,Nfp)
+        n = mod1(i,Nfp)
+
+        rhoM  = Uf[k*Nd*Nfp+n      ]
+        rhouM = Uf[k*Nd*Nfp+n+  Nfp]
+        rhovM = Uf[k*Nd*Nfp+n+2*Nfp]
+        rhowM = Uf[k*Nd*Nfp+n+3*Nfp]
+        EM    = Uf[k*Nd*Nfp+n+4*Nfp]
+        nxJ_val = nxJ[k*Nfp+n]
+        nyJ_val = nyJ[k*Nfp+n]
+        sJ_val  = sJ[k*Nfp+n]
+        rhouM_n = (rhouM*nxJ_val+rhovM*nyJ_val)/sJ_val
+        lam[k*Nfp+n] = CUDA.sqrt(CUDA.abs(rhouM_n/rhoM))+CUDA.sqrt(gamma*(gamma-1.0f0)*(EM-0.5f0*rhouM_n^2/rhoM)/rhoM)
+    end
+    end
+end
+
+function surface_kernel!(flux,QM,QP,Uf,UfP,LFc,nxJ,nyJ,Nfp,K,Nd)
+    index = (blockIdx().x-1)*blockDim().x + threadIdx().x
+    stride = blockDim().x*gridDim().x
     @inbounds begin
     for i = index:stride:Nfp*K
         k = div(i-1,Nfp)
@@ -356,6 +394,16 @@ function surface_kernel!(flux,QM,QP,nxJ,nyJ,Nfp,K,Nd)
         nxJ_val = nxJ[k*Nfp+n]
         nyJ_val = nyJ[k*Nfp+n]
 
+        rhouM = Uf[k*Nd*Nfp+n+  Nfp]
+        rhovM = Uf[k*Nd*Nfp+n+2*Nfp]
+        rhowM = Uf[k*Nd*Nfp+n+3*Nfp]
+        EM    = Uf[k*Nd*Nfp+n+4*Nfp]
+        rhouP = UfP[k*Nd*Nfp+n+  Nfp]
+        rhovP = UfP[k*Nd*Nfp+n+2*Nfp]
+        rhowP = UfP[k*Nd*Nfp+n+3*Nfp]
+        EP    = UfP[k*Nd*Nfp+n+4*Nfp] 
+        LFc_val = LFc[k*Nfp+n]
+
         rhologM = CUDA.log(rhoM)
         rhologP = CUDA.log(rhoP)
         betalogM = CUDA.log(betaM)
@@ -363,11 +411,11 @@ function surface_kernel!(flux,QM,QP,nxJ,nyJ,Nfp,K,Nd)
 
         FxS1,FxS2,FxS3,FxS4,FxS5,FyS1,FyS2,FyS3,FyS4,FyS5,_,_,_,_,_ = CU_euler_flux(rhoM,uM,vM,wM,betaM,rhoP,uP,vP,wP,betaP,rhologM,betalogM,rhologP,betalogP)
 
-        flux[k*Nd*Nfp+n      ] = nxJ_val*FxS1+nyJ_val*FyS1
-        flux[k*Nd*Nfp+n+  Nfp] = nxJ_val*FxS2+nyJ_val*FyS2
-        flux[k*Nd*Nfp+n+2*Nfp] = nxJ_val*FxS3+nyJ_val*FyS3
-        flux[k*Nd*Nfp+n+3*Nfp] = nxJ_val*FxS4+nyJ_val*FyS4
-        flux[k*Nd*Nfp+n+4*Nfp] = nxJ_val*FxS5+nyJ_val*FyS5
+        flux[k*Nd*Nfp+n      ] = nxJ_val*FxS1+nyJ_val*FyS1-LFc_val*(rhoP-rhoM)
+        flux[k*Nd*Nfp+n+  Nfp] = nxJ_val*FxS2+nyJ_val*FyS2-LFc_val*(rhouP-rhouM)
+        flux[k*Nd*Nfp+n+2*Nfp] = nxJ_val*FxS3+nyJ_val*FyS3-LFc_val*(rhovP-rhovM)
+        flux[k*Nd*Nfp+n+3*Nfp] = nxJ_val*FxS4+nyJ_val*FyS4-LFc_val*(rhowP-rhowM)
+        flux[k*Nd*Nfp+n+4*Nfp] = nxJ_val*FxS5+nyJ_val*FyS5-LFc_val*(EP-EM)
     end
     end
 end
@@ -481,13 +529,16 @@ end
 
 function rhs(Q,ops,mesh,param,num_threads,compute_rhstest,enable_test)
     Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq = ops
-    rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,h,mapP_vec = mesh
+    rxJ,sxJ,ryJ,syJ,nxJ,nyJ,sJ,J,h,mapP,mapP_d = mesh
     K,Np_P,Nq_P,Nfp_P,Nh_P,Np_F,Nq,Nfp,Nh,Nk_max = param
 
     VU = CUDA.fill(0.0f0,Nq*Nd*K)
+    Uf = CUDA.fill(0.0f0,Nfp*Nd*K)
     QM = CUDA.fill(0.0f0,Nfp*Nd*K)
     flux = CUDA.fill(0.0f0,Nfp*K*Nd)
     gradfh = CUDA.fill(0.0f0,Nh*Nd*K)
+    lam = CUDA.fill(0.0f0,Nfp*K)
+    LFc = CUDA.fill(0.0f0,Nfp*K)
     
     # Entropy Projection
     @cuda threads=num_threads blocks = ceil(Int,Nq*K/num_threads) u_to_v!(VU,Q,Nd,Nq)
@@ -495,16 +546,25 @@ function rhs(Q,ops,mesh,param,num_threads,compute_rhstest,enable_test)
     Qh = reshape(Ph*reshape(VU,Nq_P,Np_F*Nd*K),Nh*Nd*K)
     @cuda threads=num_threads blocks = ceil(Int,Nh*K/num_threads) v_to_u!(Qh,Nd,Nh)
     synchronize()
+    @cuda threads=num_threads blocks = ceil(Int,Nfp*Nd*K/num_threads) extract_face_val_conservative!(Uf,Qh,Nfp_P,Nq_P,Nh_P)
+    # TODO: redundant. should remove 
+    UfP = Uf[mapP_d] 
+    synchronize()
     @cuda threads=num_threads blocks = ceil(Int,Nh*K/num_threads) u_to_primitive!(Qh,Nd,Nh)
     synchronize()
 
     # Compute Surface values
     @cuda threads=num_threads blocks = ceil(Int,Nfp*Nd*K/num_threads) extract_face_val!(QM,Qh,Nfp_P,Nq_P,Nh_P)
     synchronize()
-    QP = QM[mapP_vec]
+    QP = QM[mapP_d]
+
+    # LF dissipation
+    @cuda threads=num_threads blocks = ceil(Int,Nfp*K/num_threads) construct_lam!(lam,Uf,nxJ,nyJ,sJ,Nfp,K,Nd)
+    synchronize()
+    LFc .= .5f0*CUDA.max.(lam,lam[mapP]).*sJ
 
     # Surface kernel
-    @cuda threads=num_threads blocks = ceil(Int,Nfp*K/num_threads) surface_kernel!(flux,QM,QP,nxJ,nyJ,Nfp,K,Nd)
+    @cuda threads=num_threads blocks = ceil(Int,Nfp*K/num_threads) surface_kernel!(flux,QM,QP,Uf,UfP,LFc,nxJ,nyJ,Nfp,K,Nd)
     synchronize()
     flux = reshape(LIFTq*reshape(flux,Nfp_P,Np_F*Nd*K),Nq*Nd*K)
 
@@ -535,6 +595,12 @@ function rhs(Q,ops,mesh,param,num_threads,compute_rhstest,enable_test)
         @show CUDA.maximum(QP)
         @show CUDA.minimum(QP)
         @show CUDA.sum(QP)
+        @show CUDA.maximum(lam)
+        @show CUDA.minimum(lam)
+        @show CUDA.sum(lam)
+        @show CUDA.maximum(LFc)
+        @show CUDA.minimum(LFc)
+        @show CUDA.sum(LFc)
         @show CUDA.maximum(flux)
         @show CUDA.minimum(flux)
         @show CUDA.sum(flux)
