@@ -45,7 +45,7 @@ const sp_tol      = 1e-12
 const shmem_limit = 1024 # Max number of elements in shared mem
 const enable_test = false
 const gamma       = 1.4f0
-const NUM_TYPE    = Float32
+const NUM_TYPE    = Float64
 "Program parameters"
 const compute_L2_err          = false
 const add_LF_dissipation      = true
@@ -190,6 +190,12 @@ LIFTq = Vq*Lq
 VPh = Vq*[Pq Lq]*diagm(1 ./ [wq;wf])
 Winv = diagm(1 ./ [wq;wf])
 Wq = diagm(wq)
+
+# Assume affine meshes
+rxJ = [rxJ[1,1,k] for k in 1:K]
+sxJ = [sxJ[1,1,k] for k in 1:K]
+ryJ = [ryJ[1,1,k] for k in 1:K]
+syJ = [syJ[1,1,k] for k in 1:K]
 
 # convert precision
 Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,rxJ,sxJ,ryJ,syJ,nxJ,nyJ,sJ,J,h,rk4a,rk4b = (A->convert.(NUM_TYPE,A)).((Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,rxJ,sxJ,ryJ,syJ,nxJ,nyJ,sJ,J,h,rk4a,rk4b))
@@ -490,10 +496,10 @@ function flux_differencing_xy_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,Qrh_skew,Qsh_ske
 
         # Assume Affine meshes
 
-        rxJ_val = rxJ[1,1,k+1] 
-        sxJ_val = sxJ[1,1,k+1]
-        ryJ_val = ryJ[1,1,k+1]
-        syJ_val = syJ[1,1,k+1]
+        rxJ_val = rxJ[k+1] 
+        sxJ_val = sxJ[k+1]
+        ryJ_val = ryJ[k+1]
+        syJ_val = syJ[k+1]
 
         # TODO: better way to indexing
         for n_xy = 1:Nh_P
@@ -661,10 +667,10 @@ function volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,N
 
         # Assume Affine meshes
 
-        rxJ_val = rxJ[1,1,k+1] 
-        sxJ_val = sxJ[1,1,k+1]
-        ryJ_val = ryJ[1,1,k+1]
-        syJ_val = syJ[1,1,k+1]
+        rxJ_val = rxJ[k+1] 
+        sxJ_val = sxJ[k+1]
+        ryJ_val = ryJ[k+1]
+        syJ_val = syJ[k+1]
 
         # TODO: better way to indexing
         for n = 1:Nh
