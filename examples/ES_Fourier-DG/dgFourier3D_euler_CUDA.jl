@@ -42,7 +42,7 @@ vector_norm(U) = CuArrays.sum((x->x.^2).(U))
 
 "Constants"
 const sp_tol      = 1e-12
-const shmem_limit = 1024 # Max number of elements in shared mem
+const shmem_limit = 1024  # Max number of elements in shared mem
 const enable_test = false
 const gamma       = 1.4f0
 const NUM_TYPE    = Float64
@@ -250,22 +250,20 @@ function v_to_u!(Qh,Nd,Nh)
         k = div(i-1,Nh) # Current element
         n = mod1(i,Nh) # Current hybridized node
 
-        # TODO: wrong variable names
         idx = k*Nd*Nh+n
-        rho = Qh[idx]
-        rhou = Qh[idx+Nh]
-        rhov = Qh[idx+2*Nh]
-        rhow = Qh[idx+3*Nh]
-        E = Qh[idx+4*Nh]
-        vUnorm = rhou^2+rhov^2+rhow^2
-        rhoeV =
-CUDA.exp(1.0f0/(gamma-1.0f0)*CUDA.log((gamma-1.0f0)/CUDA.exp(gamma*CUDA.log(-E))))*CUDA.exp(-(gamma-rho+vUnorm/(2.0f0*E))/(gamma-1.0f0))
+        v1 = Qh[idx     ]
+        vu = Qh[idx+  Nh]
+        vv = Qh[idx+2*Nh]
+        vw = Qh[idx+3*Nh]
+        vE = Qh[idx+4*Nh]
+        vUnorm = vu^2+vv^2+vw^2
+        rhoeV = CUDA.exp(1.0f0/(gamma-1.0f0)*CUDA.log((gamma-1.0f0)/CUDA.exp(gamma*CUDA.log(-vE))))*CUDA.exp(-(gamma-v1+vUnorm/(2.0f0*vE))/(gamma-1.0f0))
 
-        Qh[idx] = -rhoeV*E
-        Qh[idx+Nh] = rhoeV*rhou
-        Qh[idx+2*Nh] = rhoeV*rhov
-        Qh[idx+3*Nh] = rhoeV*rhow
-        Qh[idx+4*Nh] = rhoeV*(1.0f0-vUnorm/(2.0f0*E))
+        Qh[idx     ] = -rhoeV*vE
+        Qh[idx+  Nh] = rhoeV*vu
+        Qh[idx+2*Nh] = rhoeV*vv
+        Qh[idx+3*Nh] = rhoeV*vw
+        Qh[idx+4*Nh] = rhoeV*(1.0f0-vUnorm/(2.0f0*vE))
     end
     end
 end
@@ -279,7 +277,6 @@ function u_to_primitive!(Qh,Nd,Nh)
     for i = index:stride:ceil(Int,length(Qh)/Nd)
         k = div(i-1,Nh) # Current element
         n = mod1(i,Nh) # Current hybridized node
-        # TODO: wrong varaible names
         idx = k*Nd*Nh+n
 
         rho = Qh[idx]
@@ -337,14 +334,13 @@ function CU_logmean(uL,uR,logL,logR)
 end
 
 function CU_euler_flux(rhoM,uM,vM,wM,betaM,rhoP,uP,vP,wP,betaP,rhologM,betalogM,rhologP,betalogP)
-    rholog = CU_logmean(rhoM,rhoP,rhologM,rhologP)
+    rholog  = CU_logmean(rhoM,rhoP,rhologM,rhologP)
     betalog = CU_logmean(betaM,betaP,betalogM,betalogP)
 
-    # TODO: write in functions
     rhoavg = .5f0*(rhoM+rhoP)
-    uavg = .5f0*(uM+uP)
-    vavg = .5f0*(vM+vP)
-    wavg = .5f0*(wM+wP)
+    uavg   = .5f0*(uM+uP)
+    vavg   = .5f0*(vM+vP)
+    wavg   = .5f0*(wM+wP)
 
     unorm = uM*uP+vM*vP+wM*wP
     pa = rhoavg/(betaM+betaP)
@@ -457,7 +453,6 @@ function flux_differencing_xy_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,Qrh_skew,Qsh_ske
     load_size = div(Nh_P*Nd*Nk_tri-1,num_threads)+1 # size of read of each thread
     @inbounds begin
     for i in (threadIdx().x-1)*load_size+1:min(threadIdx().x*load_size,Nh_P*Nd*Nk_tri)
-        # TODO: cleanup
         offset_tri = div(i-1,Nh_P*Nd) # distance with k_tri_start
         n_local = mod1(i,Nh_P*Nd)
         n_d = div(n_local-1,Nh_P) # Current component
@@ -501,7 +496,6 @@ function flux_differencing_xy_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,Qrh_skew,Qsh_ske
         ryJ_val = ryJ[k+1]
         syJ_val = syJ[k+1]
 
-        # TODO: better way to indexing
         for n_xy = 1:Nh_P
             rhoR  = Qh_shared[k_tri_offset*Nd*Nh_P+n_xy       ] 
             uR    = Qh_shared[k_tri_offset*Nd*Nh_P+n_xy+  Nh_P] 
@@ -513,7 +507,6 @@ function flux_differencing_xy_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,Qrh_skew,Qsh_ske
 
             FxS1,FxS2,FxS3,FxS4,FxS5,FyS1,FyS2,FyS3,FyS4,FyS5,FzS1,FzS2,FzS3,FzS4,FzS5 = CU_euler_flux(rhoL,uL,vL,wL,betaL,rhoR,uR,vR,wR,betaR,rhologL,betalogL,rhologR,betalogR)
 
-            # col_idx = mod1(n,Nh_P)
             Qx_val = 2.0f0*(rxJ_val*Qrh_skew[m_xy,n_xy]+sxJ_val*Qsh_skew[m_xy,n_xy])
             Qy_val = 2.0f0*(ryJ_val*Qrh_skew[m_xy,n_xy]+syJ_val*Qsh_skew[m_xy,n_xy])
             rho_sum  += Qx_val*FxS1+Qy_val*FyS1
@@ -546,12 +539,10 @@ function flux_differencing_z_kernel!(gradfh,Qh,wq,h,J,Qth,Nh,Nq,Nh_P,Np_F,K,Nd,N
     k_fourier_end = tid_end < Nq*K ? div(tid_end-1,Np_F) : Nq_P*K-1
     Nk_fourier = k_fourier_end-k_fourier_start+1
     
-    # TODO: Parallel read
     Qh_shared = @cuDynamicSharedMem(NUM_TYPE,Np_F*Nd*Nk_fourier_max)
     load_size = div(Np_F*Nd*Nk_fourier-1,num_threads)+1 # size of read of each thread
     @inbounds begin
     for i in (threadIdx().x-1)*load_size+1:min(threadIdx().x*load_size,Np_F*Nd*Nk_fourier)
-        # TODO: cleanup
         offset_fourier = div(i-1,Np_F*Nd) # distance with k_fourier_start
         n_local = mod1(i,Np_F*Nd)
         n_d = div(n_local-1,Np_F) # Current component
@@ -587,7 +578,6 @@ function flux_differencing_z_kernel!(gradfh,Qh,wq,h,J,Qth,Nh,Nq,Nh_P,Np_F,K,Nd,N
         w_sum = 0.0f0
         beta_sum = 0.0f0
         
-        # TODO: better way to indexing
         for n_z = 1:Np_F
             rhoR  = Qh_shared[k_fourier_offset*Nd*Np_F+n_z       ]
             uR    = Qh_shared[k_fourier_offset*Nd*Np_F+n_z+  Np_F]
@@ -740,39 +730,38 @@ function rhs(Q,ops,mesh,param,num_threads,compute_rhstest,enable_test)
     LFc = CUDA.fill(CUDA.zero(NUM_TYPE),Nfp*K)
     
     # Entropy Projection
-    @cuda threads=num_threads blocks = ceil(Int,Nq*K/num_threads) u_to_v!(VU,Q,Nd,Nq)
+    @cuda threads=num_threads blocks=ceil(Int,Nq*K/num_threads) u_to_v!(VU,Q,Nd,Nq)
     synchronize()
     Qh = reshape(Ph*reshape(VU,Nq_P,Np_F*Nd*K),Nh*Nd*K)
-    @cuda threads=num_threads blocks = ceil(Int,Nh*K/num_threads) v_to_u!(Qh,Nd,Nh)
+    @cuda threads=num_threads blocks=ceil(Int,Nh*K/num_threads) v_to_u!(Qh,Nd,Nh)
     synchronize()
-    @cuda threads=num_threads blocks = ceil(Int,Nfp*Nd*K/num_threads) extract_face_val_conservative!(Uf,Qh,Nfp_P,Nq_P,Nh_P)
-    # TODO: redundant. should remove 
+    @cuda threads=num_threads blocks=ceil(Int,Nfp*Nd*K/num_threads) extract_face_val_conservative!(Uf,Qh,Nfp_P,Nq_P,Nh_P)
     UfP = Uf[mapP_d] 
     synchronize()
-    @cuda threads=num_threads blocks = ceil(Int,Nh*K/num_threads) u_to_primitive!(Qh,Nd,Nh)
+    @cuda threads=num_threads blocks=ceil(Int,Nh*K/num_threads) u_to_primitive!(Qh,Nd,Nh)
     synchronize()
 
     # Compute Surface values
-    @cuda threads=num_threads blocks = ceil(Int,Nfp*Nd*K/num_threads) extract_face_val!(QM,Qh,Nfp_P,Nq_P,Nh_P)
+    @cuda threads=num_threads blocks=ceil(Int,Nfp*Nd*K/num_threads) extract_face_val!(QM,Qh,Nfp_P,Nq_P,Nh_P)
     synchronize()
     QP = QM[mapP_d]
 
     # LF dissipation
-    @cuda threads=num_threads blocks = ceil(Int,Nfp*K/num_threads) construct_lam!(lam,Uf,nxJ,nyJ,sJ,Nfp,K,Nd)
+    @cuda threads=num_threads blocks=ceil(Int,Nfp*K/num_threads) construct_lam!(lam,Uf,nxJ,nyJ,sJ,Nfp,K,Nd)
     synchronize()
     LFc .= .5f0*CUDA.max.(lam,lam[mapP]).*sJ
 
     # Surface kernel
-    @cuda threads=num_threads blocks = ceil(Int,Nfp*K/num_threads) surface_kernel!(flux,QM,QP,Uf,UfP,LFc,nxJ,nyJ,Nfp,K,Nd)
+    @cuda threads=num_threads blocks=ceil(Int,Nfp*K/num_threads) surface_kernel!(flux,QM,QP,Uf,UfP,LFc,nxJ,nyJ,Nfp,K,Nd)
     synchronize()
     flux = reshape(LIFTq*reshape(flux,Nfp_P,Np_F*Nd*K),Nq*Nd*K)
 
     # Volume kernel
-    @cuda threads=num_threads blocks = ceil(Int,Nh*K/num_threads) shmem = sizeof(NUM_TYPE)*Nh_P*Nd*Nk_tri_max flux_differencing_xy_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,Qrh_skew,Qsh_skew,Nh,Nh_P,Np_F,K,Nd,Nq_P,num_threads,Nk_max,Nk_tri_max)
-    @cuda threads=num_threads blocks = ceil(Int,Nq*K/num_threads) shmem = sizeof(NUM_TYPE)*Np_F*Nd*Nk_fourier_max flux_differencing_z_kernel!(gradfh,Qh,wq,h,J,Qth,Nh,Nq,Nh_P,Np_F,K,Nd,Nq_P,num_threads,Nk_max,Nk_fourier_max)
-    #@cuda threads=num_threads blocks = ceil(Int,Nh*K/num_threads) shmem = sizeof(NUM_TYPE)*Nh*Nd*Nk_max volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,Nh,Nh_P,Np_F,K,Nd,Nq_P,num_threads,Nk_max)
+    @cuda threads=num_threads blocks=ceil(Int,Nh*K/num_threads) shmem=sizeof(NUM_TYPE)*Nh_P*Nd*Nk_tri_max flux_differencing_xy_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,Qrh_skew,Qsh_skew,Nh,Nh_P,Np_F,K,Nd,Nq_P,num_threads,Nk_max,Nk_tri_max)
+    @cuda threads=num_threads blocks=ceil(Int,Nq*K/num_threads) shmem=sizeof(NUM_TYPE)*Np_F*Nd*Nk_fourier_max flux_differencing_z_kernel!(gradfh,Qh,wq,h,J,Qth,Nh,Nq,Nh_P,Np_F,K,Nd,Nq_P,num_threads,Nk_max,Nk_fourier_max)
+    #@cuda threads=num_threads blocks=ceil(Int,Nh*K/num_threads) shmem=sizeof(NUM_TYPE)*Nh*Nd*Nk_max volume_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,wq,h,J,Qrh_skew,Qsh_skew,Qth,Nh,Nh_P,Np_F,K,Nd,Nq_P,num_threads,Nk_max)
     synchronize()
-    gradf = reshape(VPh*reshape(gradfh,Nh_P,Np_F*Nd*K),Nq*Nd*K)#reshape(Vq*[Pq Lq]*Winv*reshape(gradfh,Nh_P,Np_F*Nd*K),Nq*Nd*K)
+    gradf = reshape(VPh*reshape(gradfh,Nh_P,Np_F*Nd*K),Nq*Nd*K)
 
     # Combine
     rhsQ = -(gradf+flux)
