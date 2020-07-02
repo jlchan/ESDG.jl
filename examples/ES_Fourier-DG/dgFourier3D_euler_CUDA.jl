@@ -496,24 +496,27 @@ function flux_differencing_xy_kernel!(gradfh,Qh,rxJ,sxJ,ryJ,syJ,Qrh_skew,Qsh_ske
         ryJ_val = ryJ[k+1]
         syJ_val = syJ[k+1]
 
+        
         for n_xy = 1:Nh_P
-            rhoR  = Qh_shared[k_tri_offset*Nd*Nh_P+n_xy       ] 
-            uR    = Qh_shared[k_tri_offset*Nd*Nh_P+n_xy+  Nh_P] 
-            vR    = Qh_shared[k_tri_offset*Nd*Nh_P+n_xy+2*Nh_P] 
-            wR    = Qh_shared[k_tri_offset*Nd*Nh_P+n_xy+3*Nh_P] 
-            betaR = Qh_shared[k_tri_offset*Nd*Nh_P+n_xy+4*Nh_P] 
-            rhologR = CUDA.log(rhoR)
-            betalogR = CUDA.log(betaR)
+            if m_xy <= Nq_P || n_xy <= Nq_P
+                rhoR  = Qh_shared[k_tri_offset*Nd*Nh_P+n_xy       ] 
+                uR    = Qh_shared[k_tri_offset*Nd*Nh_P+n_xy+  Nh_P] 
+                vR    = Qh_shared[k_tri_offset*Nd*Nh_P+n_xy+2*Nh_P] 
+                wR    = Qh_shared[k_tri_offset*Nd*Nh_P+n_xy+3*Nh_P] 
+                betaR = Qh_shared[k_tri_offset*Nd*Nh_P+n_xy+4*Nh_P] 
+                rhologR = CUDA.log(rhoR)
+                betalogR = CUDA.log(betaR)
 
-            FxS1,FxS2,FxS3,FxS4,FxS5,FyS1,FyS2,FyS3,FyS4,FyS5,FzS1,FzS2,FzS3,FzS4,FzS5 = CU_euler_flux(rhoL,uL,vL,wL,betaL,rhoR,uR,vR,wR,betaR,rhologL,betalogL,rhologR,betalogR)
+                FxS1,FxS2,FxS3,FxS4,FxS5,FyS1,FyS2,FyS3,FyS4,FyS5,FzS1,FzS2,FzS3,FzS4,FzS5 = CU_euler_flux(rhoL,uL,vL,wL,betaL,rhoR,uR,vR,wR,betaR,rhologL,betalogL,rhologR,betalogR)
 
-            Qx_val = 2.0f0*(rxJ_val*Qrh_skew[m_xy,n_xy]+sxJ_val*Qsh_skew[m_xy,n_xy])
-            Qy_val = 2.0f0*(ryJ_val*Qrh_skew[m_xy,n_xy]+syJ_val*Qsh_skew[m_xy,n_xy])
-            rho_sum  += Qx_val*FxS1+Qy_val*FyS1
-            u_sum    += Qx_val*FxS2+Qy_val*FyS2
-            v_sum    += Qx_val*FxS3+Qy_val*FyS3
-            w_sum    += Qx_val*FxS4+Qy_val*FyS4
-            beta_sum += Qx_val*FxS5+Qy_val*FyS5
+                Qx_val = 2.0f0*(rxJ_val*Qrh_skew[m_xy,n_xy]+sxJ_val*Qsh_skew[m_xy,n_xy])
+                Qy_val = 2.0f0*(ryJ_val*Qrh_skew[m_xy,n_xy]+syJ_val*Qsh_skew[m_xy,n_xy])
+                rho_sum  += Qx_val*FxS1+Qy_val*FyS1
+                u_sum    += Qx_val*FxS2+Qy_val*FyS2
+                v_sum    += Qx_val*FxS3+Qy_val*FyS3
+                w_sum    += Qx_val*FxS4+Qy_val*FyS4
+                beta_sum += Qx_val*FxS5+Qy_val*FyS5
+            end
         end
 
         gradfh[k*Nd*Nh+m     ] = rho_sum
