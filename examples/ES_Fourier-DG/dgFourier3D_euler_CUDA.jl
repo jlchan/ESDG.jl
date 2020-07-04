@@ -44,6 +44,7 @@ vector_norm(U) = CuArrays.sum((x->x.^2).(U))
 const sp_tol      = 1e-12
 const shmem_limit = 1024  # Max number of elements in shared mem
 const enable_test = false
+const errTol      = 1e-5  # Error tolerance in time stepping
 const gamma       = 1.4f0
 const NUM_TYPE    = Float64
 "Program parameters"
@@ -848,12 +849,15 @@ resQ = CUDA.fill(0.0f0,Nq*Nd*K)
 ################################
 ######   Time stepping   #######
 ################################
-
+#=
+# ===================== #
+# ======= RK45 ======== #
+# ===================== #
 @time begin
 
 @inbounds begin
 for i = 1:Nsteps
-    rhstest = 0
+    rhstest = 0.0
 
     for INTRK = 1:5
         if enable_test
@@ -874,8 +878,99 @@ end
 end # end @inbounds
 
 end # end @time
+=#
 
+# ========================= #
+# ========= DOPRI ========= #
+# ========================= #
+dopri_a = zeros(NUM_TYPE,7,7)
+dopri_E = zeros(NUM_TYPE,7)
+dopri_a[2,1] = 1.0/5.0
+dopri_a[3,1] = 3.0/40.0
+dopri_a[3,2] = 9.0/40.0
+dopri_a[4,1] = 44.0/45.0
+dopri_a[4,2] = -56.0/15.0
+dopri_a[4,3] = 32.0/9.0
+dopri_a[5,1] = 19372.0/6561.0
+dopri_a[5,2] = -25360.0/2187.0
+dopri_a[5,3] = 64448.0/6561.0
+dopri_a[5,4] = -212.0/729.0
+dopri_a[6,1] = 9017.0/3168.0
+dopri_a[6,2] = -355.0/33.0
+dopri_a[6,3] = 46732.0/5247.0
+dopri_a[6,4] = 49.0/176.0
+dopri_a[6,5] = -5103.0/18656.0
+dopri_a[7,1] = 35.0/384.0
+dopri_a[7,2] = 0.0
+dopri_a[7,3] = 500.0/1113.0
+dopri_a[7,4] = 125.0/192.0
+dopri_a[7,5] = -2187.0/6784.0
+dopri_a[7,6] = 11.0/84.0
+dopri_E[1] = dopri_a[7,1] - 5179.0/57600.0
+dopri_E[2] = dopri_a[7,2]
+dopri_E[3] = dopri_a[7,3] - 7571.0/16695.0
+dopri_E[4] = dopri_a[7,4] - 393.0/640.0
+dopri_E[5] = dopri_a[7,5] - -92097.0/339200.0
+dopri_E[6] = dopri_a[7,6] - 187.0/2100.0
+dopri_E[7] = dopri_a[7,7] - 1.0/40.0
 
+Qtmp = CUDA.similar(Q)
+rhsQrk = ntuple(x->CUDA.zero(Q),length(dopri_E))
+
+errEst = 0.0
+prevErrEst = 0.0
+
+t = 0.0
+i = 0
+interval = 10
+
+@time begin
+rhsQ,_ = rhs(Q,ops,mesh,param,num_threads,false,enable_test)
+rhsQrk[1] .= rhsQ
+dt0 = dt
+
+@inbounds begin
+while t < T
+    rhstest = 0.0
+    for INTRK = 2:7
+        compute_rhstest = INTRK==7
+        k = CUDA.zero(Qtmp)
+        for s = 1:INTRK-1
+            @. k = k+dopri_a[INTRK,s]*rhsQrk[s]
+        end
+        @. Qtmp = Q + dt*k
+        rhsQ,rhstest = rhs(Qtmp,ops,mesh,param,num_threads,compute_rhstest,enable_test)
+        @. rhsQrk[INTRK] = rhsQ
+    end
+    errEstVec = CUDA.zero(Qtmp)
+    for s = 1:7
+        @. errEstVec = errEstVec + dopri_E[s]*rhsQrk[s]
+    end
+   
+    errEstScale = @. CUDA.abs(errEstVec)/(errTol*(1.0f0+CUDA.abs(Q)))
+    errEst = CUDA.sum(errEstScale.*errEstScale)
+    errEst = sqrt(errEst/CUDA.length(Q))
+    if errEst < 1.0
+        Q .= Qtmp
+        global t += dt
+        rhsQrk[1] .= rhsQrk[7]
+    end
+    order = 5
+    dtnew = .8*dt*(.9/errEst)^(.4/(order+1))
+    if i > 0
+        dtnew *= (prevErrEst/max(1e-14,errEst))^(.3/(order+1))
+    end
+    global dt = max(min(10*dt0,dtnew),1e-9)
+    global prevErrEst = errEst
+    global i += 1
+    if i % interval == 0
+        println("Time step = $i, current time = $t, dt = $dtnew, errEst = $errEst, rhstest = $rhstest") 
+    end
+end # end while
+end
+end
+
+# Calculate L2 error
 Q = Array(Q)
 Q = reshape(Q,Nq_P,Np_F,Nd,K)
 Q_mat = [zeros(Nq_P,Np_F,K),zeros(Nq_P,Np_F,K),zeros(Nq_P,Np_F,K),zeros(Nq_P,Np_F,K),zeros(Nq_P,Np_F,K)]
@@ -896,24 +991,6 @@ for fld in 1:Nd
 end
 println("L2err at final time T = $T is $L2_err\n")
 
-#=
-@show maximum(Q[1])
-@show maximum(Q[2])
-@show maximum(Q[3])
-@show maximum(Q[4])
-@show maximum(Q[5])
-@show minimum(Q[1])
-@show minimum(Q[2])
-@show minimum(Q[3])
-@show minimum(Q[4])
-@show minimum(Q[5])
-@show sum(Q[1])
-@show sum(Q[2])
-@show sum(Q[3])
-@show sum(Q[4])
-@show sum(Q[5])
-@show maximum(Q[5])
-=#
 @show num_threads
 @show Nd*Nh_P*Nk_tri_max
 @show Nd*Np_F*Nk_fourier_max
