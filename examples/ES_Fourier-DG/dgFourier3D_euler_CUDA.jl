@@ -5,6 +5,7 @@ using BenchmarkTools
 using UnPack
 using ToeplitzMatrices
 using Test
+using DelimitedFiles
 
 using KernelAbstractions
 using CUDA
@@ -52,12 +53,12 @@ const compute_L2_err          = false
 const add_LF_dissipation      = true
 
 "Approximation Parameters"
-const N_P   = 2;    # The order of approximation in polynomial dimension
+const N_P   = 3;    # The order of approximation in polynomial dimension
 const Np_P  = Int((N_P+1)*(N_P+2)/2)
-const Np_F  = 10;    # The order of approximation in Fourier dimension
-const K1D   = 30;   # Number of elements in polynomial (x,y) dimension
+const Np_F  = 4;    # The order of approximation in Fourier dimension
+const K1D   = 64;   # Number of elements in polynomial (x,y) dimension
 const Nd    = 5;
-const CFL   = 1.0;
+const CFL   = 0.5;
 const T     = 2.0;  # End time
 
 "Time integration Parameters"
@@ -107,13 +108,13 @@ Nk_fourier_max = num_threads == 1 ? 1 : div(num_threads-2,Np_F)+2 # Max amount o
 "Mesh related variables"
 # Initialize 2D triangular mesh
 VX,VY,EToV = uniform_tri_mesh(K1D,K1D)
-@. VX = 1+VX
-@. VY = 1+VY
+@. VX = VX
+@. VY = VY
 md   = init_mesh((VX,VY),EToV,rd)
 # Intialize triangular prism
 VX   = repeat(VX,2)
 VY   = repeat(VY,2)
-VZ   = [2/Np_F*ones((K1D+1)*(K1D+1),1); 2*ones((K1D+1)*(K1D+1),1)]
+VZ   = [2/Np_F*ones((K1D+1)*(K1D+1),1); ones((K1D+1)*(K1D+1),1)]
 EToV = [EToV EToV.+(K1D+1)*(K1D+1)]
 
 # Make domain periodic
@@ -819,11 +820,37 @@ end
 
 xq,yq,zq = (x->reshape(x,Nq_P,Np_F,K)).((xq,yq,zq))
 ρ_exact(x,y,z,t) = @. 1.0f0+0.2f0*sin(pi*(x+y+z-3/2*t))
+#=
+# ================= #
+# === Test Case === #
+# ================= #
 ρ = @. 1.0f0+0.2f0*sin(pi*(xq+yq+zq))
 u = ones(size(xq))
 v = -0.5f0*ones(size(xq))
 w = ones(size(xq))
 p = ones(size(xq))
+=#
+# ==================== #
+# === Brown-Minion === #
+# ==================== #
+epsilon = 30
+delta = .05
+ρ = ones(size(xq))
+u = zeros(size(xq))
+for i = 1:Nq_P*Np_F*K
+    u[i] = (yq[i] < 0) ? tanh(epsilon*(yq[i]+0.25)) : tanh(epsilon*(0.25-yq[i]))
+end
+v = @. delta*cos(2*pi*xq)
+w = @. delta*cos(2*pi*xq)
+Ma = 0.3
+p = (1/(Ma^2*gamma))*ones(size(xq))
+
+open("xq.txt","w") do io
+    writedlm(io,Array(xq))
+end
+open("yq.txt","w") do io
+    writedlm(io,Array(yq))
+end
 Q_exact(x,y,z,t) = (ρ_exact(x,y,z,t),ones(size(x)),-0.5f0*ones(size(x)),ones(size(x)),ones(size(x)))
 
 Q = primitive_to_conservative(ρ,u,v,w,p)
@@ -843,8 +870,10 @@ for k = 1:K
 end
 Q = Q_vec[:]
 Q = convert.(NUM_TYPE,Q)
+
 Q = CuArray(Q)
 resQ = CUDA.fill(0.0f0,Nq*Nd*K)
+
 
 ################################
 ######   Time stepping   #######
@@ -879,7 +908,6 @@ end # end @inbounds
 
 end # end @time
 =#
-
 # ========================= #
 # ========= DOPRI ========= #
 # ========================= #
@@ -924,6 +952,9 @@ t = 0.0
 i = 0
 interval = 10
 
+# false at 0.5, 1.0, 1.5
+plot_hist = [false,false,false]
+
 @time begin
 rhsQ,_ = rhs(Q,ops,mesh,param,num_threads,false,enable_test)
 rhsQrk[1] .= rhsQ
@@ -966,10 +997,34 @@ while t < T
     if i % interval == 0
         println("Time step = $i, current time = $t, dt = $dtnew, errEst = $errEst, rhstest = $rhstest") 
     end
+    if t > 0.5 && plot_hist[1] == false
+        plot_hist[1] = true
+        open("array_1.txt","w") do io
+            writedlm(io,Array(Q))
+        end
+    end
+
+    if t > 1.0 && plot_hist[2] == false
+        plot_hist[2] = true
+        open("array_2.txt","w") do io
+            writedlm(io,Array(Q))
+        end
+    end
+
+    if t > 1.5 && plot_hist[3] == false
+        plot_hist[3] = true
+        open("array_3.txt","w") do io
+            writedlm(io,Array(Q))
+        end
+    end
+
 end # end while
 end
 end
-
+open("array_end.txt","w") do io
+    writedlm(io,Array(Q))
+end
+#=
 # Calculate L2 error
 Q = Array(Q)
 Q = reshape(Q,Nq_P,Np_F,Nd,K)
@@ -990,7 +1045,9 @@ for fld in 1:Nd
     L2_err += sum(h*J*wq2.*(Q[fld]-Q_ex[fld]).^2)
 end
 println("L2err at final time T = $T is $L2_err\n")
-
-@show num_threads
-@show Nd*Nh_P*Nk_tri_max
-@show Nd*Np_F*Nk_fourier_max
+=#
+xy_val = Nd*Nh_P*Nk_tri_max 
+z_val = Nd*Np_F*Nk_fourier_max
+println("Number of threads: $num_threads")
+println("Elements in shared memory, xy flux differencing: $xy_val")
+println("Elements in shared memory, z flux differencing: $z_val")
