@@ -52,6 +52,7 @@ end
 function sfun(rho,rhou,rhov,E)
     rhoe = rhoe_ufun(rho,rhou,rhov,E)
     return (@. log((γ-1)*rhoe/(rho^γ)))
+    # return (@. log(abs((γ-1)*rhoe/(rho^γ))))
 end
 
 # Mathematical entropy

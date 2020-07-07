@@ -10,7 +10,7 @@ using StaticArrays
 const γ=1.4
 export γ
 export logmean
-export u_vfun, v_ufun, betafun, pfun
+export u_vfun, v_ufun, betafun, pfun, rhoe_ufun
 export dVdU_explicit, dUdV_explicit
 export wavespeed # c
 export Sfun, sfun # math/physical entropies
