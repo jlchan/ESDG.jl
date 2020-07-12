@@ -663,15 +663,15 @@ const compute_L2_err          = false
 const add_LF_dissipation      = true
 
 
-N_P_arr = [1;2;3;4;5]
-Np_F_arr = [2;4;8;16;32]
-K1D_arr = [2;4;8;16;32]
+N_P_arr = [4]
+Np_F_arr = [2;4;6;8;10;16;32;64;128]
+K1D_arr = [20]
 
-errArr = zeros(5,5,5)
+errArr = zeros(length(K1D_arr),length(Np_F_arr),length(N_P_arr))
 
-for N_P_idx = 1:5
-    for Np_F_idx = 1:5
-        for K1D_arr_idx = 1:5
+for N_P_idx = 1:length(N_P_arr)
+    for Np_F_idx = 1:length(Np_F_arr)
+        for K1D_arr_idx = 1:length(K1D_arr)
             "Approximation Parameters"
             N_P   = N_P_arr[N_P_idx];    # The order of approximation in polynomial dimension
             Np_P  = Int((N_P+1)*(N_P+2)/2)
@@ -727,13 +727,13 @@ for N_P_idx = 1:5
             "Mesh related variables"
             # Initialize 2D triangular mesh
             VX,VY,EToV = uniform_tri_mesh(K1D,K1D)
-            @. VX = 1+VX
-            @. VY = 1+VY
+            @. VX = (1+VX)*5
+            @. VY = (1+VY)*5
             md   = init_mesh((VX,VY),EToV,rd)
             # Intialize triangular prism
             VX   = repeat(VX,2)
             VY   = repeat(VY,2)
-            VZ   = [2/Np_F*ones((K1D+1)*(K1D+1),1); 2*ones((K1D+1)*(K1D+1),1)]
+            VZ   = [10/Np_F*ones((K1D+1)*(K1D+1),1); 10*ones((K1D+1)*(K1D+1),1)]
             EToV = [EToV EToV.+(K1D+1)*(K1D+1)]
 
             # Make domain periodic
@@ -796,8 +796,8 @@ for N_P_idx = 1:5
 
             # TODO: assume mesh uniform affine, so Jacobian are constants
             # TODO: fix other Jacobian parts
-            JP = 1/K1D^2
-            JF = 1/pi
+            JP = 10*10/K1D^2/4
+            JF = 10/pi/2
             J = JF*JP
             wq = J*wq
             wf = JF*wf
@@ -832,16 +832,29 @@ for N_P_idx = 1:5
             param = (K,Np_P,Nq_P,Nfp_P,Nh_P,Np_F,Nq,Nfp,Nh,Nk_max,Nk_tri_max,Nk_fourier_max)
 
             xq,yq,zq = (x->reshape(x,Nq_P,Np_F,K)).((xq,yq,zq))
-            ρ_exact(x,y,z,t) = @. 1.0f0+0.2f0*sin(pi*(x+y+z-3/2*t))
-            # ================= #
-            # === Test Case === #
-            # ================= #
-            ρ = @. 1.0f0+0.2f0*sin(pi*(xq+yq+zq))
-            u = ones(size(xq))
-            v = -0.5f0*ones(size(xq))
-            w = ones(size(xq))
-            p = ones(size(xq))
-            Q_exact(x,y,z,t) = (ρ_exact(x,y,z,t),ones(size(x)),-0.5f0*ones(size(x)),ones(size(x)),ones(size(x)))
+            c1 = 5.0
+            c2 = 5.0
+            c3 = 5.0
+            p0 = 1/gamma
+            P_max = 0.4
+            r1_exact(x,y,z,t) = zeros(size(x))
+            r2_exact(x,y,z,t) = @. -(z-c2-t)
+            r3_exact(x,y,z,t) = @. y-c1
+            P_exact(x,y,z,t) = P_max*exp.((1 .-r1_exact(x,y,z,t).^2-r2_exact(x,y,z,t).^2-r3_exact(x,y,z,t).^2)/2)
+            ρ_exact(x,y,z,t) = (1 .-(gamma-1)/2*P_exact(x,y,z,t).^2).^(1/(gamma-1))
+            u_exact(x,y,z,t) = P_exact(x,y,z,t).*r1_exact(x,y,z,t)
+            v_exact(x,y,z,t) = P_exact(x,y,z,t).*r2_exact(x,y,z,t)
+            w_exact(x,y,z,t) = P_exact(x,y,z,t).*r3_exact(x,y,z,t).+1
+            E_exact(x,y,z,t) = p0/(gamma-1)*(1 .-(gamma-1)/2*P_exact(x,y,z,t).^2).^(gamma/(gamma-1)).+ρ_exact(x,y,z,t)/2 .*(u_exact(x,y,z,t).^2 .+v_exact(x,y,z,t).^2 .+w_exact(x,y,z,t).^2)
+            p_exact(x,y,z,t) = pfun(ρ_exact(x,y,z,t),(ρ_exact(x,y,z,t).*u_exact(x,y,z,t),ρ_exact(x,y,z,t).*v_exact(x,y,z,t),ρ_exact(x,y,z,t).*w_exact(x,y,z,t)),E_exact(x,y,z,t))
+            ρ = ρ_exact(xq,yq,zq,0)
+            u = u_exact(xq,yq,zq,0)
+            v = v_exact(xq,yq,zq,0)
+            w = w_exact(xq,yq,zq,0)
+            E = E_exact(xq,yq,zq,0)
+            p = p_exact(xq,yq,zq,0)
+
+            Q_exact(x,y,z,t) = (ρ_exact(x,y,z,t),u_exact(x,y,z,t),v_exact(x,y,z,t),w_exact(x,y,z,t),p_exact(x,y,z,t))
 
             Q = primitive_to_conservative(ρ,u,v,w,p)
             Q = collect(Q)
