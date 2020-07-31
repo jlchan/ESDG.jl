@@ -53,13 +53,13 @@ const compute_L2_err          = false
 const add_LF_dissipation      = true
 
 "Approximation Parameters"
-const N_P   = 3;    # The order of approximation in polynomial dimension
+const N_P   = 2;    # The order of approximation in polynomial dimension
 const Np_P  = Int((N_P+1)*(N_P+2)/2)
-const Np_F  = 4;    # The order of approximation in Fourier dimension
-const K1D   = 64;   # Number of elements in polynomial (x,y) dimension
+const Np_F  = 8;    # The order of approximation in Fourier dimension
+const K1D   = 60;   # Number of elements in polynomial (x,y) dimension
 const Nd    = 5;
 const CFL   = 0.5;
-const T     = 2.0;  # End time
+const T     = 2.5;  # End time
 
 "Time integration Parameters"
 rk4a,rk4b,rk4c = rk45_coeffs()
@@ -114,7 +114,7 @@ md   = init_mesh((VX,VY),EToV,rd)
 # Intialize triangular prism
 VX   = repeat(VX,2)
 VY   = repeat(VY,2)
-VZ   = [2/Np_F*ones((K1D+1)*(K1D+1),1); ones((K1D+1)*(K1D+1),1)]
+VZ   = [-1 .+ 2/Np_F*ones((K1D+1)*(K1D+1),1); ones((K1D+1)*(K1D+1),1)]
 EToV = [EToV EToV.+(K1D+1)*(K1D+1)]
 
 # Make domain periodic
@@ -127,7 +127,7 @@ mapP[mapB] = mapPB
 # Initialize 3D mesh
 @unpack x,y,xf,yf,xq,yq,rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ,mapM,mapP,mapB = md
 x,y,xf,yf,xq,yq,rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ = (x->reshape(repeat(x,inner=(1,Np_F)),size(x,1),Np_F,K)).((x,y,xf,yf,xq,yq,rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ))
-z,zq,zf = (x->reshape(repeat(collect(2/Np_F:(2/Np_F):2),inner=(1,x),outer=(K,1))',x,Np_F,K)).((Np_P,Nq_P,Nfp_P))
+z,zq,zf = (x->reshape(repeat(collect(-1+2/Np_F:(2/Np_F):1),inner=(1,x),outer=(K,1))',x,Np_F,K)).((Np_P,Nq_P,Nfp_P))
 mapM = reshape(1:Nfp_P*Np_P*K,Nfp_P,Np_P,K)
 mapP_2D = (x->mod1(x,Nfp_P)+div(x-1,Nfp_P)*Nfp_P*Np_F).(mapP)
 mapP = reshape(repeat(mapP_2D,inner=(1,Np_F)),Nfp_P,Np_F,K)
@@ -837,14 +837,18 @@ epsilon = 30
 delta = .05
 ρ = ones(size(xq))
 u = zeros(size(xq))
+#=
 for i = 1:Nq_P*Np_F*K
-    u[i] = (yq[i] < 0) ? tanh(epsilon*(yq[i]+0.25)) : tanh(epsilon*(0.25-yq[i]))
+    u[i] = (yq[i] < 0) ? tanh(epsilon*(1+abs(zq[i]))*(yq[i]+0.25)) : tanh(epsilon*(1+abs(zq[i]))*(0.25-yq[i]))
+end
+=#
+for i = 1:Nq_P*Np_F*K
+    u[i] = (yq[i] < 0) ? (1+.5*cos(pi*xq[i])*cos(pi*zq[i]))*tanh(epsilon*(yq[i]+0.25)) : (1+.5*cos(pi*xq[i])*cos(pi*zq[i]))*tanh(epsilon*(0.25-yq[i]))
 end
 v = @. delta*cos(2*pi*xq)
 w = @. delta*cos(2*pi*xq)
-Ma = 0.3
+Ma = 0.7
 p = (1/(Ma^2*gamma))*ones(size(xq))
-
 open("xq.txt","w") do io
     writedlm(io,Array(xq))
 end
@@ -952,8 +956,8 @@ t = 0.0
 i = 0
 interval = 10
 
-# false at 0.5, 1.0, 1.5
-plot_hist = [false,false,false]
+# false at 0.5, 1.0, 1.5, 2.0
+plot_hist = [false,false,false,false]
 
 @time begin
 rhsQ,_ = rhs(Q,ops,mesh,param,num_threads,false,enable_test)
@@ -997,6 +1001,7 @@ while t < T
     if i % interval == 0
         println("Time step = $i, current time = $t, dt = $dtnew, errEst = $errEst, rhstest = $rhstest") 
     end
+    
     if t > 0.5 && plot_hist[1] == false
         plot_hist[1] = true
         open("array_1.txt","w") do io
@@ -1017,13 +1022,28 @@ while t < T
             writedlm(io,Array(Q))
         end
     end
+    
+    if t > 2.0 && plot_hist[4] == false
+        plot_hist[4] = true
+        open("array_4.txt","w") do io
+            writedlm(io,Array(Q))
+        end
+    end
 
+    if t > T
+        open("array_end.txt","w") do io
+            writedlm(io,Array(Q))
+        end
+    end
 end # end while
 end
-end
+#=
 open("array_end.txt","w") do io
     writedlm(io,Array(Q))
 end
+=#
+end
+
 #=
 # Calculate L2 error
 Q = Array(Q)
