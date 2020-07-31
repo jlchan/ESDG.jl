@@ -23,6 +23,7 @@ using EntropyStableEuler
 
 using SetupDG
 
+const Nd = 5
 S_N(x) = @. sin(pi*x/h)/(2*pi/h)/tan(x/2)
 """
 Vandermonde matrix of sinc basis functions determined by h,
@@ -40,177 +41,6 @@ function vandermonde_Sinc(h,r)
 end
 
 vector_norm(U) = CuArrays.sum((x->x.^2).(U))
-
-"Constants"
-const sp_tol      = 1e-12
-const shmem_limit = 1024  # Max number of elements in shared mem
-const enable_test = false
-const errTol      = 1e-5  # Error tolerance in time stepping
-const gamma       = 1.4f0
-const NUM_TYPE    = Float64
-"Program parameters"
-const compute_L2_err          = false
-const add_LF_dissipation      = true
-
-"Approximation Parameters"
-const N_P   = 2;    # The order of approximation in polynomial dimension
-const Np_P  = Int((N_P+1)*(N_P+2)/2)
-const Np_F  = 4;    # The order of approximation in Fourier dimension
-const K1D   = 120;   # Number of elements in polynomial (x,y) dimension
-const Nd    = 5;
-const CFL   = 0.5;
-const T     = 2.0;  # End time
-
-"Time integration Parameters"
-rk4a,rk4b,rk4c = rk45_coeffs()
-CN             = (N_P+1)*(N_P+2)*3/2  # estimated trace constant for CFL
-dt             = CFL * 2 / CN / K1D
-Nsteps         = convert(Int,ceil(T/dt))
-dt             = T/Nsteps
-
-"Initialize Reference Element in Fourier dimension"
-h       = 2*pi/Np_F
-column  = [0; .5*(-1).^(1:Np_F-1).*cot.((1:Np_F-1)*h/2)]
-column2 = [-pi^2/3/h^2-1/6; -((-1).^(1:Np_F-1)./(2*(sin.((1:Np_F-1)*h/2)).^2))]
-Dt      = Array{Float64,2}(Toeplitz(column,column[[1;Np_F:-1:2]]))
-D2t     = Array{Float64,2}(Toeplitz(column2,column2[[1;Np_F:-1:2]]))
-t       = LinRange(h,2*pi,Np_F)
-
-"Initialize Reference Element in polynomial dimension"
-rd = init_reference_tri(N_P);
-@unpack fv,Nfaces,r,s,VDM,V1,Dr,Ds,rf,sf,wf,nrJ,nsJ,rq,sq,wq,Vq,M,Pq,Vf,LIFT = rd
-Lq    = LIFT
-
-"Problem parameters"
-Nq_P   = length(rq)
-Nfp_P  = length(rf)
-Nh_P   = Nq_P+Nfp_P # Number of hybridized points
-Nq     = Nq_P*Np_F
-Nh     = Nh_P*Np_F
-Nfp    = Nfp_P*Np_F
-
-# Adpatively determine number of threads
-thread_count = 2^8
-for n = 8:-1:5
-    global thread_count
-    thread_count = 2^n
-    Nk_tri_max = div(thread_count-2,Nh_P)+2 # Max amount of triangles in a block
-    Nk_fourier_max = div(thread_count-2,Np_F)+2 # Max amount of fourier slides in a block
-    if max(Nd*Nh_P*Nk_tri_max,Nd*Np_F*Nk_fourier_max) < shmem_limit
-        break
-    end
-end
-const num_threads = thread_count
-Nk_max = num_threads == 1 ? 1 : div(num_threads-2,Nh)+2 # Max amount of element in a block
-Nk_tri_max = num_threads == 1 ? 1 : div(num_threads-2,Nh_P)+2 # Max amount of triangles in a block
-Nk_fourier_max = num_threads == 1 ? 1 : div(num_threads-2,Np_F)+2 # Max amount of fourier slides in a block
-
-"Mesh related variables"
-# Initialize 2D triangular mesh
-VX,VY,EToV = uniform_tri_mesh(K1D,Int(4/3*K1D))
-@. VX = (VX + 1)*15/2
-@. VY = (VY + 1)*10
-md   = init_mesh((VX,VY),EToV,rd)
-# Intialize triangular prism
-VX   = repeat(VX,2)
-VY   = repeat(VY,2)
-VZ   = [1/Np_F*ones((K1D+1)*(K1D+1),1); ones((K1D+1)*(K1D+1),1)]
-EToV = [EToV EToV.+(K1D+1)*(K1D+1)]
-
-# Make domain periodic
-@unpack Nfaces,Vf = rd
-@unpack xf,yf,K,mapM,mapP,mapB = md
-LX,LY = (x->maximum(x)-minimum(x)).((VX,VY)) # find lengths of domain
-mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces*K,mapM,mapP,mapB)
-mapP[mapB] = mapPB
-
-# Initialize 3D mesh
-@unpack x,y,xf,yf,xq,yq,rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ,mapM,mapP,mapB = md
-x,y,xf,yf,xq,yq,rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ = (x->reshape(repeat(x,inner=(1,Np_F)),size(x,1),Np_F,K)).((x,y,xf,yf,xq,yq,rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ))
-z,zq,zf = (x->reshape(repeat(collect(2/Np_F:(2/Np_F):2),inner=(1,x),outer=(K,1))',x,Np_F,K)).((Np_P,Nq_P,Nfp_P))
-mapM = reshape(1:Nfp_P*Np_P*K,Nfp_P,Np_P,K)
-mapP_2D = (x->mod1(x,Nfp_P)+div(x-1,Nfp_P)*Nfp_P*Np_F).(mapP)
-mapP = reshape(repeat(mapP_2D,inner=(1,Np_F)),Nfp_P,Np_F,K)
-for j = 1:Np_F
-    mapP[:,j,:] = mapP[:,j,:].+(j-1)*Nfp_P
-end
-mapP_d = zeros(Int32,Nfp_P,Np_F,Nd,K)
-for k = 1:K
-    for j = 1:Np_F
-        for i = 1:Nfp_P
-            val = mapP[i,j,k]
-            elem = div(val-1,Nfp)
-            n = mod1(val,Nfp)
-            mapP_d[i,j,1,k] = elem*Nd*Nfp+n
-            mapP_d[i,j,2,k] = elem*Nd*Nfp+n+Nfp
-            mapP_d[i,j,3,k] = elem*Nd*Nfp+n+2*Nfp
-            mapP_d[i,j,4,k] = elem*Nd*Nfp+n+3*Nfp
-            mapP_d[i,j,5,k] = elem*Nd*Nfp+n+4*Nfp
-        end
-    end
-end
-mapP = mapP[:]
-mapP_d = mapP_d[:] 
-
-
-#############################################
-######  Construct hybridized operators ######
-#############################################
-
-# scale by Fourier dimension
-M = h*M
-wq = h*wq
-wf = h*wf
-
-# Hybridized operators
-Vh = [Vq;Vf]
-rxJ,sxJ,ryJ,syJ = (x->mapslices((y->Vh*y),x,dims=(1,2))).((rxJ,sxJ,ryJ,syJ))
-Ef = Vf*Pq
-Br,Bs = (x->diagm(wf.*x)).((nrJ,nsJ))
-Qr,Qs = (x->Pq'*M*x*Pq).((Dr,Ds))
-Qrh,Qsh = (x->1/2*[x[1]-x[1]' Ef'*x[2];
-                   -x[2]*Ef   x[2]]).(((Qr,Br),(Qs,Bs)))
-Qrh_skew,Qsh_skew = (x->1/2*(x-x')).((Qrh,Qsh))
-Qt = Dt
-Qth = Qt # Not the SBP operator, weighted when flux differencing
-Ph = [Vq;Vf]*Pq
-
-# TODO: assume mesh uniform affine, so Jacobian are constants
-# TODO: fix other Jacobian parts
-JP = 15*15/K1D^2/4
-JF = 1/2*pi
-J = JF*JP
-wq = J*wq
-wf = JF*wf
-Lq = 1/JP*Lq
-Qrh = JF*Qrh
-Qsh = JF*Qsh
-Qth = JP*Qth
-Qrh_skew = 1/2*(Qrh-Qrh')
-Qsh_skew = 1/2*(Qsh-Qsh')
-LIFTq = Vq*Lq
-VPh = Vq*[Pq Lq]*diagm(1 ./ [wq;wf])
-Winv = diagm(1 ./ [wq;wf])
-Wq = diagm(wq)
-
-# Assume affine meshes
-rxJ = [rxJ[1,1,k] for k in 1:K]
-sxJ = [sxJ[1,1,k] for k in 1:K]
-ryJ = [ryJ[1,1,k] for k in 1:K]
-syJ = [syJ[1,1,k] for k in 1:K]
-
-# convert precision
-Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,rxJ,sxJ,ryJ,syJ,nxJ,nyJ,sJ,J,h,rk4a,rk4b = (A->convert.(NUM_TYPE,A)).((Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,rxJ,sxJ,ryJ,syJ,nxJ,nyJ,sJ,J,h,rk4a,rk4b))
- 
-# TODO: refactor
-Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,Winv,rxJ,sxJ,ryJ,syJ = (x->CuArray(x)).((Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,Winv,rxJ,sxJ,ryJ,syJ))
-nxJ = CuArray(nxJ[:])
-nyJ = CuArray(nyJ[:])
-sJ  = CuArray(sJ[:])
-
-ops = (Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq)
-mesh = (rxJ,sxJ,ryJ,syJ,nxJ,nyJ,sJ,J,h,mapP,mapP_d)
-param = (K,Np_P,Nq_P,Nfp_P,Nh_P,Np_F,Nq,Nfp,Nh,Nk_max,Nk_tri_max,Nk_fourier_max)
 
 # ================================= #
 # ============ Routines =========== #
@@ -818,235 +648,296 @@ function rhs(Q,ops,mesh,param,num_threads,compute_rhstest,enable_test)
     return rhsQ,rhstest
 end
 
-# ====================== #
-# = Translating Vortex = #
-# ====================== #
-
-xq,yq,zq = (x->reshape(x,Nq_P,Np_F,K)).((xq,yq,zq))
-const c1 = 7.5
-const c2 = 7.5
-const p0 = 1/gamma
-const P_max = 0.4
-r1_exact(x,y,z,t) = @. -(y-c2-t)
-r2_exact(x,y,z,t) = @. x-c1
-r3_exact(x,y,z,t) = zeros(size(x))
-P_exact(x,y,z,t) = P_max*exp.((1 .-r1_exact(x,y,z,t).^2-r2_exact(x,y,z,t).^2-r3_exact(x,y,z,t).^2)/2)
-ρ_exact(x,y,z,t) = (1 .-(gamma-1)/2*P_exact(x,y,z,t).^2).^(1/(gamma-1))
-u_exact(x,y,z,t) = P_exact(x,y,z,t).*r1_exact(x,y,z,t)
-v_exact(x,y,z,t) = P_exact(x,y,z,t).*r2_exact(x,y,z,t).+1
-w_exact(x,y,z,t) = P_exact(x,y,z,t).*r3_exact(x,y,z,t)
-E_exact(x,y,z,t) = p0/(gamma-1)*(1 .-(gamma-1)/2*P_exact(x,y,z,t).^2).^(gamma/(gamma-1)).+ρ_exact(x,y,z,t)/2 .*(u_exact(x,y,z,t).^2 .+v_exact(x,y,z,t).^2 .+w_exact(x,y,z,t).^2)
-p_exact(x,y,z,t) = pfun(ρ_exact(x,y,z,t),(ρ_exact(x,y,z,t).*u_exact(x,y,z,t),ρ_exact(x,y,z,t).*v_exact(x,y,z,t),ρ_exact(x,y,z,t).*w_exact(x,y,z,t)),E_exact(x,y,z,t))
-ρ = ρ_exact(xq,yq,zq,0)
-u = u_exact(xq,yq,zq,0)
-v = v_exact(xq,yq,zq,0)
-w = w_exact(xq,yq,zq,0)
-E = E_exact(xq,yq,zq,0)
-p = p_exact(xq,yq,zq,0)
-
-open("xq.txt","w") do io
-    writedlm(io,Array(xq))
-end
-open("yq.txt","w") do io
-    writedlm(io,Array(yq))
-end
-Q_exact(x,y,z,t) = (ρ_exact(x,y,z,t),u_exact(x,y,z,t),v_exact(x,y,z,t),w_exact(x,y,z,t),p_exact(x,y,z,t))
-
-Q = primitive_to_conservative(ρ,u,v,w,p)
-Q = collect(Q)
-Q_vec = zeros(Nq_P,Np_F,Nd,K)
-Q_ex_vec = zeros(Nq_P,Np_F,Nd,K)
-# TODO: clean up
-rq2,sq2,wq2 = quad_nodes_2D(N_P+2)
-Vq2 = vandermonde_2D(N_P,rq2,sq2)/VDM
-xq2,yq2,zq2 = (x->Vq2*reshape(x,Np_P,Np_F*K)).((x,y,z))
-Q_ex = Q_exact(xq2,yq2,zq2,T)
-
-for k = 1:K
-    for d = 1:5
-        @. Q_vec[:,:,d,k] = Q[d][:,:,k]
-    end
-end
-Q = Q_vec[:]
-Q = convert.(NUM_TYPE,Q)
-
-Q = CuArray(Q)
-resQ = CUDA.fill(0.0f0,Nq*Nd*K)
 
 
-################################
-######   Time stepping   #######
-################################
-#=
-# ===================== #
-# ======= RK45 ======== #
-# ===================== #
-@time begin
 
-@inbounds begin
-for i = 1:Nsteps
-    rhstest = 0.0
+"Constants"
+const sp_tol      = 1e-12
+const shmem_limit = 1024  # Max number of elements in shared mem
+const enable_test = false
+const errTol      = 1e-5  # Error tolerance in time stepping
+const gamma       = 1.4f0
+const NUM_TYPE    = Float64
+"Program parameters"
+const compute_L2_err          = false
+const add_LF_dissipation      = true
 
-    for INTRK = 1:5
-        if enable_test
-            @show "==============="
-            @show INTRK
-            @show "==============="
+
+N_P_arr = [3]
+Np_F_arr = [2;4;6;8;10;12;14;16;18]
+K1D_arr = [20]
+
+errArr = zeros(length(K1D_arr),length(Np_F_arr),length(N_P_arr))
+
+for N_P_idx = 1:length(N_P_arr)
+    for Np_F_idx = 1:length(Np_F_arr)
+        for K1D_arr_idx = 1:length(K1D_arr)
+            "Approximation Parameters"
+            N_P   = N_P_arr[N_P_idx];    # The order of approximation in polynomial dimension
+            Np_P  = Int((N_P+1)*(N_P+2)/2)
+            Np_F  = Np_F_arr[Np_F_idx];    # The order of approximation in Fourier dimension
+            K1D   = K1D_arr[K1D_arr_idx];   # Number of elements in polynomial (x,y) dimension
+            CFL   = 0.5;
+            T     = 1.0;  # End time
+
+            L_fourier = 10
+            L_X = 10
+            L_Y = 10
+            
+            println("N_P = $N_P, Np_F = $Np_F, K1D = $K1D")
+            "Time integration Parameters"
+            rk4a,rk4b,rk4c = rk45_coeffs()
+            CN             = (N_P+1)*(N_P+2)*3/2  # estimated trace constant for CFL
+            dt             = CFL * 2 / CN / K1D
+            Nsteps         = convert(Int,ceil(T/dt))
+            dt             = T/Nsteps
+
+            "Initialize Reference Element in Fourier dimension"
+            h       = 2*pi/Np_F
+            column  = [0; .5*(-1).^(1:Np_F-1).*cot.((1:Np_F-1)*h/2)]
+            column2 = [-pi^2/3/h^2-1/6; -((-1).^(1:Np_F-1)./(2*(sin.((1:Np_F-1)*h/2)).^2))]
+            Dt      = Array{Float64,2}(Toeplitz(column,column[[1;Np_F:-1:2]]))
+            D2t     = Array{Float64,2}(Toeplitz(column2,column2[[1;Np_F:-1:2]]))
+            t       = LinRange(h,2*pi,Np_F)
+
+            "Initialize Reference Element in polynomial dimension"
+            rd = init_reference_tri(N_P);
+            @unpack fv,Nfaces,r,s,VDM,V1,Dr,Ds,rf,sf,wf,nrJ,nsJ,rq,sq,wq,Vq,M,Pq,Vf,LIFT = rd
+            Lq    = LIFT
+
+            "Problem parameters"
+            Nq_P   = length(rq)
+            Nfp_P  = length(rf)
+            Nh_P   = Nq_P+Nfp_P # Number of hybridized points
+            Nq     = Nq_P*Np_F
+            Nh     = Nh_P*Np_F
+            Nfp    = Nfp_P*Np_F
+
+            # Adpatively determine number of threads
+            thread_count = 2^8
+            for n = 8:-1:5
+                thread_count = 2^n
+                Nk_tri_max = div(thread_count-2,Nh_P)+2 # Max amount of triangles in a block
+                Nk_fourier_max = div(thread_count-2,Np_F)+2 # Max amount of fourier slides in a block
+                if max(Nd*Nh_P*Nk_tri_max,Nd*Np_F*Nk_fourier_max) < shmem_limit
+                    break
+                end
+            end
+            num_threads = thread_count
+            Nk_max = num_threads == 1 ? 1 : div(num_threads-2,Nh)+2 # Max amount of element in a block
+            Nk_tri_max = num_threads == 1 ? 1 : div(num_threads-2,Nh_P)+2 # Max amount of triangles in a block
+            Nk_fourier_max = num_threads == 1 ? 1 : div(num_threads-2,Np_F)+2 # Max amount of fourier slides in a block
+
+            "Mesh related variables"
+            # Initialize 2D triangular mesh
+            VX,VY,EToV = uniform_tri_mesh(K1D,K1D)
+            @. VX = (1+VX)*L_X/2
+            @. VY = (1+VY)*L_Y/2
+            md   = init_mesh((VX,VY),EToV,rd)
+            # Intialize triangular prism
+            VX   = repeat(VX,2)
+            VY   = repeat(VY,2)
+            VZ   = [L_fourier/Np_F*ones((K1D+1)*(K1D+1),1); L_fourier*ones((K1D+1)*(K1D+1),1)]
+            EToV = [EToV EToV.+(K1D+1)*(K1D+1)]
+
+            # Make domain periodic
+            @unpack Nfaces,Vf = rd
+            @unpack xf,yf,K,mapM,mapP,mapB = md
+            LX,LY = (x->maximum(x)-minimum(x)).((VX,VY)) # find lengths of domain
+            mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces*K,mapM,mapP,mapB)
+            mapP[mapB] = mapPB
+
+            # Initialize 3D mesh
+            @unpack x,y,xf,yf,xq,yq,rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ,mapM,mapP,mapB = md
+            x,y,xf,yf,xq,yq,rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ = (x->reshape(repeat(x,inner=(1,Np_F)),size(x,1),Np_F,K)).((x,y,xf,yf,xq,yq,rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ))
+            z,zq,zf = (x->reshape(repeat(collect(L_fourier/Np_F:(L_fourier/Np_F):L_fourier),inner=(1,x),outer=(K,1))',x,Np_F,K)).((Np_P,Nq_P,Nfp_P))
+            mapM = reshape(1:Nfp_P*Np_P*K,Nfp_P,Np_P,K)
+            mapP_2D = (x->mod1(x,Nfp_P)+div(x-1,Nfp_P)*Nfp_P*Np_F).(mapP)
+            mapP = reshape(repeat(mapP_2D,inner=(1,Np_F)),Nfp_P,Np_F,K)
+            for j = 1:Np_F
+                mapP[:,j,:] = mapP[:,j,:].+(j-1)*Nfp_P
+            end
+            mapP_d = zeros(Int32,Nfp_P,Np_F,Nd,K)
+            for k = 1:K
+                for j = 1:Np_F
+                    for i = 1:Nfp_P
+                        val = mapP[i,j,k]
+                        elem = div(val-1,Nfp)
+                        n = mod1(val,Nfp)
+                        mapP_d[i,j,1,k] = elem*Nd*Nfp+n
+                        mapP_d[i,j,2,k] = elem*Nd*Nfp+n+Nfp
+                        mapP_d[i,j,3,k] = elem*Nd*Nfp+n+2*Nfp
+                        mapP_d[i,j,4,k] = elem*Nd*Nfp+n+3*Nfp
+                        mapP_d[i,j,5,k] = elem*Nd*Nfp+n+4*Nfp
+                    end
+                end
+            end
+            mapP = mapP[:]
+            mapP_d = mapP_d[:] 
+
+
+            #############################################
+            ######  Construct hybridized operators ######
+            #############################################
+
+            # scale by Fourier dimension
+            M = h*M
+            wq = h*wq
+            wf = h*wf
+
+            # Hybridized operators
+            Vh = [Vq;Vf]
+            rxJ,sxJ,ryJ,syJ = (x->mapslices((y->Vh*y),x,dims=(1,2))).((rxJ,sxJ,ryJ,syJ))
+            Ef = Vf*Pq
+            Br,Bs = (x->diagm(wf.*x)).((nrJ,nsJ))
+            Qr,Qs = (x->Pq'*M*x*Pq).((Dr,Ds))
+            Qrh,Qsh = (x->1/2*[x[1]-x[1]' Ef'*x[2];
+                               -x[2]*Ef   x[2]]).(((Qr,Br),(Qs,Bs)))
+            Qrh_skew,Qsh_skew = (x->1/2*(x-x')).((Qrh,Qsh))
+            Qt = Dt
+            Qth = Qt # Not the SBP operator, weighted when flux differencing
+            Ph = [Vq;Vf]*Pq
+
+            # TODO: assume mesh uniform affine, so Jacobian are constants
+            # TODO: fix other Jacobian parts
+            JP = L_X*L_Y/K1D/K1D/4
+            JF = L_fourier/pi/2
+            J = JF*JP
+            wq = J*wq
+            wf = JF*wf
+            Lq = 1/JP*Lq
+            Qrh = JF*Qrh
+            Qsh = JF*Qsh
+            Qth = JP*Qth
+            Qrh_skew = 1/2*(Qrh-Qrh')
+            Qsh_skew = 1/2*(Qsh-Qsh')
+            LIFTq = Vq*Lq
+            VPh = Vq*[Pq Lq]*diagm(1 ./ [wq;wf])
+            Winv = diagm(1 ./ [wq;wf])
+            Wq = diagm(wq)
+
+            # Assume affine meshes
+            rxJ = [rxJ[1,1,k] for k in 1:K]
+            sxJ = [sxJ[1,1,k] for k in 1:K]
+            ryJ = [ryJ[1,1,k] for k in 1:K]
+            syJ = [syJ[1,1,k] for k in 1:K]
+
+            # convert precision
+            Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,rxJ,sxJ,ryJ,syJ,nxJ,nyJ,sJ,J,h,rk4a,rk4b = (A->convert.(NUM_TYPE,A)).((Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,rxJ,sxJ,ryJ,syJ,nxJ,nyJ,sJ,J,h,rk4a,rk4b))
+             
+            # TODO: refactor
+            Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,Winv,rxJ,sxJ,ryJ,syJ = (x->CuArray(x)).((Vq,Vf,wq,wf,Pq,Lq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq,Winv,rxJ,sxJ,ryJ,syJ))
+            nxJ = CuArray(nxJ[:])
+            nyJ = CuArray(nyJ[:])
+            sJ  = CuArray(sJ[:])
+
+            ops = (Vq,wq,Qrh_skew,Qsh_skew,Qth,Ph,LIFTq,VPh,Wq)
+            mesh = (rxJ,sxJ,ryJ,syJ,nxJ,nyJ,sJ,J,h,mapP,mapP_d)
+            param = (K,Np_P,Nq_P,Nfp_P,Nh_P,Np_F,Nq,Nfp,Nh,Nk_max,Nk_tri_max,Nk_fourier_max)
+
+            xq,yq,zq = (x->reshape(x,Nq_P,Np_F,K)).((xq,yq,zq))
+            c1 = 0
+            c2 = 5.0
+            c3 = 4.5
+            p0 = 1/gamma
+            P_max = 0.4
+            r1_exact(x,y,z,t) = zeros(size(x))
+            r2_exact(x,y,z,t) = @. -(z-c3-t)
+            r3_exact(x,y,z,t) = @. y-c2
+            P_exact(x,y,z,t) = P_max*exp.((1 .-r1_exact(x,y,z,t).^2-r2_exact(x,y,z,t).^2-r3_exact(x,y,z,t).^2)/2)
+            ρ_exact(x,y,z,t) = (1 .-(gamma-1)/2*P_exact(x,y,z,t).^2).^(1/(gamma-1))
+            u_exact(x,y,z,t) = P_exact(x,y,z,t).*r1_exact(x,y,z,t)
+            v_exact(x,y,z,t) = P_exact(x,y,z,t).*r2_exact(x,y,z,t)
+            w_exact(x,y,z,t) = P_exact(x,y,z,t).*r3_exact(x,y,z,t).+1
+            E_exact(x,y,z,t) = p0/(gamma-1)*(1 .-(gamma-1)/2*P_exact(x,y,z,t).^2).^(gamma/(gamma-1)).+ρ_exact(x,y,z,t)/2 .*(u_exact(x,y,z,t).^2 .+v_exact(x,y,z,t).^2 .+w_exact(x,y,z,t).^2)
+            p_exact(x,y,z,t) = pfun(ρ_exact(x,y,z,t),(ρ_exact(x,y,z,t).*u_exact(x,y,z,t),ρ_exact(x,y,z,t).*v_exact(x,y,z,t),ρ_exact(x,y,z,t).*w_exact(x,y,z,t)),E_exact(x,y,z,t))
+            ρ = ρ_exact(xq,yq,zq,0)
+            u = u_exact(xq,yq,zq,0)
+            v = v_exact(xq,yq,zq,0)
+            w = w_exact(xq,yq,zq,0)
+            E = E_exact(xq,yq,zq,0)
+            p = p_exact(xq,yq,zq,0)
+
+            Q_exact(x,y,z,t) = (ρ_exact(x,y,z,t),u_exact(x,y,z,t),v_exact(x,y,z,t),w_exact(x,y,z,t),p_exact(x,y,z,t))
+
+            Q = primitive_to_conservative(ρ,u,v,w,p)
+            Q = collect(Q)
+            Q_vec = zeros(Nq_P,Np_F,Nd,K)
+            Q_ex_vec = zeros(Nq_P,Np_F,Nd,K)
+            # TODO: clean up
+            rq2,sq2,wq2 = quad_nodes_2D(N_P+2)
+            Vq2 = vandermonde_2D(N_P,rq2,sq2)/VDM
+            xq2,yq2,zq2 = (x->Vq2*reshape(x,Np_P,Np_F*K)).((x,y,z))
+            Q_ex = Q_exact(xq2,yq2,zq2,T)
+
+            for k = 1:K
+                for d = 1:5
+                    @. Q_vec[:,:,d,k] = Q[d][:,:,k]
+                end
+            end
+            Q = Q_vec[:]
+            Q = convert.(NUM_TYPE,Q)
+
+            Q = CuArray(Q)
+            resQ = CUDA.fill(0.0f0,Nq*Nd*K)
+            
+            println("Start timestepping")
+            ################################
+            ######   Time stepping   #######
+            ################################
+            # ===================== #
+            # ======= RK45 ======== #
+            # ===================== #
+            @time begin
+
+            @inbounds begin
+            for i = 1:Nsteps
+                rhstest = 0.0
+
+                for INTRK = 1:5
+                    if enable_test
+                        @show "==============="
+                        @show INTRK
+                        @show "==============="
+                    end
+                    compute_rhstest = INTRK==5
+                    rhsQ,rhstest = rhs(Q,ops,mesh,param,num_threads,compute_rhstest,enable_test)
+                    resQ .= rk4a[INTRK]*resQ+dt*rhsQ
+                    Q .= Q + rk4b[INTRK]*resQ
+                end
+
+                if i%10==0 || i==Nsteps
+                    println("Time step: $i out of $Nsteps with rhstest = $rhstest") 
+                end
+            end
+            end # end @inbounds
+
+            end # end @time
+            
+            # Calculate L2 error
+            Q = Array(Q)
+            Q = reshape(Q,Nq_P,Np_F,Nd,K)
+            Q_mat = [zeros(Nq_P,Np_F,K),zeros(Nq_P,Np_F,K),zeros(Nq_P,Np_F,K),zeros(Nq_P,Np_F,K),zeros(Nq_P,Np_F,K)]
+            for k = 1:K
+                for d = 1:5
+                    Q_mat[d][:,:,k] = Q[:,:,d,k]
+                end
+            end
+            Pq = Array(Pq)
+            Q = (x->Vq2*Pq*reshape(x,Nq_P,Np_F*K)).(Q_mat)
+            p = pfun(Q[1],(Q[2],Q[3],Q[4]),Q[5])
+            Q = (Q[1],Q[2]./Q[1],Q[3]./Q[1],Q[4]./Q[1],p)
+            Q_ex = (x->reshape(x,length(rq2),Np_F*K)).(Q_ex)
+            L2_err = 0.0
+            for fld in 1:Nd
+                L2_err += sum(h*J*wq2.*(Q[fld]-Q_ex[fld]).^2)
+            end
+            println("L2err at final time T = $T is $L2_err\n")
+            errArr[K1D_arr_idx,Np_F_idx,N_P_idx] = L2_err
         end
-        compute_rhstest = INTRK==5
-        rhsQ,rhstest = rhs(Q,ops,mesh,param,num_threads,compute_rhstest,enable_test)
-        resQ .= rk4a[INTRK]*resQ+dt*rhsQ
-        Q .= Q + rk4b[INTRK]*resQ
-    end
-
-    if i%10==0 || i==Nsteps
-        println("Time step: $i out of $Nsteps with rhstest = $rhstest") 
     end
 end
-end # end @inbounds
 
-end # end @time
-=#
-# ========================= #
-# ========= DOPRI ========= #
-# ========================= #
-dopri_a = zeros(NUM_TYPE,7,7)
-dopri_E = zeros(NUM_TYPE,7)
-dopri_a[2,1] = 1.0/5.0
-dopri_a[3,1] = 3.0/40.0
-dopri_a[3,2] = 9.0/40.0
-dopri_a[4,1] = 44.0/45.0
-dopri_a[4,2] = -56.0/15.0
-dopri_a[4,3] = 32.0/9.0
-dopri_a[5,1] = 19372.0/6561.0
-dopri_a[5,2] = -25360.0/2187.0
-dopri_a[5,3] = 64448.0/6561.0
-dopri_a[5,4] = -212.0/729.0
-dopri_a[6,1] = 9017.0/3168.0
-dopri_a[6,2] = -355.0/33.0
-dopri_a[6,3] = 46732.0/5247.0
-dopri_a[6,4] = 49.0/176.0
-dopri_a[6,5] = -5103.0/18656.0
-dopri_a[7,1] = 35.0/384.0
-dopri_a[7,2] = 0.0
-dopri_a[7,3] = 500.0/1113.0
-dopri_a[7,4] = 125.0/192.0
-dopri_a[7,5] = -2187.0/6784.0
-dopri_a[7,6] = 11.0/84.0
-dopri_E[1] = dopri_a[7,1] - 5179.0/57600.0
-dopri_E[2] = dopri_a[7,2]
-dopri_E[3] = dopri_a[7,3] - 7571.0/16695.0
-dopri_E[4] = dopri_a[7,4] - 393.0/640.0
-dopri_E[5] = dopri_a[7,5] - -92097.0/339200.0
-dopri_E[6] = dopri_a[7,6] - 187.0/2100.0
-dopri_E[7] = dopri_a[7,7] - 1.0/40.0
-
-Qtmp = CUDA.similar(Q)
-rhsQrk = ntuple(x->CUDA.zero(Q),length(dopri_E))
-
-errEst = 0.0
-prevErrEst = 0.0
-
-t = 0.0
-i = 0
-interval = 10
-
-# false at 0.5, 1.0, 1.5
-plot_hist = [false,false,false]
-
-@time begin
-rhsQ,_ = rhs(Q,ops,mesh,param,num_threads,false,enable_test)
-rhsQrk[1] .= rhsQ
-dt0 = dt
-
-@inbounds begin
-while t < T
-    rhstest = 0.0
-    for INTRK = 2:7
-        compute_rhstest = INTRK==7
-        k = CUDA.zero(Qtmp)
-        for s = 1:INTRK-1
-            @. k = k+dopri_a[INTRK,s]*rhsQrk[s]
-        end
-        @. Qtmp = Q + dt*k
-        rhsQ,rhstest = rhs(Qtmp,ops,mesh,param,num_threads,compute_rhstest,enable_test)
-        @. rhsQrk[INTRK] = rhsQ
-    end
-    errEstVec = CUDA.zero(Qtmp)
-    for s = 1:7
-        @. errEstVec = errEstVec + dopri_E[s]*rhsQrk[s]
-    end
-   
-    errEstScale = @. CUDA.abs(errEstVec)/(errTol*(1.0f0+CUDA.abs(Q)))
-    errEst = CUDA.sum(errEstScale.*errEstScale)
-    errEst = sqrt(errEst/CUDA.length(Q))
-    if errEst < 1.0
-        Q .= Qtmp
-        global t += dt
-        rhsQrk[1] .= rhsQrk[7]
-    end
-    order = 5
-    dtnew = .8*dt*(.9/errEst)^(.4/(order+1))
-    if i > 0
-        dtnew *= (prevErrEst/max(1e-14,errEst))^(.3/(order+1))
-    end
-    global dt = max(min(10*dt0,dtnew),1e-9)
-    global prevErrEst = errEst
-    global i += 1
-    if i % interval == 0
-        println("Time step = $i, current time = $t, dt = $dtnew, errEst = $errEst, rhstest = $rhstest") 
-    end
-    if t > 0.5 && plot_hist[1] == false
-        plot_hist[1] = true
-        open("array_1.txt","w") do io
-            writedlm(io,Array(Q))
-        end
-    end
-
-    if t > 1.0 && plot_hist[2] == false
-        plot_hist[2] = true
-        open("array_2.txt","w") do io
-            writedlm(io,Array(Q))
-        end
-    end
-
-    if t > 1.5 && plot_hist[3] == false
-        plot_hist[3] = true
-        open("array_3.txt","w") do io
-            writedlm(io,Array(Q))
-        end
-    end
-
-end # end while
+open("array_conv.txt","w") do io
+    writedlm(io,Array(errArr))
 end
-end
-open("array_end.txt","w") do io
-    writedlm(io,Array(Q))
-end
-
-# Calculate L2 error
-Q = Array(Q)
-Q = reshape(Q,Nq_P,Np_F,Nd,K)
-Q_mat = [zeros(Nq_P,Np_F,K),zeros(Nq_P,Np_F,K),zeros(Nq_P,Np_F,K),zeros(Nq_P,Np_F,K),zeros(Nq_P,Np_F,K)]
-for k = 1:K
-    for d = 1:5
-        Q_mat[d][:,:,k] = Q[:,:,d,k]
-    end
-end
-Pq = Array(Pq)
-Q = (x->Vq2*Pq*reshape(x,Nq_P,Np_F*K)).(Q_mat)
-p = pfun(Q[1],(Q[2],Q[3],Q[4]),Q[5])
-Q = (Q[1],Q[2]./Q[1],Q[3]./Q[1],Q[4]./Q[1],p)
-Q_ex = (x->reshape(x,length(rq2),Np_F*K)).(Q_ex)
-L2_err = 0.0
-for fld in 1:Nd
-    global L2_err
-    L2_err += sum(h*J*wq2.*(Q[fld]-Q_ex[fld]).^2)
-end
-println("L2err at final time T = $T is $L2_err\n")
-
-xy_val = Nd*Nh_P*Nk_tri_max 
-z_val = Nd*Np_F*Nk_fourier_max
-println("Number of threads: $num_threads")
-println("Elements in shared memory, xy flux differencing: $xy_val")
-println("Elements in shared memory, z flux differencing: $z_val")

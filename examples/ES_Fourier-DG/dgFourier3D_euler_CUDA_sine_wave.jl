@@ -663,8 +663,8 @@ const compute_L2_err          = false
 const add_LF_dissipation      = true
 
 
-N_P_arr = [4]
-Np_F_arr = [2;4;6;8;10;16;32;64;128]
+N_P_arr = [3]
+Np_F_arr = [2;4;6;8;16]
 K1D_arr = [20]
 
 errArr = zeros(length(K1D_arr),length(Np_F_arr),length(N_P_arr))
@@ -678,8 +678,12 @@ for N_P_idx = 1:length(N_P_arr)
             Np_F  = Np_F_arr[Np_F_idx];    # The order of approximation in Fourier dimension
             K1D   = K1D_arr[K1D_arr_idx];   # Number of elements in polynomial (x,y) dimension
             CFL   = 0.5;
-            T     = 0.5;  # End time
+            T     = 0.0;  # End time
 
+            L_fourier = 2
+            L_X = 2
+            L_Y = 2
+            
             println("N_P = $N_P, Np_F = $Np_F, K1D = $K1D")
             "Time integration Parameters"
             rk4a,rk4b,rk4c = rk45_coeffs()
@@ -727,13 +731,13 @@ for N_P_idx = 1:length(N_P_arr)
             "Mesh related variables"
             # Initialize 2D triangular mesh
             VX,VY,EToV = uniform_tri_mesh(K1D,K1D)
-            @. VX = (1+VX)*5
-            @. VY = (1+VY)*5
+            @. VX = (1+VX)*L_X/2
+            @. VY = (1+VY)*L_Y/2
             md   = init_mesh((VX,VY),EToV,rd)
             # Intialize triangular prism
             VX   = repeat(VX,2)
             VY   = repeat(VY,2)
-            VZ   = [10/Np_F*ones((K1D+1)*(K1D+1),1); 10*ones((K1D+1)*(K1D+1),1)]
+            VZ   = [L_fourier/Np_F*ones((K1D+1)*(K1D+1),1); L_fourier*ones((K1D+1)*(K1D+1),1)]
             EToV = [EToV EToV.+(K1D+1)*(K1D+1)]
 
             # Make domain periodic
@@ -746,7 +750,7 @@ for N_P_idx = 1:length(N_P_arr)
             # Initialize 3D mesh
             @unpack x,y,xf,yf,xq,yq,rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ,mapM,mapP,mapB = md
             x,y,xf,yf,xq,yq,rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ = (x->reshape(repeat(x,inner=(1,Np_F)),size(x,1),Np_F,K)).((x,y,xf,yf,xq,yq,rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ))
-            z,zq,zf = (x->reshape(repeat(collect(2/Np_F:(2/Np_F):2),inner=(1,x),outer=(K,1))',x,Np_F,K)).((Np_P,Nq_P,Nfp_P))
+            z,zq,zf = (x->reshape(repeat(collect(L_fourier/Np_F:(L_fourier/Np_F):L_fourier),inner=(1,x),outer=(K,1))',x,Np_F,K)).((Np_P,Nq_P,Nfp_P))
             mapM = reshape(1:Nfp_P*Np_P*K,Nfp_P,Np_P,K)
             mapP_2D = (x->mod1(x,Nfp_P)+div(x-1,Nfp_P)*Nfp_P*Np_F).(mapP)
             mapP = reshape(repeat(mapP_2D,inner=(1,Np_F)),Nfp_P,Np_F,K)
@@ -796,8 +800,8 @@ for N_P_idx = 1:length(N_P_arr)
 
             # TODO: assume mesh uniform affine, so Jacobian are constants
             # TODO: fix other Jacobian parts
-            JP = 10*10/K1D^2/4
-            JF = 10/pi/2
+            JP = L_X*L_Y/K1D/K1D/4
+            JF = L_fourier/pi/2
             J = JF*JP
             wq = J*wq
             wf = JF*wf
@@ -832,27 +836,16 @@ for N_P_idx = 1:length(N_P_arr)
             param = (K,Np_P,Nq_P,Nfp_P,Nh_P,Np_F,Nq,Nfp,Nh,Nk_max,Nk_tri_max,Nk_fourier_max)
 
             xq,yq,zq = (x->reshape(x,Nq_P,Np_F,K)).((xq,yq,zq))
-            c1 = 5.0
-            c2 = 5.0
-            c3 = 5.0
-            p0 = 1/gamma
-            P_max = 0.4
-            r1_exact(x,y,z,t) = zeros(size(x))
-            r2_exact(x,y,z,t) = @. -(z-c2-t)
-            r3_exact(x,y,z,t) = @. y-c1
-            P_exact(x,y,z,t) = P_max*exp.((1 .-r1_exact(x,y,z,t).^2-r2_exact(x,y,z,t).^2-r3_exact(x,y,z,t).^2)/2)
-            ρ_exact(x,y,z,t) = (1 .-(gamma-1)/2*P_exact(x,y,z,t).^2).^(1/(gamma-1))
-            u_exact(x,y,z,t) = P_exact(x,y,z,t).*r1_exact(x,y,z,t)
-            v_exact(x,y,z,t) = P_exact(x,y,z,t).*r2_exact(x,y,z,t)
-            w_exact(x,y,z,t) = P_exact(x,y,z,t).*r3_exact(x,y,z,t).+1
-            E_exact(x,y,z,t) = p0/(gamma-1)*(1 .-(gamma-1)/2*P_exact(x,y,z,t).^2).^(gamma/(gamma-1)).+ρ_exact(x,y,z,t)/2 .*(u_exact(x,y,z,t).^2 .+v_exact(x,y,z,t).^2 .+w_exact(x,y,z,t).^2)
-            p_exact(x,y,z,t) = pfun(ρ_exact(x,y,z,t),(ρ_exact(x,y,z,t).*u_exact(x,y,z,t),ρ_exact(x,y,z,t).*v_exact(x,y,z,t),ρ_exact(x,y,z,t).*w_exact(x,y,z,t)),E_exact(x,y,z,t))
+            ρ_exact(x,y,z,t) = @. 1+0.2*sin(pi*(x+y+z-3/2*t))
+            u_exact(x,y,z,t) = ones(size(x))
+            v_exact(x,y,z,t) = -1/2*ones(size(x))
+            w_exact(x,y,z,t) = ones(size(x))
+            p_exact(x,y,z,t) = ones(size(x))
             ρ = ρ_exact(xq,yq,zq,0)
-            u = u_exact(xq,yq,zq,0)
-            v = v_exact(xq,yq,zq,0)
-            w = w_exact(xq,yq,zq,0)
-            E = E_exact(xq,yq,zq,0)
-            p = p_exact(xq,yq,zq,0)
+            u = ones(size(xq))
+            v = -1/2*ones(size(xq))
+            w = ones(size(xq))
+            p = ones(size(xq))
 
             Q_exact(x,y,z,t) = (ρ_exact(x,y,z,t),u_exact(x,y,z,t),v_exact(x,y,z,t),w_exact(x,y,z,t),p_exact(x,y,z,t))
 
@@ -876,8 +869,6 @@ for N_P_idx = 1:length(N_P_arr)
 
             Q = CuArray(Q)
             resQ = CUDA.fill(0.0f0,Nq*Nd*K)
-
-
             ################################
             ######   Time stepping   #######
             ################################
@@ -909,7 +900,6 @@ for N_P_idx = 1:length(N_P_arr)
             end # end @inbounds
 
             end # end @time
-
             # Calculate L2 error
             Q = Array(Q)
             Q = reshape(Q,Nq_P,Np_F,Nd,K)
@@ -926,8 +916,14 @@ for N_P_idx = 1:length(N_P_arr)
             Q_ex = (x->reshape(x,length(rq2),Np_F*K)).(Q_ex)
             L2_err = 0.0
             for fld in 1:Nd
-                L2_err += sum(h*J*wq2.*(Q[fld]-Q_ex[fld]).^2)
+                #=
+                tmp = sum(h*J*spdiagm(0 => wq2)*(Q[fld]-Q_ex[fld]).^2)
+                @show fld
+                @show tmp
+                =#
+                L2_err += sum(h*J*spdiagm(0 => wq2)*(Q[fld]-Q_ex[fld]).^2)
             end
+            L2_err = sqrt(L2_err)
             println("L2err at final time T = $T is $L2_err\n")
             errArr[K1D_arr_idx,Np_F_idx,N_P_idx] = L2_err
         end
