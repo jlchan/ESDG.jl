@@ -55,10 +55,12 @@ function build_node_maps(Xf,FToF)
 end
 
 """
-function build_periodic_boundary_maps(xf,yf,LX,LY,mapM,mapP,mapB)
+function build_periodic_boundary_maps(xf,yf,LX,LY,NfacesTotal,mapM,mapP,mapB)
+function build_periodic_boundary_maps!(xf,yf,LX,LY,NfacesTotal,mapM,mapP,mapB,FToF)
 
-    returns mapPB
-    mapP[mapB] = mapPB modifies mapP to produce a periodic node map
+    returns mapPB, such that
+        mapP[mapB] = mapPB modifies mapP to produce a periodic node map
+    optional: modifies FToF to get periodic boundary faces
 
 """
 
@@ -89,17 +91,19 @@ function build_periodic_boundary_maps!(xf,yf,LX,LY,NfacesTotal,mapM,mapP,mapB,FT
 
         "determine which faces lie on x and y boundaries"
         NODETOL = 1e-12
-        yfaces = map(x->x[1],findall(@. (@. abs(yc-ymax)<NODETOL*LY) | (@. abs(yc-ymin)<NODETOL*LY)))
-        xfaces = map(x->x[1],findall(@. (@. abs(xc-xmax)<NODETOL*LX) | (@. abs(xc-xmin)<NODETOL*LX)))
+        Xscale = max(1,LX)
+        Yscale = max(1,LY)
+        yfaces = map(x->x[1],findall(@. (@. abs(yc-ymax)<NODETOL*Yscale) | (@. abs(yc-ymin)<NODETOL*Yscale)))
+        xfaces = map(x->x[1],findall(@. (@. abs(xc-xmax)<NODETOL*Xscale) | (@. abs(xc-xmin)<NODETOL*Xscale)))
 
         # find matches in y faces
-        for i = yfaces
-            for j = yfaces
+        for i in yfaces
+            for j in yfaces
                 if i!=j
-                    if abs(xc[i]-xc[j])<NODETOL*LX && abs(abs(yc[i]-yc[j])-LY)<NODETOL*LY
+                    if abs(xc[i]-xc[j])<NODETOL*Xscale && abs(abs(yc[i]-yc[j])-LY)<NODETOL*Yscale
                         Xa,Xb = meshgrid(xb[:,i],xb[:,j])
                         D = @. abs(Xa-Xb)
-                        ids = map(x->x[1],findall(@.D < NODETOL*LX))
+                        ids = map(x->x[1],findall(@.D < NODETOL*Xscale))
                         mapPB[:,i]=mapMB[ids,j]
 
                         FToF[Bfaces[i]] = Bfaces[j]
@@ -109,13 +113,13 @@ function build_periodic_boundary_maps!(xf,yf,LX,LY,NfacesTotal,mapM,mapP,mapB,FT
         end
 
         # find matches in x faces
-        for i = xfaces
-            for j = xfaces
+        for i in xfaces
+            for j in xfaces
                 if i!=j
-                    if abs(yc[i]-yc[j])<NODETOL*LY && abs(abs(xc[i]-xc[j])-LX)<NODETOL*LX
+                    if abs(yc[i]-yc[j])<NODETOL*Yscale && abs(abs(xc[i]-xc[j])-LX)<NODETOL*Xscale
                         Ya,Yb = meshgrid(yb[:,i],yb[:,j])
                         D = @. abs(Ya-Yb)
-                        ids = map(x->x[1],findall(@.D < NODETOL*LY))
+                        ids = map(x->x[1],findall(@. D < NODETOL*Yscale))
                         mapPB[:,i]=mapMB[ids,j]
 
                         FToF[Bfaces[i]] = Bfaces[j]
