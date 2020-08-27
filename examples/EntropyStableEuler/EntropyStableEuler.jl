@@ -14,8 +14,8 @@ export u_vfun, v_ufun, betafun, pfun, rhoe_ufun
 export dVdU_explicit, dUdV_explicit
 export wavespeed # c
 export Sfun, sfun # math/physical entropies
-export u_vfun1D, v_ufun1D, betafun1D # specialization
-export euler_fluxes, euler_flux_x,euler_flux_y # separate x,y flux for faster implicit assembly using ForwardDiff
+export u_vfun1D, v_ufun1D, betafun1D # specialization to 1D
+export euler_fluxes, euler_flux_x, euler_flux_y # separate x,y flux for faster implicit assembly using ForwardDiff
 export vortex, primitive_to_conservative
 
 include("./logmean.jl")
