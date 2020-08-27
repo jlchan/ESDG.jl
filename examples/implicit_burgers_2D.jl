@@ -1,171 +1,252 @@
-using Revise # reduce need for recompile
+using Revise # reduce recompilation time
 using Plots
 using LinearAlgebra
-using SparseArrays
 using StaticArrays
+using SparseArrays
+using BenchmarkTools
 using UnPack
+using ForwardDiff
 
-push!(LOAD_PATH, "./src") # user defined modules
-using CommonUtils, Basis1D
+push!(LOAD_PATH, "./src")
+using CommonUtils
+using Basis1D
+using Basis2DTri
+using UniformTriMesh
+
 using SetupDG
 using ExplicitJacobians
 
-N = 2
-K = 16
-T = 1
-CFL = 100
+"Approximation parameters"
+N = 2 # The order of approximation
+K1D = 8
+CFL = 1
+T = 1 # endtime
 
-rd = init_reference_interval(N)
+"Mesh related variables"
+VX, VY, EToV = uniform_tri_mesh(K1D)
+# VX = @. VX - .3*sin(pi*VX)
 
-# Mesh related variables"
-VX = LinRange(-1,1,K+1)
-VX = @. VX - .32*sin(pi*VX)
-EToV = transpose(reshape(sort([1:K; 2:K+1]),2,K))
+# initialize ref element and mesh
+rd = init_reference_tri(N)
+md = init_mesh((VX,VY),EToV,rd)
 
-@unpack V1 = rd
-x = V1*VX[transpose(EToV)]
-mapM = reshape(1:2*K,2,K)
-mapP = copy(mapM)
-mapP[1,2:end] .= mapM[2,1:end-1]
-mapP[2,1:end-1] .= mapM[1,2:end]
-mapP[1] = mapM[end]; mapP[end] = mapM[1] # Make periodic"
+# Make domain periodic
+@unpack Nfaces,Vf = rd
+@unpack xf,yf,FToF,K,mapM,mapP,mapB = md
+LX,LY = (x->maximum(x)-minimum(x)).((VX,VY)) # find lengths of domain
+mapPB = build_periodic_boundary_maps!(xf,yf,LX,LY,Nfaces*K,mapM,mapP,mapB,FToF)
+mapP[mapB] = mapPB
 
-# Geometric factors and surface normals
-J = repeat(transpose(diff(VX)/2),N+1,1)
-nxJ = repeat([-1;1],1,K)
-rxJ = 1
+println("Done initializing mesh + ref elements")
 
-@unpack M,Dr,Vq,Vf,Pq = rd
-Qr = Pq'*(M*Dr)*Pq
-E  = Vf*Pq
-Br = diagm([-1;1])
-Qh = .5*[Qr-Qr' E'*Br;
-        -Br*E 0*Br]
-Vh = [Vq;Vf]
-Ph = M\transpose(Vh)
+## construct hybridized SBP operators
 
-M  = kron(spdiagm(0 => J[1,:]),M)
-Vh = kron(speye(K),Vh)
-Ph = kron(spdiagm(0 => 1 ./ J[1,:]),Ph)
+function build_SBP_ops(rd::RefElemData)
 
-function applyQh(u)
-        Nf,Nq = size(E)
-        uf = u[Nq+1:end,:]
-        rhs = Qh*u
-        rhs[Nq+1:end,:] += (@. .5*uf[mapP]*nxJ)
-        return (@. 2*rhs)
-end
-function applyJump(u)
-        Nf,Nq = size(E)
-        uf = u[Nq+1:end,:]
-        rhs = zeros(size(u))
-        rhs[Nq+1:end,:] = (uf[mapP]-uf)
-        return rhs
+        @unpack M,Dr,Ds,Vq,Pq,Vf,wf,nrJ,nsJ = rd
+        Qr = Pq'*M*Dr*Pq
+        Qs = Pq'*M*Ds*Pq
+        Ef = Vf*Pq
+        Br = diagm(wf.*nrJ)
+        Bs = diagm(wf.*nsJ)
+        Qrh = .5*[Qr-Qr' Ef'*Br;
+                -Br*Ef  Br]
+        Qsh = .5*[Qs-Qs' Ef'*Bs;
+                -Bs*Ef  Bs]
+
+        Vh = [Vq;Vf]
+        Ph = M\transpose(Vh)
+        VhP = Vh*Pq
+
+        # make skew symmetric versions of the operators"
+        Qrhskew = .5*(Qrh-transpose(Qrh))
+        Qshskew = .5*(Qsh-transpose(Qsh))
+
+        return Qrhskew,Qshskew,Vh,Ph,VhP,M
 end
 
-function build_rhs_matrix(applyRHS,Np,K)
-        u = zeros(Np,K)
-        A = zeros(Np*K,Np*K)
-        for i in eachindex(u)
-                u[i] = 1
-                r_i = applyRHS(u)
-                A[:,i] = r_i[:]
-                u[i] = 0
-        end
-        return A
+# interpolate geofacs to both vol/surf nodes
+@unpack Vq,Vf = rd
+@unpack rxJ, sxJ, ryJ, syJ = md
+rxJ, sxJ, ryJ, syJ = (x->[Vq;Vf]*x).((rxJ, sxJ, ryJ, syJ)) # interp to hybridized points
+
+## global matrices
+
+function build_global_ops(rd::RefElemData,md::MeshData)
+
+        Qrhskew,Qshskew,Vh,Ph,VhP,M = build_SBP_ops(rd)
+
+        Ax,Ay,Bx,By,B = assemble_global_SBP_matrices_2D(rd,md,Qrhskew,Qshskew)
+
+        # add off-diagonal couplings
+        Ax += Bx
+        Ay += By
+
+        Ax *= 2 # for flux differencing
+        Ay *= 2
+
+        AxTr = sparse(transpose(Ax))
+        AyTr = sparse(transpose(Ay))
+        Bx   = abs.(Bx) # create LF penalization term
+
+        # globalize operators and nodes
+        @unpack x,y,J = md
+        VhTr = kron(speye(K),sparse(transpose(Vh)))
+        Vh   = kron(speye(K),sparse(Vh))
+        M    = kron(spdiagm(0 => J[1,:]),sparse(M))
+        Ph   = kron(spdiagm(0 => 1 ./ J[1,:]), sparse(Ph))
+        x,y = (a->a[:]).((x,y))
+
+        return Ax,Ay,AxTr,AyTr,Bx,B,VhTr,Vh,M,Ph,x,y
 end
-Nh = size(Qh,2)
-A = build_rhs_matrix(applyQh,Nh,K)
-B = build_rhs_matrix(applyJump,Nh,K)
-A = droptol!(sparse(A),1e-12)
-B = droptol!(sparse(B),1e-12)
-# K = .5*A - .5*B
-ATr = droptol!(sparse(transpose(A)),1e-12) # store transpose for col
 
-x = x[:]
-J = J[:]
-F(uL,uR) = (@. (uL^2 + uL*uR + uR^2)/6)
-# F(uL,uR) = (@. (uL + uR)/2)
-LF(uL,uR) = (@. .5*max(abs(uL),abs(uR))*(uL-uR))
+Ax,Ay,AxTr,AyTr,Bx,B,VhTr,Vh,M,Ph,x,y =
+        build_global_ops(rd::RefElemData,md::MeshData)
+println("Done building global ops")
 
-dF(uL,uR) = ForwardDiff.jacobian(uR->F(uL,uR),uR)
-dLF(uL,uR) = ForwardDiff.jacobian(uR->LF(uL,uR),uR)
+# jacspy = I+Ax+Ay
+# jac = droptol!(jacspy,1e-12)
+# jac = droptol!(VhTr*jacspy*Vh,1e-12)
+# display(spy(jac .!= 0,ms=2.25))
+# # title="nnz = $(nnz(jac))",
+# error("d")
 
+## define Burgers fluxes
+function F(uL,uR)
+        Fx = @. (uL^2 + uL*uR + uR^2)/6
+        Fy = @. 0*uL
+        return Fx,Fy
+end
 
-#use ATr for faster col access
-function hadamard_sum_scalar(ATr,F,u)
-        cols = rowvals(ATr)
-        vals = nonzeros(ATr)
-        m, n = size(ATr)
-        rhs = zeros(n)
-        for i = 1:n
-                ui = u[i]
-                val_i = 0.0
-                for j in nzrange(ATr, i)
-                        col = cols[j]
-                        Aij = vals[j]
-                        uj = u[col]
-                        val_i += Aij*F(ui,uj)
+# extract coordinate fluxes
+Fx = (uL,uR)->F(uL,uR)[1]
+Fy = (uL,uR)->F(uL,uR)[2]
+
+# AD for jacobians
+dFx(uL,uR) = ForwardDiff.jacobian(uR->F(uL,uR)[1],uR)
+dFy(uL,uR) = ForwardDiff.jacobian(uR->F(uL,uR)[2],uR)
+
+## nonlinear solver stuff
+function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData,funs,dt)
+
+        Ax,Ay,AxTr,AyTr,Bx,B,M,Vh,Ph = ops
+        Fx,Fy,dFx,dFy,LF,dLF = funs
+
+        # set up normals for use in penalty term
+        @unpack Vq,Vf = rd
+        @unpack nxJ,nyJ,sJ = md
+        Nq,Np = size(Vq)
+        Nf    = size(Vf,1)
+        Nh    = Nq + Nf
+        fids  = (Nq+1):Nh
+        nxhmat,nyhmat = ntuple(x->zeros(Nh,K),2)
+        nxhmat[fids,:] = nxJ[:]./sJ[:]
+        nyhmat[fids,:] = nyJ[:]./sJ[:]
+        nxh,nyh = (x->x[:]).((nxhmat,nyhmat))
+
+        # get lengths of arrays
+        Nfields = length(Q)
+        Id_fields = speye(Nfields) # for Kronecker expansion to large matrices - fix later with lazy evals
+        Vh_fields = droptol!(kron(Id_fields,Vh),1e-12)
+        M_fields  = droptol!(kron(Id_fields,M),1e-12)
+
+        # init jacobian matrix
+        dFdU_h = repeat(I+Ax+Ay,Nfields,Nfields)
+
+        function midpt_newton_iter!(Qnew, Qprev) # for Burgers' eqn specifically
+
+                Qh    = SVector((x->Vh*x).(Qnew)) # tuples are faster, but need arrays for ForwardDiff
+
+                ftmp  = hadamard_sum(AxTr,Fx,Qh) + hadamard_sum(AyTr,Fy,Qh) + hadamard_sum(B,LF,Qh,nxh,nyh)
+                f     = vcat((x->Ph*x).(ftmp)...)
+                res   = vcat(Qnew...) + .5*dt*f - vcat(Qprev...)
+
+                fill!(dFdU_h.nzval,0.0)
+                accum_hadamard_jacobian!(dFdU_h, Ax, dFx, Qh)
+                accum_hadamard_jacobian!(dFdU_h, Ay, dFy, Qh)
+                accum_hadamard_jacobian!(dFdU_h, B, dLF, Qh,nxh,nyh) # flux term involving normals
+                dFdU = droptol!(transpose(Vh_fields)*(dFdU_h*Vh_fields),1e-12)
+
+                # solve and update
+                dQ   = (M_fields + .5*dt*dFdU)\(M_fields*res)
+                Qtmp = reshape(vcat(Qnew...) - dQ,length(Q[1]),Nfields)       # convert Qnew to column vector for update
+                for fld = 1:Nfields
+                        Qnew[fld] .= Qtmp[:,fld]
                 end
-                rhs[i]= val_i
+                return norm(dQ) # convert back to array of arrays
         end
-        return rhs
+        return midpt_newton_iter!
 end
 
+## init condition, rhs
+
+u = @. -sin(pi*x)
+# u = randn(size(x))
+Q = [u]
+Qnew = deepcopy(Q)
+
+# convert to tuple
+Q = tuple(Q...)
+Qnew = tuple(Qnew...)
+
+# set time-stepping constants
 CN = (N+1)*(N+2)/2  # estimated trace constant
-h = minimum(J)
+h = minimum(md.J[1,:]./md.sJ[1,:]) # ratio of J/Jf = O(h^d/h^d-1)
 dt = CFL * 2 * h / CN
 Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 
-u = @. -sin(pi*x)
-unew = copy(u)
-energy = zeros(Nsteps)
+function LF(uL,uR,nxL,nyL,nxR,nyR)
+        absnx = @. (abs(nxL) + abs(nxR))/2
+        return (@. max(abs(uL),abs(uR))*(uL-uR)*absnx)
+end
+dLF(uL,uR,args...) = ForwardDiff.jacobian(uR->LF(uL,uR,args...),uR)
+
+# initialize Newton vars
+ops = (Ax,Ay,copy(transpose(Ax)),copy(transpose(Ay)),Bx,B,M,Vh,Ph) # pack inputs together
+fxns = (Fx,Fy,dFx,dFy,LF,dLF)
+midpt_newton_iter! = init_newton_fxn(Q,ops,rd,md,fxns,dt)
+
+## newton time iteration
+
+bcopy!(utarget,u) = utarget .= u
+
 it_count = zeros(Nsteps)
+energy   = zeros(Nsteps)
 for i = 1:Nsteps
-        global unew, u
-        if false
-                uh = Vh*u
-                rhsu = -Ph*(hadamard_sum(ATr,F,uh) + hadamard_sum(B,LF,uh))
-                u1 = u + dt*rhsu
+        global Q,Qnew
 
-                u1h = Vh*u1
-                rhsu += -Ph*(hadamard_sum(ATr,F,u1h) + hadamard_sum(B,LF,u1h))
-                @. u += .5*dt*rhsu
-
-        else # implicit midpoint rule
-
-                rnorm = 1
-                iter = 0
-
-                unew .= u  # copy
-                uh    = Vh*unew
-                f     = Ph*(hadamard_sum_scalar(ATr,F,uh) + hadamard_sum_scalar(abs.(B),LF,uh))
-                res   = unew + .5*dt*f - u
-                while rnorm > 1e-12
-
-                        dFdU_h = hadamard_jacobian(A, dF, @SVector [uh]) + hadamard_jacobian(abs.(B), dLF, @SVector [uh])
-                        dFdU   = Ph*dFdU_h*Vh
-                        unew   = unew - (I + .5*dt*dFdU)\res # can also scale by M for additional sparsity
-
-                        uh    = Vh*unew
-                        f     = Ph*(hadamard_sum_scalar(ATr,F,uh) + hadamard_sum_scalar(abs.(B),LF,uh))
-                        res   = unew + .5*dt*f - u
-                        rnorm = norm(res)
-                        iter += 1
+        #Qnew = copy(Q)  # copy / over-write at each timestep
+        bcopy!.(Qnew,Q)
+        iter = 0
+        dQnorm = 1
+        while dQnorm > 1e-12
+                dQnorm = midpt_newton_iter!(Qnew,Q)
+                iter += 1
+                if iter > 10
+                        println("iter = $iter")
                 end
-                it_count[i] = iter
-                u = 2*unew-u # implicit midpoint rule
         end
+        it_count[i] = iter
+        bcopy!.(Q, (@. 2*Qnew - Q)) # implicit midpoint rule
 
-        energy[i] = u'*(M*u)
+        u = Q[1]
+        energy[i] = u'*M*u
 
         if i%10==0 || i==Nsteps
                 println("Number of time steps $i out of $Nsteps")
+                # display(scatter(x,Q[1]))
         end
 end
 
-@unpack Vp = rd
-Np = size(Vp,2)
-xp,up = (x->Vp*reshape(x,Np,K)).((x,u))
-display(scatter(xp,up))
+@unpack VDM = rd
+rp, sp = Basis2DTri.equi_nodes_2D(25)
+Vp = Basis2DTri.vandermonde_2D(N,rp,sp)/VDM
+
+xp,yp,up = (x->Vp*reshape(x,size(Vp,2),K)).((x,y,Q[1]))
+gr(aspect_ratio=1, legend=false,
+   markerstrokewidth=0, markersize=2)
+# display(scatter(xp,yp,up,zcolor=up,cam=(3,25),axis=false))
+scatter(xp,yp,up,zcolor=up,cam=(0,90),border=:none,axis=false)
+# contourf(xp,yp,up,lw=1,fill=true,levels=20)
+# png("sol_unif_mesh.png")
