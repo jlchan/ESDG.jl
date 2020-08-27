@@ -3,9 +3,6 @@ Module ExplicitJacobians
 
 Computes explicit Jacobians for ESDG methods.
 
-    - Flux function F is not mutating for reuse
-    - Flux function Jacobian dF! must be mutating
-
 """
 
 module ExplicitJacobians
