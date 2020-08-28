@@ -13,6 +13,7 @@ using NodesAndModes
 using NodesAndModes.Tri
 using UniformMeshes
 using SetupDG
+using AssembleGlobalSBPMatrices
 using ExplicitFluxDiffJacobians
 
 push!(LOAD_PATH, "./examples/EntropyStableEuler")
@@ -20,7 +21,7 @@ using EntropyStableEuler
 
 "Approximation parameters"
 N = 2 # The order of approximation
-K1D = 8
+K1D = 4
 CFL = 1
 T = 1.0 # endtime
 

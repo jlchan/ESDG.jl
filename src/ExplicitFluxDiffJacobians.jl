@@ -34,7 +34,7 @@ end
 
 ## TODO: specialize for dense matrices too
 
-##  hadamard function matrix utilities
+## sparse hadamard function matrix utilities
 
 "
 function hadamard_jacobian(Q::SparseMatrixCSC, dF::Fxn,
@@ -83,24 +83,6 @@ function hadamard_scale!(A::SparseMatrixCSC, Q::SparseMatrixCSC, F::Fxn,
         end
     end
 end
-
-# # compute and accumulate contributions from a Jacobian function dF
-# function accum_hadamard_jacobian!(A, Q, dF::Fxn, U, Fargs ...; scale = -1) where Fxn
-#
-#     # scale A_ij = Q_ij * F(ui,uj)
-#     hadamard_scale!(A,Q,dF,U,Fargs...)
-#
-#     # add diagonal entry assuming Q = - Q^T
-#     Nfields = length(U)
-#     num_pts = size(Q,1)
-#     ids(m) = (1:num_pts) .+ (m-1)*num_pts
-#     for m = 1:Nfields, n = 1:Nfields
-#         Asum = sum(A[ids(m),ids(n)],dims=1)
-#         for i = 1:length(Asum)
-#             A[ids(m)[i],ids(n)[i]] += scale*Asum[i]
-#         end
-#     end
-# end
 
 "
 function accum_hadamard_jacobian!(A, Q, dF::Fxn, U, Fargs ...; scale = -1)
@@ -159,7 +141,7 @@ function banded_matrix_function(mat_fun::Fxn, U, Fargs ...) where Fxn
     ids(m) = (1:num_pts) .+ (m-1)*num_pts
     Block(m,n) = CartesianIndices((ids(m),ids(n)))
 
-    banded_matrix_function!(A, mat_fun, U, Fargs)
+    banded_matrix_function!(A, mat_fun, U, Fargs...)
     # for i = 1:num_pts
     #     mat_i = mat_fun(getindex.(U,i),getindex.(Fargs,i)...)
     #     for n = 1:Nfields, m = 1:Nfields

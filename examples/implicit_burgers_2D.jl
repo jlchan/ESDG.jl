@@ -11,8 +11,8 @@ push!(LOAD_PATH, "./src")
 using CommonUtils
 using NodesAndModes
 using NodesAndModes.Tri
-using AssembleGlobalSBPMatrices
 using SetupDG
+using AssembleGlobalSBPMatrices
 using ExplicitFluxDiffJacobians
 using UniformMeshes
 

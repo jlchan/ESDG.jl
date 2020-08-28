@@ -19,16 +19,16 @@ using CommonUtils # for I matrix in geometricFactors
 # for basis functions
 using NodesAndModes
 
-# using UniformMeshes # for face vertex ordering
+using UniformMeshes # for face vertex orderings
 
-# triangular routines
-import UniformTriMesh # for face vertices
-
-# quadrilateral routines
-import UniformQuadMesh # for face vertices
-
-# hex routines
-import UniformHexMesh # for face vertices
+# # triangular routines
+# import UniformTriMesh # for face vertices
+#
+# # quadrilateral routines
+# import UniformQuadMesh # for face vertices
+#
+# # hex routines
+# import UniformHexMesh # for face vertices
 
 # initialization of mesh/reference element data
 export init_reference_interval, init_reference_tri
@@ -144,7 +144,7 @@ function init_reference_tri(N;Nq=2*N)
     # initialize a new reference element data struct
     rd = RefElemData()
 
-    fv = UniformTriMesh.tri_face_vertices() # set faces for triangle
+    fv = UniformMeshes.tri_face_vertices() # set faces for triangle
     Nfaces = length(fv)
     @pack! rd = fv, Nfaces
 
@@ -197,7 +197,7 @@ function init_reference_quad(N,quad_nodes_1D = gauss_quad(0,0,N))
     # initialize a new reference element data struct
     rd = RefElemData()
 
-    fv = UniformQuadMesh.quad_face_vertices() # set faces for triangle
+    fv = UniformMeshes.quad_face_vertices() # set faces for triangle
     Nfaces = length(fv)
     @pack! rd = fv, Nfaces
 
@@ -313,7 +313,7 @@ function init_reference_hex(N,quad_nodes_1D=gauss_quad(0,0,N))
     # initialize a new reference element data struct
     rd = RefElemData()
 
-    fv = UniformHexMesh.hex_face_vertices() # set faces for triangle
+    fv = UniformMeshes.hex_face_vertices() # set faces for triangle
     Nfaces = length(fv)
     @pack! rd = fv, Nfaces
 

@@ -19,7 +19,7 @@ unzip(a) = map(x->getfield.(a, x), fieldnames(eltype(a)))
 
 # Convenience routines for identity matrices.
 # Pair with kron to make block diagonal or banded matrices
-export eye,speye
+export eye, speye
 eye(n) = diagm(ones(n))
 speye(n) = spdiagm(0 => ones(n))
 
@@ -28,10 +28,9 @@ export bcopy!, bmult
 bcopy!(x,y) = x .= y
 bmult(x,y) = x .* y
 
-export connect_mesh
-export build_node_maps
-export geometric_factors
+export connect_mesh, build_node_maps, geometric_factors
 export build_periodic_boundary_maps, build_periodic_boundary_maps!
+
 export rk45_coeffs, dopri45_coeffs
 
 # 4th order 5-stage low storage Runge Kutta from Carpenter/Kennedy.
