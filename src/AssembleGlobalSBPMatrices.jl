@@ -1,17 +1,25 @@
 module AssembleGlobalSBPMatrices
 
-using UnPack
-
 using LinearAlgebra
 using SparseArrays
+using UnPack
+
 using SetupDG
 
 # for constructing global DG matrices
 export build_rhs_matrix, assemble_global_SBP_matrices_2D
 
-# flexible but slow function to construct global matrices based on rhs evals
-# Np,K = number dofs and elements
-# vargs = other args for applyRHS
+"""
+function build_rhs_matrix(applyRHS,Np,K,vargs...)
+
+flexible but slow function to construct global matrices based on rhs evals
+applyRHS = function to evaluate rhs f(u(t)) given a solution vector u(t)
+Np,K = number dofs and elements
+vargs = other args for applyRHS
+
+# Examples
+```jldoctest
+"""
 function build_rhs_matrix(applyRHS,Np,K,vargs...)
     u = zeros(Np,K)
     A = spzeros(Np*K,Np*K)
@@ -24,9 +32,20 @@ function build_rhs_matrix(applyRHS,Np,K,vargs...)
     return A
 end
 
-# inputs = ref elem and mesh data
-# Ax,Ay,Bx,By,B = global operators. B = only sJ
-# note that md::MeshData needs FToF to also be periodic
+"""
+function assemble_global_SBP_matrices_2D(rd::RefElemData, md::MeshData,
+                                         Qrhskew, Qshskew, dtol=1e-12)
+
+rd,md = ref elem and mesh data
+Ax,Ay,Bx,By = global operators corresponding to vol, surface terms of DG derivatives.
+B = global operator for surface term with only sJ
+
+note that md::MeshData needs FToF to also be periodic
+
+# Examples
+```jldoctest
+"""
+
 function assemble_global_SBP_matrices_2D(rd::RefElemData, md::MeshData,
                                          Qrhskew, Qshskew, dtol=1e-12)
 
