@@ -235,8 +235,8 @@ function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData,funs,dt)
                 accum_hadamard_jacobian!(dFdU_h, Ax, dFx, Qh)
                 accum_hadamard_jacobian!(dFdU_h, Ay, dFy, Qh)
                 accum_hadamard_jacobian!(dFdU_h, B,  dLF, Qh, nxh, nyh) # flux term involving normals
-                banded_matrix_function!(dVdU_q,dVdU_fun, Uq)
-                banded_matrix_function!(dUdV_h,dUdV_fun, VUh)
+                banded_matrix_function!(dVdU_q, dVdU_fun, Uq)
+                banded_matrix_function!(dUdV_h, dUdV_fun, VUh)
                 dFdU   = droptol!(transpose(Vh_fld)*(dFdU_h*dUdV_h*VhP_fld*dVdU_q*Vq_fld),1e-13)
 
                 # solve and update

@@ -1,8 +1,9 @@
 """
 Module ExplicitFluxDiffJacobians
 
-Computes explicit Jacobians for ESDG methods.
-
+Computes explicit Jacobians for discretizations which utilize
+flux differencing, e.g., can be cast as sum(Q.*F,dims=2), where
+F_ij = f(ui,uj), and f(uL,uR) is a symmetric + consistent numerical flux
 """
 
 module ExplicitFluxDiffJacobians
@@ -13,25 +14,35 @@ using StaticArrays
 using SparseArrays
 using UnPack
 
-export hadamard_jacobian,accum_hadamard_jacobian!,hadamard_scale!
-export hadamard_sum, hadamard_sum!
-export banded_matrix_function,banded_matrix_function!
 export columnize
+export hadamard_jacobian, accum_hadamard_jacobian!
+export hadamard_sum, hadamard_sum!
+export banded_matrix_function, banded_matrix_function!
 
-# use w/reshape to convert from matrices to SArray of arrays
-# used to convert from global solution vector to array of field vectors
+"""
+function columnize(A)
+
+use w/reshape to convert from matrices to SArray of arrays
+used to convert from global solution vector to array of field vectors
+
+# Examples
+```jldoctest
+"""
 function columnize(A)
     return SVector{size(A,2)}([A[:,i] for i in 1:size(A,2)])
-    # return SVector([A[:,i] for i in 1:size(A,2)]...)
-    # return SVector(tuple(eachcol(A))...)
 end
 
 ## TODO: specialize for dense matrices too
 
 ##  hadamard function matrix utilities
 
-# can only deal with one coordinate component at a time in higher dimensions
-# assumes that Q/F is a skew-symmetric/symmetric pair
+"
+function hadamard_jacobian(Q::SparseMatrixCSC, dF::Fxn,
+                           U, Fargs ...; scale = -1)
+
+Assumes that Q/F is a skew-symmetric/symmetric pair
+Can only deal with one coordinate component at a time in higher dimensions.
+"
 function hadamard_jacobian(Q::SparseMatrixCSC, dF::Fxn,
                            U, Fargs ...; scale = -1) where Fxn
 
@@ -46,6 +57,9 @@ function hadamard_jacobian(Q::SparseMatrixCSC, dF::Fxn,
 end
 
 "
+function hadamard_scale!(A::SparseMatrixCSC, Q::SparseMatrixCSC, F::Fxn,
+                        U, Fargs ...)
+
 computes the matrix A_ij = Q_ij * F(u_i,u_j)
 if you add extra args, they are passed to F(ux,uy) via F(u_i,u_j,args_i,args_j)
 "
@@ -87,7 +101,12 @@ end
 #         end
 #     end
 # end
-# compute and accumulate contributions from a Jacobian function dF
+
+"
+function accum_hadamard_jacobian!(A, Q, dF::Fxn, U, Fargs ...; scale = -1)
+
+accumulate contributions from a Jacobian function dF into pre-allocated matrix A
+"
 function accum_hadamard_jacobian!(A, Q, dF::Fxn, U, Fargs ...; scale = -1) where Fxn
 
     Nfields = length(U)
@@ -126,8 +145,12 @@ function accum_hadamard_jacobian!(A, Q, dF::Fxn, U, Fargs ...; scale = -1) where
     end
 end
 
-# computes block-banded matrix whose bands are entries of matrix-valued
-# function evals (e.g., a Jacobian function).
+"
+function banded_matrix_function(mat_fun::Fxn, U, Fargs ...)
+
+computes block-banded matrix whose bands are entries of matrix-valued
+function evals (e.g., a Jacobian function).
+"
 function banded_matrix_function(mat_fun::Fxn, U, Fargs ...) where Fxn
     Nfields = length(U)
     num_pts = length(U[1])
@@ -136,15 +159,22 @@ function banded_matrix_function(mat_fun::Fxn, U, Fargs ...) where Fxn
     ids(m) = (1:num_pts) .+ (m-1)*num_pts
     Block(m,n) = CartesianIndices((ids(m),ids(n)))
 
-    for i = 1:num_pts
-        mat_i = mat_fun(getindex.(U,i),getindex.(Fargs,i)...)
-        for n = 1:Nfields, m = 1:Nfields
-            A[Block(m,n)[i,i]] = mat_i[m,n] # TODO: replace with fast sparse constructor
-        end
-    end
+    banded_matrix_function!(A, mat_fun, U, Fargs)
+    # for i = 1:num_pts
+    #     mat_i = mat_fun(getindex.(U,i),getindex.(Fargs,i)...)
+    #     for n = 1:Nfields, m = 1:Nfields
+    #         A[Block(m,n)[i,i]] = mat_i[m,n] # TODO: replace with fast sparse constructor
+    #     end
+    # end
     return A
 end
 
+"
+function banded_matrix_function!(A::SparseMatrixCSC,mat_fun::Fxn, U, Fargs ...) where Fxn
+
+computes a block-banded matrix whose bands are entries of matrix-valued
+function evals (e.g., a Jacobian function) - mutating version.
+"
 function banded_matrix_function!(A::SparseMatrixCSC,mat_fun::Fxn, U, Fargs ...) where Fxn
     Nfields = length(U)
     num_pts = length(U[1])
@@ -162,7 +192,12 @@ end
 
 # =============== for residual evaluation ================
 
-# use ATr for faster col access of sparse CSC matrices
+"
+function hadamard_sum(ATr::SparseMatrixCSC{Tv,Ti},F::Fxn,u,Fargs ...) where {Tv,Ti,Fxn}
+
+computes sum(A.*F,dims=2) while exploiting sparsity
+uses ATr for faster col access of sparse CSC matrices
+"
 function hadamard_sum(ATr::SparseMatrixCSC{Tv,Ti},F::Fxn,u,Fargs ...) where {Tv,Ti,Fxn}
     m, n = size(ATr)
     # rhs = [zeros(n) for i in eachindex(u)]
@@ -171,8 +206,13 @@ function hadamard_sum(ATr::SparseMatrixCSC{Tv,Ti},F::Fxn,u,Fargs ...) where {Tv,
     return rhs
 end
 
-# computes ∑ A_ij * F(u_i,u_j) = (A∘F)*1 for flux differencing
-# separate code from hadamard_scale!, since it's non-allocating
+"
+function hadamard_sum!(rhs, ATr::SparseMatrixCSC, F::Fxn,
+                        u,Fargs ...) where Fxn
+
+computes ∑ A_ij * F(u_i,u_j) = (A∘F)*1 for flux differencing
+separate code from hadamard_scale!, since it's non-allocating
+"
 function hadamard_sum!(rhs, ATr::SparseMatrixCSC, F::Fxn,
                         u,Fargs ...) where Fxn
     cols = rowvals(ATr)
