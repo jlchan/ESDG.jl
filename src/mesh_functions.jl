@@ -39,7 +39,8 @@ end
 """
     function readGmsh2D(filename)
 
-reads GMSH 2D file format 2.2 0 8, returns EToV,VX,VY
+reads GMSH 2D file format 2.2 0 8
+returns EToV,VX,VY
 
 # Examples
 
