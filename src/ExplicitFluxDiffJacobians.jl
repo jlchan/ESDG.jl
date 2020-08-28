@@ -12,7 +12,6 @@ using ForwardDiff
 using StaticArrays
 using SparseArrays
 using UnPack
-using SetupDG
 
 export hadamard_jacobian,accum_hadamard_jacobian!,hadamard_scale!
 export hadamard_sum, hadamard_sum!
