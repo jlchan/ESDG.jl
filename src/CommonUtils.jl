@@ -75,7 +75,7 @@ function dopri45_coeffs()
 end
 
 include("./geometric_factors.jl")
-include("./connect_mesh.jl")
+include("./mesh_functions.jl")
 include("./node_map_functions.jl")
 
 end
