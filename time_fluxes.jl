@@ -7,7 +7,7 @@ using SparseArrays
 
 push!(LOAD_PATH, "./src")
 using CommonUtils
-using ExplicitJacobians
+using ExplicitFluxDiffJacobians
 push!(LOAD_PATH, "./examples/EntropyStableEuler")
 using EntropyStableEuler
 

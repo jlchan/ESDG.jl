@@ -11,22 +11,22 @@ push!(LOAD_PATH, "./src")
 using CommonUtils
 using NodesAndModes
 using NodesAndModes.Tri
-using UniformTriMesh
+using UniformMeshes
 using SetupDG
-using ExplicitJacobians
+using ExplicitFluxDiffJacobians
 
 push!(LOAD_PATH, "./examples/EntropyStableEuler")
 using EntropyStableEuler
 
 "Approximation parameters"
-N = 3 # The order of approximation
+N = 2 # The order of approximation
 K1D = 8
 CFL = 1
-T = 5.0 # endtime
+T = 1.0 # endtime
 
 "Mesh related variables"
 VX, VY, EToV = uniform_tri_mesh(3*K1D,2*K1D)
-VX = @. VX - .3*sin(pi*VX)
+# VX = @. VX - .3*sin(pi*VX)
 VX = @. (1+VX)/2 * 15
 VY = @. VY*5
 
@@ -44,7 +44,6 @@ mapP[mapB] = mapPB
 ## construct hybridized SBP operators
 
 function build_SBP_ops(rd::RefElemData)
-
         @unpack M,Dr,Ds,Vq,Pq,Vf,wf,nrJ,nsJ = rd
         Qr = Pq'*M*Dr*Pq
         Qs = Pq'*M*Ds*Pq
@@ -75,7 +74,6 @@ rxJ, sxJ, ryJ, syJ = (x->[Vq;Vf]*x).((rxJ, sxJ, ryJ, syJ)) # interp to hybridize
 ## global matrices
 
 function build_global_ops(rd::RefElemData,md::MeshData)
-
         Qrhskew,Qshskew,Vh,Ph,VhP,M = build_SBP_ops(rd)
 
         Ax,Ay,Bx,By,B = assemble_global_SBP_matrices_2D(rd,md,Qrhskew,Qshskew)
@@ -276,7 +274,7 @@ Qnew = tuple(Qnew...)
 CN = (N+1)*(N+2)/2  # estimated trace constant
 h = minimum(md.J[1,:]./md.sJ[1,:]) # ratio of J/Jf = O(h^d/h^d-1)
 dt = CFL * 2 * h / CN
-dt = .1
+# dt = .1
 Nsteps = convert(Int,ceil(T/dt))
 dt = T/Nsteps
 

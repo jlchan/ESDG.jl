@@ -11,20 +11,20 @@ push!(LOAD_PATH, "./src")
 using CommonUtils
 using NodesAndModes
 using NodesAndModes.Tri
-using UniformTriMesh
-
+using AssembleGlobalSBPMatrices
 using SetupDG
-using ExplicitJacobians
+using ExplicitFluxDiffJacobians
+using UniformMeshes
 
 "Approximation parameters"
 N = 2 # The order of approximation
 K1D = 8
-CFL = 1
+CFL = 10
 T = 1 # endtime
 
 "Mesh related variables"
 VX, VY, EToV = uniform_tri_mesh(K1D)
-# VX = @. VX - .3*sin(pi*VX)
+VX = @. VX - .3*sin(pi*VX)
 
 # initialize ref element and mesh
 rd = init_reference_tri(N)
