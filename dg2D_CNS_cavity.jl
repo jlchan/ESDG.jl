@@ -7,8 +7,8 @@ using UnPack
 
 push!(LOAD_PATH, "./src")
 using CommonUtils
-using Basis1D
-using Basis2DTri
+using NodesAndModes
+using NodesAndModes.Tri
 using UniformTriMesh
 
 using SetupDG

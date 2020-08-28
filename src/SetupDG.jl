@@ -15,14 +15,14 @@ using UnPack # for easy setting/getting in mutable structs
 
 # matlab-like modules
 using CommonUtils # for I matrix in geometricFactors
-using Basis1D
+
+# for basis functions
+using NodesAndModes
 
 # triangular routines
-import Basis2DTri
 import UniformTriMesh # for face vertices
 
 # quadrilateral routines
-import Basis2DQuad
 import UniformQuadMesh # for face vertices
 
 # hex routines
@@ -151,16 +151,16 @@ function init_reference_tri(N;Nq=2*N)
     @pack! rd = fv, Nfaces
 
     # Construct matrices on reference elements
-    r, s = Basis2DTri.nodes_2D(N)
-    VDM = Basis2DTri.vandermonde_2D(N, r, s)
-    Vr, Vs = Basis2DTri.grad_vandermonde_2D(N, r, s)
+    r, s = Tri.nodes_2D(N)
+    VDM = Tri.vandermonde_2D(N, r, s)
+    Vr, Vs = Tri.grad_vandermonde_2D(N, r, s)
     Dr = Vr/VDM
     Ds = Vs/VDM
     @pack! rd = r,s,VDM,Dr,Ds
 
     # low order interpolation nodes
-    r1,s1 = Basis2DTri.nodes_2D(1)
-    V1 = Basis2DTri.vandermonde_2D(1,r,s)/Basis2DTri.vandermonde_2D(1,r1,s1)
+    r1,s1 = Tri.nodes_2D(1)
+    V1 = Tri.vandermonde_2D(1,r,s)/Tri.vandermonde_2D(1,r1,s1)
     @pack! rd = V1
 
     #Nodes on faces, and face node coordinate
@@ -175,19 +175,19 @@ function init_reference_tri(N;Nq=2*N)
     nsJ = [-e; e; z]
     @pack! rd = rf,sf,wf,nrJ,nsJ
 
-    rq,sq,wq = Basis2DTri.quad_nodes_2D(Nq)
-    Vq = Basis2DTri.vandermonde_2D(N,rq,sq)/VDM
+    rq,sq,wq = Tri.quad_nodes_2D(Nq)
+    Vq = Tri.vandermonde_2D(N,rq,sq)/VDM
     M = Vq'*diagm(wq)*Vq
     Pq = M\(Vq'*diagm(wq))
     @pack! rd = rq,sq,wq,Vq,M,Pq
 
-    Vf = Basis2DTri.vandermonde_2D(N,rf,sf)/VDM # interpolates from nodes to face nodes
+    Vf = Tri.vandermonde_2D(N,rf,sf)/VDM # interpolates from nodes to face nodes
     LIFT = M\(Vf'*diagm(wf)) # lift matrix used in rhs evaluation
     @pack! rd = Vf,LIFT
 
     # plotting nodes
-    rp, sp = Basis2DTri.equi_nodes_2D(10)
-    Vp = Basis2DTri.vandermonde_2D(N,rp,sp)/VDM
+    rp, sp = Tri.equi_nodes_2D(10)
+    Vp = Tri.vandermonde_2D(N,rp,sp)/VDM
     @pack! rd = rp,sp,Vp
 
     return rd
@@ -205,16 +205,16 @@ function init_reference_quad(N,quad_nodes_1D = gauss_quad(0,0,N))
     @pack! rd = fv, Nfaces
 
     # Construct matrices on reference elements
-    r, s = Basis2DQuad.nodes_2D(N)
-    VDM = Basis2DQuad.vandermonde_2D(N, r, s)
-    Vr, Vs = Basis2DQuad.grad_vandermonde_2D(N, r, s)
+    r, s = Quad.nodes_2D(N)
+    VDM = Quad.vandermonde_2D(N, r, s)
+    Vr, Vs = Quad.grad_vandermonde_2D(N, r, s)
     Dr = Vr/VDM
     Ds = Vs/VDM
     @pack! rd = r,s,VDM
 
     # low order interpolation nodes
-    r1,s1 = Basis2DQuad.nodes_2D(1)
-    V1 = Basis2DQuad.vandermonde_2D(1,r,s)/Basis2DQuad.vandermonde_2D(1,r1,s1)
+    r1,s1 = Quad.nodes_2D(1)
+    V1 = Quad.vandermonde_2D(1,r,s)/Quad.vandermonde_2D(1,r1,s1)
     @pack! rd = V1
 
     #Nodes on faces, and face node coordinate
@@ -233,16 +233,16 @@ function init_reference_quad(N,quad_nodes_1D = gauss_quad(0,0,N))
     @pack! rd = rf,sf,wf,nrJ,nsJ
 
     # quadrature nodes - build from 1D nodes.
-    # can also use "rq,sq,wq = Basis2DQuad.quad_nodes_2D(2*N)"
+    # can also use "rq,sq,wq = Quad.quad_nodes_2D(2*N)"
     rq,sq = vec.(meshgrid(r1D))
     wr,ws = vec.(meshgrid(w1D))
     wq = wr .* ws
-    Vq = Basis2DQuad.vandermonde_2D(N,rq,sq)/VDM
+    Vq = Quad.vandermonde_2D(N,rq,sq)/VDM
     M = Vq'*diagm(wq)*Vq
     Pq = M\(Vq'*diagm(wq))
     @pack! rd = rq,sq,wq,Vq,M,Pq
 
-    Vf = Basis2DQuad.vandermonde_2D(N,rf,sf)/VDM # interpolates from nodes to face nodes
+    Vf = Quad.vandermonde_2D(N,rf,sf)/VDM # interpolates from nodes to face nodes
     LIFT = M\(Vf'*diagm(wf)) # lift matrix used in rhs evaluation
 
     # expose kronecker product sparsity
@@ -253,8 +253,8 @@ function init_reference_quad(N,quad_nodes_1D = gauss_quad(0,0,N))
     @pack! rd = Dr,Ds,Vf,LIFT
 
     # plotting nodes
-    rp, sp = Basis2DQuad.equi_nodes_2D(15)
-    Vp = Basis2DQuad.vandermonde_2D(N,rp,sp)/VDM
+    rp, sp = Quad.equi_nodes_2D(15)
+    Vp = Quad.vandermonde_2D(N,rp,sp)/VDM
     @pack! rd = rp,sp,Vp
 
     return rd
@@ -323,15 +323,15 @@ function init_reference_hex(N,quad_nodes_1D=gauss_quad(0,0,N))
     @pack! rd = fv, Nfaces
 
     # Construct matrices on reference elements
-    r,s,t = Basis3DHex.nodes_3D(N)
-    VDM = Basis3DHex.vandermonde_3D(N,r,s,t)
-    Vr,Vs,Vt = Basis3DHex.grad_vandermonde_3D(N,r,s,t)
-    Dr,Ds,Dt = (A->A/VDM).(Basis3DHex.grad_vandermonde_3D(N,r,s,t))
+    r,s,t = Hex.nodes_3D(N)
+    VDM = Hex.vandermonde_3D(N,r,s,t)
+    Vr,Vs,Vt = Hex.grad_vandermonde_3D(N,r,s,t)
+    Dr,Ds,Dt = (A->A/VDM).(Hex.grad_vandermonde_3D(N,r,s,t))
     @pack! rd = r,s,t,VDM
 
     # low order interpolation nodes
-    r1,s1,t1 = Basis3DHex.nodes_3D(1)
-    V1 = Basis3DHex.vandermonde_3D(1,r,s,t)/Basis3DHex.vandermonde_3D(1,r1,s1,t1)
+    r1,s1,t1 = Hex.nodes_3D(1)
+    V1 = Hex.vandermonde_3D(1,r,s,t)/Hex.vandermonde_3D(1,r1,s1,t1)
     @pack! rd = V1
 
     #Nodes on faces, and face node coordinate
@@ -355,12 +355,12 @@ function init_reference_hex(N,quad_nodes_1D=gauss_quad(0,0,N))
     rq,sq,tq = vec.(meshgrid(r1D,r1D,r1D))
     wr,ws,wt = vec.(meshgrid(w1D,w1D,w1D))
     wq = wr.*ws.*wt
-    Vq = Basis3DHex.vandermonde_3D(N,rq,sq,tq)/VDM
+    Vq = Hex.vandermonde_3D(N,rq,sq,tq)/VDM
     M = Vq'*diagm(wq)*Vq
     Pq = M\(Vq'*diagm(wq))
     @pack! rd = rq,sq,tq,wq,Vq,M,Pq
 
-    Vf = Basis3DHex.vandermonde_3D(N,rf,sf,tf)/VDM
+    Vf = Hex.vandermonde_3D(N,rf,sf,tf)/VDM
     LIFT = M\(Vf'*diagm(wf))
 
     # expose kronecker product sparsity
@@ -372,8 +372,8 @@ function init_reference_hex(N,quad_nodes_1D=gauss_quad(0,0,N))
     @pack! rd = Dr,Ds,Dt,Vf,LIFT
 
     # plotting nodes
-    rp,sp,tp = Basis3DHex.equi_nodes_3D(15)
-    Vp = Basis3DHex.vandermonde_3D(N,rp,sp,tp)/VDM
+    rp,sp,tp = Hex.equi_nodes_3D(15)
+    Vp = Hex.vandermonde_3D(N,rp,sp,tp)/VDM
     @pack! rd = rp,sp,tp,Vp
 
     return rd

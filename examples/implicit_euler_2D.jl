@@ -9,8 +9,8 @@ using ForwardDiff
 
 push!(LOAD_PATH, "./src")
 using CommonUtils
-using Basis1D
-using Basis2DTri
+using NodesAndModes
+using NodesAndModes.Tri
 using UniformTriMesh
 using SetupDG
 using ExplicitJacobians
@@ -320,8 +320,8 @@ for i = 1:Nsteps
 end
 
 @unpack VDM = rd
-rp, sp = Basis2DTri.equi_nodes_2D(25)
-Vp = Basis2DTri.vandermonde_2D(N,rp,sp)/VDM
+rp, sp = equi_nodes_2D(25)
+Vp = vandermonde_2D(N,rp,sp)/VDM
 
 gr(aspect_ratio=1, legend=false,
    markerstrokewidth=0)

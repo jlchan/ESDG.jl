@@ -4,7 +4,7 @@ using LinearAlgebra
 
 push!(LOAD_PATH, "./src") # user defined modules
 using CommonUtils
-using Basis2DTri
+using NodesAndModes.Tri
 using UniformTriMesh
 
 using SetupDG

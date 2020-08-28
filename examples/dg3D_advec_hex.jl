@@ -9,8 +9,8 @@ using SparseArrays
 
 # "User defined modules"
 using CommonUtils
-using Basis1D
-using Basis3DHex
+using NodesAndModes
+using NodesAndModes.Hex
 using UniformHexMesh
 
 using SetupDG

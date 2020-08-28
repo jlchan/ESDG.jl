@@ -7,8 +7,8 @@ using SparseArrays
 # "User defined modules"
 push!(LOAD_PATH, "./src")
 using CommonUtils
-using Basis1D
-using Basis2DQuad
+using NodesAndModes
+using NodesAndModes.Quad
 using UniformQuadMesh
 
 using SetupDG

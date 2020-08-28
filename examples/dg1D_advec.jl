@@ -3,7 +3,8 @@ using Plots
 using LinearAlgebra
 
 push!(LOAD_PATH, "./src") # user defined modules
-using CommonUtils, Basis1D
+using CommonUtils
+using NodesAndModes
 
 "Approximation parameters"
 N   = 3 # The order of approximation

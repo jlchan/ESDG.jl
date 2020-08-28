@@ -18,36 +18,26 @@ push!(LOAD_PATH, "./examples/EntropyStableEuler")
 using EntropyStableEuler
 
 "Approximation parameters"
-N = 3           # order of approximation
-CFL = .1      # sets dt0
-T = 1.0
+N = 1 # The order of approximation
+K1D = 10
+CFL = .15 # CFL goes up to 2.5ish
+T = 2 #1.95 #1.0 # endtime
 
 "Viscous parameters"
 mu = 1e-4
 lambda = -2/3*mu
-Pr = .71
+Pr = .72
 
-poly = polygon_unitSquareWithHole()
-poly.point .= @. poly.point*2 - 1
-poly.point[:,1:4] .*= 2.5
-poly.point[1,2:3] .*= 1.5
-poly.hole .= 0.0
-mesh = create_mesh(poly, info_str="CNS hole", voronoi=true, delaunay=true, set_area_max=true)
-VX = mesh.point[1,:]
-VY = mesh.point[2,:]
-EToV = Matrix(mesh.cell')
-
-# "Mesh related variables"
-# K1D = 16
-# Kx = K1D
-# Ky = K1D
-# VX, VY, EToV = uniform_tri_mesh(Kx, Ky)
-# @. VX = 2*VX
-# @. VY = 2*VY
+"Mesh related variables"
+Kx = 2*K1D
+Ky = K1D
+VX, VY, EToV = uniform_tri_mesh(Kx, Ky)
+@. VX = (1+VX)
+@. VY = (1+VY)/2
 
 # initialize ref element and mesh
 # specify lobatto nodes to automatically get DG-SEM mass lumping
-rd = init_reference_tri(N)
+rd = init_reference_tri(N,Nq=2*N+1)
 md = init_mesh((VX,VY),EToV,rd)
 
 # # Make domain periodic
@@ -83,20 +73,13 @@ Qshskew = .5*(Qsh-transpose(Qsh))
 @unpack x,y = md
 
 function freestream_primvars() # ρ,u,v,p
-    Ma = 1.5
-    return 1,1,0,1/(Ma^2*γ)
+    return 1,1,0,4/γ
 end
 U = ntuple(a->zeros(size(x)),4)
-for field = 1:4
-    U[field] .= freestream_primvars()[field]
+for fld = 1:4
+    U[fld] .= freestream_primvars()[fld]
 end
 Q = primitive_to_conservative(U...)
-
-# rho = @. 1.0 + exp(-10*(x^2+y^2))
-# u = zeros(size(x))
-# v = zeros(size(x))
-# p = @. rho^γ
-# Q = primitive_to_conservative(rho,u,v,p)
 
 # interpolate geofacs to both vol/surf nodes
 @unpack rxJ, sxJ, ryJ, syJ = md
@@ -110,14 +93,13 @@ ops = (Qrhskew,Qshskew,VhP,Ph,LIFT,Vq)
 "Time integration"
 rk4a,rk4b,rk4c = rk45_coeffs()
 CN = (N+1)*(N+2)/2  # estimated trace constant for CFL
-h  = minimum(minimum(md.J,dims=1)./maximum(md.sJ,dims=1)) # J/sJ = O(h)
-dt0 = CFL * h / CN
-dt = dt0
-# Nsteps = convert(Int,ceil(T/dt))
-# dt = T/Nsteps
+h  = 2/K1D
+dt = CFL * h / CN
+Nsteps = convert(Int,ceil(T/dt))
+dt = T/Nsteps
 
 "dense version - speed up by prealloc + transpose for col major "
-function dense_hadamard_sum(Qhe,ops,vgeo,flux_fun,Nq=Inf)
+function dense_hadamard_sum(Qhe,ops,vgeo,flux_fun)
 
     (Qr,Qs) = ops
     (rxJ,sxJ,ryJ,syJ) = vgeo
@@ -144,14 +126,12 @@ function dense_hadamard_sum(Qhe,ops,vgeo,flux_fun,Nq=Inf)
             Qj = getindex.(Qhe,j)
             Qlogj = getindex.(Qlog,j)
 
-            if (i > Nq & j > Nq)==false # skip over zero blocks
-                Fx,Fy = flux_fun(Qi,Qj,Qlogi,Qlogj)
-                @. QFi += QxTr[j,i]*Fx + QyTr[j,i]*Fy
-            end
+            Fx,Fy = flux_fun(Qi,Qj,Qlogi,Qlogj)
+            @. QFi += QxTr[j,i]*Fx + QyTr[j,i]*Fy
         end
 
-        for field in eachindex(Qhe)
-            QF[field][i] = QFi[field]
+        for fld in eachindex(Qhe)
+            QF[fld][i] = QFi[fld]
         end
     end
 
@@ -179,7 +159,7 @@ function rhs(Q,md::MeshData,ops,flux_fun::Fxn) where Fxn
     # compute face values
     QM = (x->x[Nq+1:Nh,:]).(Qh)
     QP = (x->x[mapP]).(QM)
-    impose_BCs_inviscid!(QP,QM,md)
+    impose_BCs_Qvars!(QP,QM,md)
 
     # simple lax friedrichs dissipation
     Uf =  (x->x[Nq+1:Nh,:]).(Uh)
@@ -201,7 +181,7 @@ function rhs(Q,md::MeshData,ops,flux_fun::Fxn) where Fxn
         vgeo_local = getindex.((rxJ,sxJ,ryJ,syJ),1,e) # assumes affine elements for now
 
         Qops = (Qrh,Qsh)
-        QFe = dense_hadamard_sum(Qhe,Qops,vgeo_local,flux_fun,Nq)
+        QFe = dense_hadamard_sum(Qhe,Qops,vgeo_local,flux_fun)
 
         mxm_accum!.(rhsQ,QFe,e)
     end
@@ -222,9 +202,10 @@ function dg_grad(Q,Qf,QP,md::MeshData,rd::RefElemData)
 
     volx(ur,us) = @. rxj*ur + sxj*us
     voly(ur,us) = @. ryj*ur + syj*us
-    surf(uP,uf,n) = LIFT*(@. .5*(uP-uf)*n)
-    rhsx = volx.(Qr,Qs) .+ surf.(QP,Qf,nxJ)
-    rhsy = voly.(Qr,Qs) .+ surf.(QP,Qf,nyJ)
+    surfx(uP,uf) = LIFT*(@. .5*(uP-uf)*nxJ)
+    surfy(uP,uf) = LIFT*(@. .5*(uP-uf)*nyJ)
+    rhsx = volx.(Qr,Qs) .+ surfx.(QP,Qf)
+    rhsy = voly.(Qr,Qs) .+ surfy.(QP,Qf)
     return (x->x./J).(rhsx),(x->x./J).(rhsy)
 end
 
@@ -272,44 +253,55 @@ end
 viscous_matrices! = init_visc_fxn(lambda,mu,Pr)
 
 function init_BC_funs(md::MeshData)
-    @unpack xf,yf,mapP,mapB,nxJ,nyJ,sJ = md
+    @unpack xf,yf,mapP,mapB,nxJ,nyJ = md
     xb,yb = (x->x[mapB]).((xf,yf))
 
-    freestream   = mapB[findall((@. xb^2 + yb^2 > 2))]
-    # freestream = mapB[findall((@. xb^2 + yb^2 < 2))] # ignore
-    wall         = mapB[findall((@. xb^2 + yb^2 < 2))]
+    #  _____
+    # |     |
+    # |_____|
+    # flat plate is x > 1 bottom part
+    tol = 1e-13
+    top    = @. abs(yb-1)<tol
+    bottom_left_wall = @. (@. xb < 1) & (@. abs(yb)<tol)
 
-    nxw = nxJ[wall]./sJ[wall]
-    nyw = nyJ[wall]./sJ[wall]
+    # define boundary regions
+    inflow   = mapB[findall(@. abs(xb)<tol)]
+    outflow  = mapB[findall(@. abs(xb-2)<tol)]
+    wall     = mapB[findall((@. abs(yb)<tol) .& (@. xb > 1))]
+    symmetry = mapB[findall(@. top | bottom_left_wall)]
 
-    nxfree = nxJ[freestream]./sJ[freestream]
-    nyfree = nyJ[freestream]./sJ[freestream]
+    # nxb,nyb =
 
-    # let nxb=nxb,nyb=nyb,freestream=freestream,wall=wall
-
-    function impose_BCs_inviscid!(QP,Qf,md::MeshData)
+    function impose_BCs_Qvars!(QP,Qf,md::MeshData)
         ρ_∞,u_∞,v_∞,p_∞ = freestream_primvars()
         β_∞ = betafun(primitive_to_conservative(ρ_∞,u_∞,v_∞,p_∞)...)
-        QP[1][freestream] .= ρ_∞
-        QP[2][freestream] .= u_∞
-        QP[3][freestream] .= v_∞
-        QP[4][freestream] .= β_∞
+        QP[1][inflow] .= ρ_∞
+        QP[2][inflow] .= u_∞
+        QP[3][inflow] .= v_∞
+        QP[4][inflow] .= β_∞
 
         # impose mirror states (no-normal flow) at wall (has normal (0,1))
-        u = Qf[2][wall]
-        v = Qf[3][wall]
-        Un = @. u*nxw + v*nyw
-        QP[2][wall] .= @. u - 2*Un*nxw
-        QP[3][wall] .= @. v - 2*Un*nyw
+        QP[2][wall] .= Qf[2][wall]
+        QP[3][wall] .= -Qf[3][wall] # yvelocity = mirror normal velocity
         QP[4][wall] .= Qf[4][wall]
+
+        # impose dual to stress mirror states at symmetry
+        QP[2][symmetry] .= Qf[2][symmetry]
+        QP[3][symmetry] .= Qf[3][symmetry]
+        QP[4][symmetry] .= Qf[4][symmetry]
+
+        # "do nothing" BCs
+        QP[2][outflow] .= Qf[2][outflow]
+        QP[3][outflow] .= Qf[3][outflow]
+        QP[4][outflow] .= β_∞ #Qf[4][outflow]
     end
     # evars = [??, u/T, v/T, -1/T]
     function impose_BCs_entropyvars!(VUP,VUf,md::MeshData)
 
         # impose freestream at inflow
         V_∞ = v_ufun(primitive_to_conservative(freestream_primvars()...)...)
-        for field = 1:4
-            VUP[field][freestream] .= V_∞[field]
+        for fld = 1:4
+            VUP[fld][inflow] .= V_∞[fld]
         end
 
         # impose mirror states (no-normal flow) at wall (has normal (0,1))
@@ -317,32 +309,46 @@ function init_BC_funs(md::MeshData)
         VUP[3][wall] .= -VUf[3][wall] # yvelocity = normal
         VUP[4][wall] .= VUf[4][wall]
 
+        # impose dual to stress mirror states at symmetry
+        VUP[2][symmetry] .= VUf[2][symmetry]
+        VUP[3][symmetry] .= VUf[3][symmetry]
+        VUP[4][symmetry] .= VUf[4][symmetry]
+
+        # "do nothing" BCs
+        VUP[2][outflow] .= VUf[2][outflow]
+        VUP[3][outflow] .= VUf[3][outflow]
+        VUP[4][outflow] .= V_∞[4]
     end
     function impose_BCs_stress!(σxP,σyP,σxf,σyf,md::MeshData)
-
         # zero normal stress at inflow
-        for field = 1:4
-            σn = @. σxf[field][freestream]*nxfree + σyf[field][freestream]*nyfree
-            σxP[field][freestream] .= @. σxf[field][freestream] - 2*σn*nxfree
-            σyP[field][freestream] .= @. σyf[field][freestream] - 2*σn*nyfree
+        for fld = 1:4
+            σxP[fld][inflow] .= -σxf[fld][inflow]
         end
 
         # wall and symmetry = normal vector is (0,1), so normal stress = σy
         # wall = zero Dirichlet condition on velocity
         σyP[2][wall] .= σyf[2][wall]
         σyP[3][wall] .= σyf[3][wall]
-        σ4n = @. σxf[4][wall]*nxw + σyf[4][wall]*nyw
-        σxP[4][wall] .= @. σxf[4][wall] - 2*σ4n*nxw
-        σyP[4][wall] .= @. σyf[4][wall] - 2*σ4n*nyw
+        σyP[4][wall] .= -σyf[4][wall]
+
+        # symmetry = zero normal Neumann condition
+        σyP[2][symmetry] .= -σyf[2][symmetry]
+        σyP[3][symmetry] .= -σyf[3][symmetry]
+        σyP[4][symmetry] .= -σyf[4][symmetry]
+
+        # outflow
+        σxP[2][outflow] .= σxf[2][outflow]
+        σxP[3][outflow] .= σxf[3][outflow]
+        σxP[4][outflow] .= σxf[4][outflow]
     end
-    return impose_BCs_inviscid!,impose_BCs_entropyvars!,impose_BCs_stress!
+    return impose_BCs_Qvars!,impose_BCs_entropyvars!,impose_BCs_stress!
 end
-impose_BCs_inviscid!,impose_BCs_entropyvars!,impose_BCs_stress! = init_BC_funs(md)
+impose_BCs_Qvars!,impose_BCs_entropyvars!,impose_BCs_stress! = init_BC_funs(md)
 
 function visc_rhs(Q,md::MeshData,rd::RefElemData)
 
     @unpack Pq,Vq,Vf,LIFT = rd
-    @unpack K,mapP,J,sJ,nxJ,nyJ = md
+    @unpack K = md
 
     Nfields = length(Q)
 
@@ -395,121 +401,62 @@ function visc_rhs(Q,md::MeshData,rd::RefElemData)
     syP = (x->x[mapP]).(syf)
     impose_BCs_stress!(sxP,syP,sxf,syf,md)
 
-    # # add penalty
-    dV = ((xP,x)->(xP-x)).(VUP,VUf)
-
-    # # arbitrary scaling
-    # VUq = v_ufun((x->Vq*x).(Q)...)
-    # VUf = v_ufun((x->Vf*x).(Q)...)
-    # VUf_proj = (x->Vf*Pq*x).(VUq)
-    # Nfaces = Int(3)
-    # Nfq = Int(length(rd.wf)/Nfaces)
-    # face_norms(x) = sum(reshape(wsJ.*x.^2,Nfq,rd.Nfaces*md.K),dims=1)
-    # VUf_err = vec(sum(face_norms.(VUf.-VUf_proj))./sum(face_norms.(VUf_proj)))
-    # tau = 100*min(max(maximum(VUf_err),1/10),1) # global penalty scaling
-
-    dV[1] .= 0 # ignore penalty for mass equation
-    # tau = .1
-    # LdV = (x->nxJ.*(Vf*((LIFT*(@. x*nxJ))./J)) + nyJ.*(Vf*((LIFT*(@. x*nyJ))./J))).(dV)
-    # visc_penalty = (x-> -tau*LIFT*(x[mapP]-x)).(LdV) # BR2 penalty
-    h  = minimum(minimum(md.J,dims=1)./maximum(md.sJ,dims=1))
-    tau = .25/h
-    visc_penalty = (x->tau*(LIFT*(x.*md.sJ))./md.J).(dV) # IPDG type penalty
-
-    return dg_div(sigma_x,sxf,sxP,sigma_y,syf,syP,md,rd) .+ visc_penalty
+    # add penalty
+    tau = .5
+    dV = ((xP,x)->xP-x).(VUP,VUf)
+    return dg_div(sigma_x,sxf,sxP,sigma_y,syf,syP,md,rd) .+ (x->tau*LIFT*x).(dV)
 end
 
-
-function rhsRK(Q,rd,md,ops,fluxes::Fxn) where Fxn
-    rhsQ = rhs(Q,md,ops,euler_fluxes)
-    visc_rhsQ = visc_rhs(Q,md,rd)
-    bcopy!.(rhsQ, @. rhsQ + visc_rhsQ)
-
-    let Pq=rd.Pq,Vq=rd.Vq,wJq=md.wJq
-        rhstest = 0.0
-        VU = v_ufun((x->Vq*x).(Q)...)
-        VUq = (x->Vq*Pq*x).(VU)
-        for field in eachindex(rhsQ)
-            rhstest += sum(wJq.*VUq[field].*(Vq*rhsQ[field]))
-        end
-        return rhsQ,rhstest
-    end
-end
-
-# dopri coeffs
-rka,rkE,rkc = dopri45_coeffs()
-
-# DOPRI storage
-Qtmp = similar.(Q)
-rhsQrk = ntuple(x->zero.(Q),length(rkE))
-
-errEst = 0.0
-prevErrEst = 0.0
-
-t = 0.0
-i = 0
-interval = 10
-
-dthist = [dt]
-thist = [0.0]
-errhist = [0.0]
-wsJ = diagm(rd.wf)*md.sJ
-
-rhsQ,_ = rhsRK(Q,rd,md,ops,euler_fluxes)
-bcopy!.(rhsQrk[1],rhsQ) # initialize DOPRI rhs (FSAL property)
-while t < T
-    # DOPRI step and
-    rhstest = 0.0
-    for INTRK = 2:7
-        k = zero.(Qtmp)
-        for s = 1:INTRK-1
-            bcopy!.(k, @. k + rka[INTRK,s]*rhsQrk[s])
-        end
-        bcopy!.(Qtmp, @. Q + dt*k)
-        rhsQ,rhstest = rhsRK(Qtmp,rd,md,ops,euler_fluxes)
-        bcopy!.(rhsQrk[INTRK],rhsQ)
-    end
-    errEstVec = zero.(Qtmp)
-    for s = 1:7
-        bcopy!.(errEstVec, @. errEstVec + rkE[s]*rhsQrk[s])
-    end
-
-    errTol = 1e-5
-    errEst = 0.0
-    for field = 1:length(Qtmp)
-        errEstScale = @. abs(errEstVec[field]) / (errTol*(1+abs(Q[field])))
-        errEst += sum(errEstScale.^2) # hairer seminorm
-    end
-    errEst = sqrt(errEst/(length(Q[1])*4))
-    if errEst < 1.0 # if err small, accept step and update
-            bcopy!.(Q, Qtmp)
-            global t += dt
-            bcopy!.(rhsQrk[1], rhsQrk[7]) # use FSAL property
-    end
-    order = 5
-    dtnew = .8*dt*(.9/errEst)^(.4/(order+1)) # P controller
-    if i > 0 # use PI controller if prevErrEst available
-            dtnew *= (prevErrEst/max(1e-14,errEst))^(.3/(order+1))
-    end
-    global dt = max(min(10*dt0,dtnew),1e-9) # max/min dt
-    global prevErrEst = errEst
-
-    push!(dthist,dt)
-    push!(thist,t)
-
-    global i = i + 1  # number of total steps attempted
-    if i%interval==0
-        println("i = $i, t = $t, dt = $dtnew, errEst = $errEst, rhstest = $rhstest")
-    end
-end
-
-scatter!(thist,dthist)
-# scatter!(thist,errhist./maximum(errhist))
-
-#plotting nodes
+resQ = zero.(Q)
+interval = 5
 @unpack Vp = rd
 gr(aspect_ratio=:equal,legend=false,
-   markerstrokewidth=0)
+   markerstrokewidth=0,markersize=2)
+xp = Vp*x
+yp = Vp*y
 
-vv = Vp*Q[1]
-scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90),ms=2)
+@gif for i = 1:Nsteps
+
+    rhstest = 0
+    for INTRK = 1:5
+        rhsQ = rhs(Q,md,ops,euler_fluxes)
+        visc_rhsQ = visc_rhs(Q,md,rd)
+
+        bcopy!.(rhsQ,@. rhsQ + visc_rhsQ)
+
+        let VhP=VhP,Vq=rd.Vq,wJq=md.wJq
+            if INTRK==5
+                VU = v_ufun((x->Vq*x).(Q)...)
+                VU = (x->VhP*x).(VU)
+                for fld in eachindex(rhsQ)
+                    VUq = VU[fld][1:size(Vq,1),:]
+                    rhstest += sum(wJq.*VUq.*(Vq*rhsQ[fld]))
+                end
+            end
+        end
+
+        # RK step
+        bcopy!.(resQ, @. rk4a[INTRK]*resQ + dt*rhsQ)
+        bcopy!.(Q, @. Q + rk4b[INTRK]*resQ)
+    end
+
+    if i%interval==0 || i==Nsteps
+        println("Time step: $i out of $Nsteps with rhstest = $rhstest")
+
+        vv = Vp*Q[1]
+        scatter(xp,yp,vv,zcolor=vv,camera=(0,90),title="Step $i: min/max = $(minimum(vv)), $(maximum(vv))")
+    end
+end every interval
+
+
+# #plotting nodes
+# @unpack Vp = rd
+# gr(aspect_ratio=:equal,legend=false,
+#    markerstrokewidth=0,markersize=2)
+#
+
+p = pfun(Q...)
+ρ = Q[1]
+c = @. sqrt(γ*p/ρ)
+vv = Vp*(1 ./ c)
+scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90))
