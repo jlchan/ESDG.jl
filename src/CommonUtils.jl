@@ -74,7 +74,7 @@ function dopri45_coeffs()
     return rk4a,rk4E,rk4c
 end
 
-include("./geometric_factors.jl")
+include("./mapping_functions.jl")
 include("./mesh_functions.jl")
 include("./node_map_functions.jl")
 
