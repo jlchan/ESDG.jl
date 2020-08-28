@@ -6,7 +6,7 @@ Includes mesh related utility functions
 
 module UniformTriMesh
 
-using SparseArrays
+# using SparseArrays
 using CommonUtils # for meshgrid
 
 export uniform_tri_mesh
@@ -44,7 +44,6 @@ end
 function uniform_tri_mesh(Kx)
         return uniform_tri_mesh(Kx,Kx)
 end
-
 
 function tri_face_vertices()
         return [1,2],[2,3],[3,1]

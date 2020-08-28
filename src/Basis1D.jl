@@ -1,7 +1,7 @@
 """
     Module Basis1D
 
-Includes general math tools
+Includes general math tools and DG core functions
 """
 
 module Basis1D

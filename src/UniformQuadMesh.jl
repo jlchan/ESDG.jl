@@ -6,14 +6,14 @@ Includes mesh related utility functions
 
 module UniformQuadMesh
 
-using SparseArrays
+# using SparseArrays
 using CommonUtils # for meshgrid
 
 export uniform_quad_mesh
 export quad_face_vertices
 
 """
-uniform_quad_mesh(Kx::Int,Ky::Int)
+uniform_quad_mesh(Kx,Ky)
 
 Matlab uniform triangular mesh.
 
@@ -52,16 +52,6 @@ end
 function uniform_quad_mesh(Kx)
         return uniform_quad_mesh(Kx,Ky)
 end
-
-"""
-connect_2D(EToV)
-
-Initialize quad elements connectivity matrices, element to element and
-element to face connectivity.
-
-# Examples
-```jldoctest
-"""
 
 # ordering matters...
 function quad_face_vertices()

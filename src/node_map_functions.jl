@@ -60,7 +60,7 @@ function build_periodic_boundary_maps!(xf,yf,LX,LY,NfacesTotal,mapM,mapP,mapB,FT
 
     returns mapPB, such that
         mapP[mapB] = mapPB modifies mapP to produce a periodic node map
-    optional: modifies FToF to get periodic boundary faces
+    optional: modifies FToF to get periodic boundary face map (for implicit)
 
 """
 
@@ -131,12 +131,11 @@ function build_periodic_boundary_maps!(xf,yf,LX,LY,NfacesTotal,mapM,mapP,mapB,FT
         return mapPB[:]
 end
 
+"Build 2D periodic boundary maps without mutating FToF"
 function build_periodic_boundary_maps(xf,yf,LX,LY,NfacesTotal,mapM,mapP,mapB)
-
     FToF = collect(1:NfacesTotal) # dummy argument
     mapPB = build_periodic_boundary_maps!(xf,yf,LX,LY,NfacesTotal,mapM,mapP,mapB,FToF)
     return mapPB[:]
-
 end
 
 "3D version of build_periodic_boundary_maps"
