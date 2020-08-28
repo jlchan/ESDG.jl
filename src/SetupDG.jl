@@ -35,6 +35,7 @@ export init_reference_quad, init_reference_hex
 export init_mesh
 export MeshData, RefElemData
 
+# annotate types for all arrays involved in RHS evaluation
 mutable struct RefElemData
 
     Nfaces; fv # face vertex tuple list
@@ -55,8 +56,6 @@ mutable struct RefElemData
 
     nrJ; nsJ; ntJ # reference normals
 
-    # annotate types for all matrices involved in RHS evaluation
-
     # differentiation matrices
     Dr::Array{Float64,2}
     Ds::Array{Float64,2}
@@ -70,6 +69,7 @@ mutable struct RefElemData
     RefElemData() = new() # empty initializer
 end
 
+# annotate types for geofacs + connectivity arrays for speed in RHS evals
 mutable struct MeshData
 
     VX; VY; VZ              # vertex coordinates
@@ -81,8 +81,6 @@ mutable struct MeshData
     xf; yf; zf
     xq; yq; zq;             # phys quad points, Jacobian-scaled weights
     wJq::Array{Float64,2}
-
-    # annotate types for geofacs + connectivity arrays for speed in RHS evals
 
     # arrays of connectivity indices between face nodes
     mapM
@@ -141,7 +139,6 @@ function init_reference_interval(N;Nq=N+1)
     @pack! rd = rp,Vp
 
     return rd
-
 end
 
 function init_reference_tri(N;Nq=2*N)
