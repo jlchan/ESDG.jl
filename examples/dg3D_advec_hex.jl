@@ -11,7 +11,7 @@ using SparseArrays
 using CommonUtils
 using NodesAndModes
 using NodesAndModes.Hex
-using UniformHexMesh
+using UniformMeshes
 
 using SetupDG
 using UnPack

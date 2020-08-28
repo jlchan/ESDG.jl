@@ -6,7 +6,7 @@ push!(LOAD_PATH, "./src") # user defined modules
 using CommonUtils
 using NodesAndModes
 using NodesAndModes.Tri
-using UniformTriMesh
+using UniformMeshes
 
 "Approximation parameters"
 N   = 3 # The order of approximation

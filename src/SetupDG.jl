@@ -19,6 +19,8 @@ using CommonUtils # for I matrix in geometricFactors
 # for basis functions
 using NodesAndModes
 
+# using UniformMeshes # for face vertex ordering
+
 # triangular routines
 import UniformTriMesh # for face vertices
 
@@ -26,7 +28,6 @@ import UniformTriMesh # for face vertices
 import UniformQuadMesh # for face vertices
 
 # hex routines
-import Basis3DHex
 import UniformHexMesh # for face vertices
 
 # initialization of mesh/reference element data
@@ -37,7 +38,6 @@ export MeshData, RefElemData
 
 # annotate types for all arrays involved in RHS evaluation
 mutable struct RefElemData
-
     Nfaces; fv # face vertex tuple list
 
     # non-RHS operators
@@ -71,7 +71,6 @@ end
 
 # annotate types for geofacs + connectivity arrays for speed in RHS evals
 mutable struct MeshData
-
     VX; VY; VZ              # vertex coordinates
     K::Int                  # num elems
     EToV                    # mesh vertex array
@@ -142,7 +141,6 @@ function init_reference_interval(N;Nq=N+1)
 end
 
 function init_reference_tri(N;Nq=2*N)
-
     # initialize a new reference element data struct
     rd = RefElemData()
 
@@ -196,7 +194,6 @@ end
 # default to full quadrature nodes
 # if quad_nodes_1D=tuple of (r1D,w1D) is supplied, use those nodes
 function init_reference_quad(N,quad_nodes_1D = gauss_quad(0,0,N))
-
     # initialize a new reference element data struct
     rd = RefElemData()
 
@@ -266,7 +263,6 @@ function init_mesh(VXYZ,EToV,rd::RefElemData)
 end
 
 function init_mesh(VX,VY,EToV,rd::RefElemData)
-
     # initialize a new mesh data struct
     md = MeshData()
 
@@ -314,7 +310,6 @@ end
 "========== 3D routines ============="
 
 function init_reference_hex(N,quad_nodes_1D=gauss_quad(0,0,N))
-
     # initialize a new reference element data struct
     rd = RefElemData()
 
@@ -380,7 +375,6 @@ function init_reference_hex(N,quad_nodes_1D=gauss_quad(0,0,N))
 end
 
 function init_mesh(VX,VY,VZ,EToV,rd::RefElemData)
-
     # initialize a new mesh data struct
     md = MeshData()
 

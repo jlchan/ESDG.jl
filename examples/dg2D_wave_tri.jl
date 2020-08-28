@@ -5,7 +5,7 @@ using LinearAlgebra
 push!(LOAD_PATH, "./src") # user defined modules
 using CommonUtils
 using NodesAndModes.Tri
-using UniformTriMesh
+using UniformMeshes
 
 using SetupDG
 using UnPack

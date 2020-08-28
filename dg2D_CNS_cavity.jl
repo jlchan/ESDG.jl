@@ -9,7 +9,7 @@ push!(LOAD_PATH, "./src")
 using CommonUtils
 using NodesAndModes
 using NodesAndModes.Tri
-using UniformTriMesh
+using UniformMeshes
 
 using SetupDG
 

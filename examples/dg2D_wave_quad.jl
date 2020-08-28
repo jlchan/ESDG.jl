@@ -9,7 +9,7 @@ push!(LOAD_PATH, "./src")
 using CommonUtils
 using NodesAndModes
 using NodesAndModes.Quad
-using UniformQuadMesh
+using UniformMeshes
 
 using SetupDG
 using UnPack
