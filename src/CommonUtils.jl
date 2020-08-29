@@ -9,27 +9,14 @@ module CommonUtils
 using LinearAlgebra # for I matrix in geometricFactors
 using SparseArrays  # for spdiagm
 
-# export meshgrid from VectorizedRoutines
-import VectorizedRoutines.Matlab.meshgrid
-export meshgrid
-
-# convert array of tuples to tuples of arrays
-export unzip
-unzip(a) = map(x->getfield.(a, x), fieldnames(eltype(a)))
-
-# Convenience routines for identity matrices.
-# Pair with kron to make block diagonal or banded matrices
-export eye, speye
-eye(n) = diagm(ones(n))
-speye(n) = spdiagm(0 => ones(n))
+# # convert array of tuples to tuples of arrays
+# export unzip
+# unzip(a) = map(x->getfield.(a, x), fieldnames(eltype(a)))
 
 # convenience routines used for broadcasting over tuples of arrays
 export bcopy!, bmult
 bcopy!(x,y) = x .= y
 bmult(x,y) = x .* y
-
-export connect_mesh, build_node_maps, geometric_factors
-export build_periodic_boundary_maps, build_periodic_boundary_maps!
 
 export rk45_coeffs, dopri45_coeffs
 
@@ -73,7 +60,20 @@ function dopri45_coeffs()
     return rk4a,rk4E,rk4c
 end
 
-include("./mapping_functions.jl")
+
+# export meshgrid from VectorizedRoutines
+import VectorizedRoutines.Matlab.meshgrid
+export meshgrid
+
+# Convenience routines for identity matrices.
+export eye, speye
+eye(n) = diagm(ones(n))
+speye(n) = spdiagm(0 => ones(n))
+
+export connect_mesh, build_node_maps, geometric_factors
+export build_periodic_boundary_maps, build_periodic_boundary_maps!
+
+include("./geometric_mapping_functions.jl")
 include("./mesh_functions.jl")
 include("./node_map_functions.jl")
 
