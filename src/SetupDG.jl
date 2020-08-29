@@ -3,36 +3,28 @@ Module Setup2D
 
 Module to aid in setting up reference operators, meshes, geometric terms
 Also provides functions to assemble global DG-SBP operators
-
 """
 
 module SetupDG
 
 # non-DG modules
-using LinearAlgebra # for diagm
+using LinearAlgebra # for diagm, identity matrix I
 using SparseArrays # for sparse, droptol
 using UnPack # for easy setting/getting in mutable structs
 
 # matlab-like modules
-using CommonUtils # for I matrix in geometricFactors
+using CommonUtils
 
 # for basis functions
 using NodesAndModes
 
-using UniformMeshes # for face vertex orderings
-
-# # triangular routines
-# import UniformTriMesh # for face vertices
-#
-# # quadrilateral routines
-# import UniformQuadMesh # for face vertices
-#
-# # hex routines
-# import UniformHexMesh # for face vertices
+# for face vertex orderings
+using UniformMeshes
 
 # initialization of mesh/reference element data
-export init_reference_interval, init_reference_tri
-export init_reference_quad, init_reference_hex
+export init_reference_interval
+export init_reference_quad, init_reference_tri
+export init_reference_hex
 export init_mesh
 export MeshData, RefElemData
 
@@ -215,9 +207,6 @@ function init_reference_quad(N,quad_nodes_1D = gauss_quad(0,0,N))
     @pack! rd = V1
 
     #Nodes on faces, and face node coordinate
-    # r1D,w1D = quad_nodes_1D(0,0,N)
-    # r1D,w1D = gauss_lobatto_quad(0,0,N)
-    # r1D,w1D = gauss_quad(0,0,N)
     r1D,w1D = quad_nodes_1D
     Nfp = length(r1D)
     e = ones(size(r1D))
@@ -241,12 +230,6 @@ function init_reference_quad(N,quad_nodes_1D = gauss_quad(0,0,N))
 
     Vf = Quad.vandermonde_2D(N,rf,sf)/VDM # interpolates from nodes to face nodes
     LIFT = M\(Vf'*diagm(wf)) # lift matrix used in rhs evaluation
-
-    # expose kronecker product sparsity
-    #Dr = droptol!(sparse(Dr), 1e-10)
-    #Ds = droptol!(sparse(Ds), 1e-10)
-    #Vf = droptol!(sparse(Vf),1e-10)
-    #LIFT = droptol!(sparse(LIFT),1e-10)
     @pack! rd = Dr,Ds,Vf,LIFT
 
     # plotting nodes
@@ -305,7 +288,6 @@ function init_mesh(VX,VY,EToV,rd::RefElemData)
 
     return md
 end
-
 
 "========== 3D routines ============="
 

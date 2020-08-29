@@ -92,11 +92,11 @@ function build_global_ops(rd::RefElemData,md::MeshData)
 
         # globalize operators and nodes
         @unpack x,y,J = md
-        VhTr = kron(speye(K),sparse(transpose(Vh)))
-        Vh   = kron(speye(K),sparse(Vh))
+        VhTr = kron(eye(K),sparse(transpose(Vh)))
+        Vh   = kron(eye(K),sparse(Vh))
         M    = kron(spdiagm(0 => J[1,:]),sparse(M))
-        Vq   = kron(speye(K),sparse(rd.Vq))
-        Pq   = kron(speye(K),sparse(rd.Pq))
+        Vq   = kron(eye(K),sparse(rd.Vq))
+        Pq   = kron(eye(K),sparse(rd.Pq))
         Ph   = kron(spdiagm(0 => 1 ./ J[1,:]), sparse(Ph))
         x,y = (a->a[:]).((x,y))
 
@@ -203,7 +203,7 @@ function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData,funs,dt)
         Fx,Fy,dFx,dFy,LF,dLF = funs
 
         Nfields = length(Q)
-        Id_fld  = speye(Nfields) # for Kronecker expansion to large matrices - fix later with lazy evals
+        Id_fld  = eye(Nfields) # for Kronecker expansion to large matrices - fix later with lazy evals
         Vq_fld  = droptol!(kron(Id_fld,Vq),1e-13)
         VhP     = Vh*Pq
         VhP_fld = droptol!(kron(Id_fld,VhP),1e-13)
@@ -212,8 +212,8 @@ function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData,funs,dt)
 
         # init jacobian matrix (no need for entropy projection since we'll zero it out later)
         dFdU_h = repeat(I+Ax+Ay,Nfields,Nfields)
-        dVdU_q = repeat(speye(size(Vq,1)),Nfields,Nfields)
-        dUdV_h = repeat(speye(size(Vh,1)),Nfields,Nfields)
+        dVdU_q = repeat(eye(size(Vq,1)),Nfields,Nfields)
+        dUdV_h = repeat(eye(size(Vh,1)),Nfields,Nfields)
         function midpt_newton_iter!(Qnew, Qprev) # for Burgers' eqn specifically
 
                 # perform entropy projection

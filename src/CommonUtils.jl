@@ -14,6 +14,7 @@ using SparseArrays  # for spdiagm
 # unzip(a) = map(x->getfield.(a, x), fieldnames(eltype(a)))
 
 # convenience routines used for broadcasting over tuples of arrays
+# used during time-stepping update of fields
 export bcopy!, bmult
 bcopy!(x,y) = x .= y
 bmult(x,y) = x .* y
@@ -66,10 +67,11 @@ import VectorizedRoutines.Matlab.meshgrid
 export meshgrid
 
 # Convenience routines for identity matrices.
-export eye, speye
+export eye #, speye
 eye(n) = diagm(ones(n))
-speye(n) = spdiagm(0 => ones(n))
+# eye(n) = spdiagm(0 => ones(n))
 
+# spatial assembly routines
 export connect_mesh, build_node_maps, geometric_factors
 export build_periodic_boundary_maps, build_periodic_boundary_maps!
 

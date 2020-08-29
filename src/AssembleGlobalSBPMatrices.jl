@@ -15,7 +15,7 @@ function build_rhs_matrix(applyRHS,Np,K,vargs...)
 flexible but slow function to construct global matrices based on rhs evals
 applyRHS = function to evaluate rhs f(u(t)) given a solution vector u(t)
 Np,K = number dofs and elements
-vargs = other args for applyRHS
+vargs = other args for applyRHS(...)
 
 # Examples
 ```jldoctest

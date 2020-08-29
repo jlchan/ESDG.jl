@@ -91,8 +91,8 @@ function build_global_ops(rd::RefElemData,md::MeshData)
 
         # globalize operators and nodes
         @unpack x,y,J = md
-        VhTr = kron(speye(K),sparse(transpose(Vh)))
-        Vh   = kron(speye(K),sparse(Vh))
+        VhTr = kron(eye(K),sparse(transpose(Vh)))
+        Vh   = kron(eye(K),sparse(Vh))
         M    = kron(spdiagm(0 => J[1,:]),sparse(M))
         Ph   = kron(spdiagm(0 => 1 ./ J[1,:]), sparse(Ph))
         x,y = (a->a[:]).((x,y))
@@ -146,7 +146,7 @@ function init_newton_fxn(Q,ops,rd::RefElemData,md::MeshData,funs,dt)
 
         # get lengths of arrays
         Nfields = length(Q)
-        Id_fields = speye(Nfields) # for Kronecker expansion to large matrices - fix later with lazy evals
+        Id_fields = eye(Nfields) # for Kronecker expansion to large matrices - fix later with lazy evals
         Vh_fields = droptol!(kron(Id_fields,Vh),1e-12)
         M_fields  = droptol!(kron(Id_fields,M),1e-12)
 
