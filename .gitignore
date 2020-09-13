@@ -1,6 +1,10 @@
 *.jl.cov
 *.jl.*.cov
 *.jl.mem
+*.png
+*.jpg
+*.txt
+*.vtu
 deps/deps.jl
 docs/build
 
