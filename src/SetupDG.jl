@@ -61,12 +61,15 @@ mutable struct RefElemData
     Dr::Union{Array{Float64,2},SparseMatrixCSC{Float64,Int64}}
     Ds::Union{Array{Float64,2},SparseMatrixCSC{Float64,Int64}}
     Dt::Union{Array{Float64,2},SparseMatrixCSC{Float64,Int64}}
-    Vq::Union{Array{Float64,2},SparseMatrixCSC{Float64,Int64}}   # quadrature interpolation matrices
-    Vf::Union{Array{Float64,2},SparseMatrixCSC{Float64,Int64}}
+    # Vq::Union{Array{Float64,2},SparseMatrixCSC{Float64,Int64}}   # quadrature interpolation matrices
+    # Vf::Union{Array{Float64,2},SparseMatrixCSC{Float64,Int64}}
     M::Union{Array{Float64,2},SparseMatrixCSC{Float64,Int64}}    # mass matrix
-    Pq::Union{Array{Float64,2},SparseMatrixCSC{Float64,Int64}}   # L2 projection matrix
-    LIFT::Union{Array{Float64,2},SparseMatrixCSC{Float64,Int64}} # quadrature-based lift matrix
-
+    Vq::Array{Float64,2}
+    Vf::Array{Float64,2}
+    Pq::Array{Float64,2}
+    LIFT::Array{Float64,2}
+    # Pq::Union{Array{Float64,2},SparseMatrixCSC{Float64,Int64}}   # L2 projection matrix
+    # LIFT::Union{Array{Float64,2},SparseMatrixCSC{Float64,Int64}} # quadrature-based lift matrix
 
     RefElemData() = new() # empty initializer
 end
@@ -74,13 +77,14 @@ end
 mutable struct MeshData
 
     VX; VY; VZ              # vertex coordinates
-    K                       # num elems
+    K::Int64                # num elems
     EToV                    # mesh vertex array
     FToF::Array{Int64,2}    # face connectivity
 
     x; y; z                 # physical points
     xf; yf; zf
-    xq; yq; zq; wJq         # phys quad points, Jacobian-scaled weights
+    xq; yq; zq;
+    wJq::Array{Float64,2}   # phys quad points, Jacobian-scaled weights
 
     # annotate types for geofacs + connectivity arrays for speed in RHS evals
 

@@ -13,7 +13,7 @@ Unorm(U) = sum((x->x.^2).(U))
 
 "primitive pressure to conservative vars"
 function primitive_to_conservative(rho,U,p)
-    rhoU = (x->rho.*x).(U) 
+    rhoU = (x->rho.*x).(U)
     unorm = Unorm(U)
     E = (@. p/(γ-1) + .5*rho*unorm)
     return (rho,rhoU...,E)
