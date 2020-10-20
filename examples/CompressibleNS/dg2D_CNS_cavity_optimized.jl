@@ -19,8 +19,11 @@ using EntropyStableEuler
 "Approximation parameters"
 N = 2 # The order of approximation
 K1D = 15
-CFL = 0.5 # CFL goes up to 2.5ish
+CFL = 0.01 # CFL goes up to 2.5ish
 T = 20.0 # endtime
+BCTYPE = 2 # 1 - adiabatic, 2 - Isothermal, 3 - Slip
+inviscid_dissp = true
+viscous_dissp = true
 
 "Viscous parameters"
 Re = 1000
@@ -125,7 +128,7 @@ end
 
 
 
-function init_BC_funs(md::MeshData)
+function init_BC_funs(md::MeshData,BCTYPE::Int64)
     @unpack xf,yf,mapP,mapB,nxJ,nyJ,sJ = md
     xb,yb = (x->x[mapB]).((xf,yf))
 
@@ -167,54 +170,74 @@ function init_BC_funs(md::MeshData)
     end
 
     function impose_BCs_entropyvars!(VUP,VUf,md::MeshData)
-        # Adiabatic no-slip BC
-        @. VUP[2][wall] = -VUf[2][wall]
-        @. VUP[3][wall] = -VUf[3][wall]
-        @. VUP[4][wall] =  VUf[4][wall]
+        if BCTYPE == 1
+            # Adiabatic no-slip BC
+            @. VUP[2][wall] = -VUf[2][wall]
+            @. VUP[3][wall] = -VUf[3][wall]
+            @. VUP[4][wall] =  VUf[4][wall]
 
-        @. VUP[2][lid] = -VUf[2][lid] - 2*vlid*VUf[4][lid]
-        @. VUP[3][lid] = -VUf[3][lid]
-        @. VUP[4][lid] =  VUf[4][lid]
+            @. VUP[2][lid] = -VUf[2][lid] - 2*vlid*VUf[4][lid]
+            @. VUP[3][lid] = -VUf[3][lid]
+            @. VUP[4][lid] =  VUf[4][lid]
+        elseif BCTYPE == 2
+            theta = 1.0/0.3^2/1.4/0.4#1.0
+            # Isothermal BC
+            @. VUP[2][wall] = -VUf[2][wall]
+            @. VUP[3][wall] = -VUf[3][wall]
+            @. VUP[4][wall] = -2.0/theta-VUf[4][wall]
+            # @. VUP[2][wall] = -VUf[2][wall]
+            # @. VUP[3][wall] = -VUf[3][wall]
+            # @. VUP[4][wall] =  VUf[4][wall]
 
-        # theta = 2.0
-        # # Isothermal BC
-        # @. VUP[2][wall] = -VUf[2][wall]
-        # @. VUP[3][wall] = -VUf[3][wall]
-        # @. VUP[4][wall] = -2.0/theta-VUf[4][wall]
-        #
-        # @. VUP[2][lid] = 2.0/theta-VUf[2][lid]
-        # @. VUP[3][lid] = -VUf[3][lid]
-        # @. VUP[4][lid] = -2.0/theta-VUf[4][lid]
+            @. VUP[2][lid] = 2.0/theta-VUf[2][lid]
+            @. VUP[3][lid] = -VUf[3][lid]
+            @. VUP[4][lid] = -2.0/theta-VUf[4][lid]
+        end
     end
 
     function impose_BCs_stress!(σxP,σyP,σxf,σyf,VUf,md::MeshData)
-        # Adiabatic no-slip BC
-        @. σxP[2][wall] = σxf[2][wall]
-        @. σyP[2][wall] = σyf[2][wall]
-        @. σxP[3][wall] = σxf[3][wall]
-        @. σyP[3][wall] = σyf[3][wall]
+        if BCTYPE == 1
+            # Adiabatic no-slip BC
+            @. σxP[2][wall] = σxf[2][wall]
+            @. σyP[2][wall] = σyf[2][wall]
+            @. σxP[3][wall] = σxf[3][wall]
+            @. σyP[3][wall] = σyf[3][wall]
 
-        @. σxP[2][lid] = σxf[2][lid]
-        @. σyP[2][lid] = σyf[2][lid]
-        @. σxP[3][lid] = σxf[3][lid]
-        @. σyP[3][lid] = σyf[3][lid]
+            @. σxP[2][lid] = σxf[2][lid]
+            @. σyP[2][lid] = σyf[2][lid]
+            @. σxP[3][lid] = σxf[3][lid]
+            @. σyP[3][lid] = σyf[3][lid]
 
-        @. σxP[4][wall] = -σxf[4][wall]
-        @. σyP[4][wall] = -σyf[4][wall]
-        @. σxP[4][lid]  = -σxf[4][lid] + 2*vlid*σxf[2][lid]
-        @. σyP[4][lid]  = -σyf[4][lid] + 2*vlid*σyf[2][lid]
-
-        # # Isothermal
-        # @. σxP[2][boundary] = σxf[2][boundary]
-        # @. σyP[2][boundary] = σyf[2][boundary]
-        # @. σxP[3][boundary] = σxf[3][boundary]
-        # @. σyP[3][boundary] = σyf[3][boundary]
-        # @. σxP[4][boundary] = σxf[4][boundary]
-        # @. σyP[4][boundary] = σyf[4][boundary]
+            @. σxP[4][wall] = -σxf[4][wall]
+            @. σyP[4][wall] = -σyf[4][wall]
+            @. σxP[4][lid]  = -σxf[4][lid] + 2*vlid*σxf[2][lid]
+            @. σyP[4][lid]  = -σyf[4][lid] + 2*vlid*σyf[2][lid]
+        elseif BCTYPE == 2
+            # Isothermal
+            @. σxP[2][boundary] = σxf[2][boundary]
+            @. σyP[2][boundary] = σyf[2][boundary]
+            @. σxP[3][boundary] = σxf[3][boundary]
+            @. σyP[3][boundary] = σyf[3][boundary]
+            @. σxP[4][boundary] = σxf[4][boundary]
+            @. σyP[4][boundary] = σyf[4][boundary]
+            # @. σxP[2][wall] = σxf[2][wall]
+            # @. σyP[2][wall] = σyf[2][wall]
+            # @. σxP[3][wall] = σxf[3][wall]
+            # @. σyP[3][wall] = σyf[3][wall]
+            # @. σxP[4][wall] = -σxf[4][wall]
+            # @. σyP[4][wall] = -σyf[4][wall]
+            #
+            # @. σxP[2][lid] = σxf[2][lid]
+            # @. σyP[2][lid] = σyf[2][lid]
+            # @. σxP[3][lid] = σxf[3][lid]
+            # @. σyP[3][lid] = σyf[3][lid]
+            # @. σxP[4][lid] = σxf[4][lid]
+            # @. σyP[4][lid] = σyf[4][lid]
+        end
     end
     return impose_BCs_inviscid!,impose_BCs_entropyvars!,impose_BCs_stress!
 end
-impose_BCs_inviscid!,impose_BCs_entropyvars!,impose_BCs_stress! = init_BC_funs(md)
+impose_BCs_inviscid!,impose_BCs_entropyvars!,impose_BCs_stress! = init_BC_funs(md,BCTYPE)
 
 "dense version - speed up by prealloc + transpose for col major "
 function dense_hadamard_sum(Qhe,ops,vgeo,flux_fun)
@@ -257,7 +280,7 @@ function dense_hadamard_sum(Qhe,ops,vgeo,flux_fun)
     return QF
 end
 
-function update_flux!(rhsQ,QM,QP,Uf,UP,LFc,nxJ,nyJ,mapP,Nfq,K,Nd)
+function update_flux!(rhsQ,QM,QP,Uf,UP,LFc,nxJ,nyJ,mapP,Nfq,K,Nd,inviscid_dissp)
     for k = 1:K
         for i = 1:Nfq
             fx,fy = euler_fluxes_2D((x->x[i,k]).(QP),(x->x[i,k]).(QM))
@@ -265,7 +288,11 @@ function update_flux!(rhsQ,QM,QP,Uf,UP,LFc,nxJ,nyJ,mapP,Nfq,K,Nd)
             tmp_nyJ = nyJ[i,k]
             tmp_LF = LFc[i,k]
             for d = 1:Nd
-                rhsQ[d][i,k] = fx[d]*tmp_nxJ+fy[d]*tmp_nyJ-tmp_LF*(UP[d][i,k]-Uf[d][i,k])
+                if inviscid_dissp
+                    rhsQ[d][i,k] = fx[d]*tmp_nxJ+fy[d]*tmp_nyJ-tmp_LF*(UP[d][i,k]-Uf[d][i,k])
+                else
+                    rhsQ[d][i,k] = fx[d]*tmp_nxJ+fy[d]*tmp_nyJ
+                end
             end
         end
     end
@@ -295,7 +322,7 @@ function flux_differencing!(QF,Qh,Qrh,Qsh,rxJ,ryJ,sxJ,syJ,Nh,Nq,Nd,K)
 end
 
 "Qh = (rho,u,v,beta), while Uh = conservative vars"
-function rhs_inviscid(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
+function rhs_inviscid(Q,md::MeshData,ops,flux_fun,compute_rhstest,inviscid_dissp)
     @unpack rxJ,sxJ,ryJ,syJ,sJ,J,wJq = md
     @unpack nxJ,nyJ,sJ,mapP,mapB,K = md
     Qrh,Qsh,VhP,Ph,Lf,Vq = ops
@@ -359,20 +386,22 @@ function rhs_inviscid(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
     end
     impose_BCs_inviscid!(QP,QM,md)
 
-    # simple lax friedrichs dissipation
-    for i = 1:Nd
-        Uf[i] .= Uh[i][Nq+1:Nh,:]
+    if inviscid_dissp
+        # simple lax friedrichs dissipation
+        for i = 1:Nd
+            Uf[i] .= Uh[i][Nq+1:Nh,:]
+        end
+        (rhoM,rhouM,rhovM,EM) = Uf
+        rhoUM_n = @. (rhouM*nxJ + rhovM*nyJ)/sJ
+        #lam .= abs.(wavespeed(rhoM,rhoUM_n,EM))
+        @. lam  = abs(sqrt(abs(rhoUM_n/rhoM))+sqrt(1.4*0.4*(EM-.5*rhoUM_n^2/rhoM)/rhoM))
+        @. LFc = .25*max(lam,lam[mapP])*sJ
     end
-    (rhoM,rhouM,rhovM,EM) = Uf
-    rhoUM_n = @. (rhouM*nxJ + rhovM*nyJ)/sJ
-    #lam .= abs.(wavespeed(rhoM,rhoUM_n,EM))
-    @. lam  = abs(sqrt(abs(rhoUM_n/rhoM))+sqrt(1.4*0.4*(EM-.5*rhoUM_n^2/rhoM)/rhoM))
-    @. LFc = .25*max(lam,lam[mapP])*sJ
 
     for i = 1:Nd
         UP[i] .= Uf[i][mapP]
     end
-    update_flux!(rhsQ,QM,QP,Uf,UP,LFc,nxJ,nyJ,mapP,Nfq,K,Nd)
+    update_flux!(rhsQ,QM,QP,Uf,UP,LFc,nxJ,nyJ,mapP,Nfq,K,Nd,inviscid_dissp)
     rhsQ = (x->Lf*x).(rhsQ)
 
     flux_differencing!(QF,Qh,Qrh,Qsh,rxJ,ryJ,sxJ,syJ,Nh,Nq,Nd,K)
@@ -390,7 +419,7 @@ function rhs_inviscid(Q,md::MeshData,ops,flux_fun,compute_rhstest=false)
     return rhsQ,rhstest
 end
 
-function rhs_inviscid!(Q,md::MeshData,ops,flux_fun,compute_rhstest,VU,Qh,QF,QM,QP,Uf,UP,rhsQ,tmp,tmp2,lam,LFc)
+function rhs_inviscid!(Q,md::MeshData,ops,flux_fun,compute_rhstest,inviscid_dissp,VU,Qh,QF,QM,QP,Uf,UP,rhsQ,tmp,tmp2,lam,LFc)
     @unpack rxJ,sxJ,ryJ,syJ,sJ,J,wJq = md
     @unpack nxJ,nyJ,sJ,mapP,mapB,K = md
     Qrh,Qsh,VhP,Ph,Lf,Vq = ops
@@ -456,7 +485,7 @@ function rhs_inviscid!(Q,md::MeshData,ops,flux_fun,compute_rhstest,VU,Qh,QF,QM,Q
     for i = 1:Nd
         UP[i] .= Uf[i][mapP]
     end
-    update_flux!(rhsQ,QM,QP,Uf,UP,LFc,nxJ,nyJ,mapP,Nfq,K,Nd)
+    update_flux!(rhsQ,QM,QP,Uf,UP,LFc,nxJ,nyJ,mapP,Nfq,K,Nd,inviscid_dissp)
     rhsQ = (x->Lf*x).(rhsQ)
 
     flux_differencing!(QF,Qh,Qrh,Qsh,rxJ,ryJ,sxJ,syJ,Nh,Nq,Nd,K)
@@ -470,7 +499,6 @@ function rhs_inviscid!(Q,md::MeshData,ops,flux_fun,compute_rhstest,VU,Qh,QF,QM,Q
             rhstest += sum(wJq.*VUq.*(Vq*rhsQ[fld]))
         end
     end
-
     return rhsQ,rhstest
 end
 
@@ -592,7 +620,7 @@ function init_visc_fxn(λ,μ,Pr)
 end
 viscous_matrices! = init_visc_fxn(lambda,mu,Pr)
 
-function rhs_viscous(Q,md::MeshData,rd::RefElemData)
+function rhs_viscous(Q,md::MeshData,rd::RefElemData,viscous_dissp)
     @unpack Pq,Vq,Vf,LIFT = rd
     @unpack K,mapP,mapB,J = md
     Nd = length(Q)
@@ -651,6 +679,14 @@ function rhs_viscous(Q,md::MeshData,rd::RefElemData)
             end
         end
     end
+
+    rhstest = 0.0
+    for fld in 1:4
+        VUq = VU[fld][1:Nq,:]
+        rhstest += sum(wJq.*VUx[fld].*sigma_x[fld])
+        rhstest += sum(wJq.*VUy[fld].*sigma_y[fld])
+    end
+
     sigma_x = (x->Pq*x).(sigma_x)
     sigma_y = (x->Pq*x).(sigma_y)
 
@@ -660,26 +696,34 @@ function rhs_viscous(Q,md::MeshData,rd::RefElemData)
     syP = (x->x[mapP]).(syf)
     impose_BCs_stress!(sxP,syP,sxf,syf,VUf,md)
 
-    # add penalty
-    tau = .5
-    dV = ((xP,x)->xP-x).(VUP,VUf)
-    @. penalization[2] = -tau*dV[2]
-    @. penalization[3] = -tau*dV[3]
-    @. penalization[4] = -tau*dV[4]
-    penalization[4][mapB] .= zeros(size(mapB))
-    # avgV = ((xP,x)->1/2*(xP+x)).(VUP,VUf)
-    # @. penalization[4][mapB] = -tau*(avgV[2][mapB]*dV[2][mapB]
-    #                                 +avgV[3][mapB]*dV[3][mapB]
-    #                                 +  dV[4][mapB]*dV[4][mapB]/2)/VUf[4][mapB]
+    if viscous_dissp
+        # add penalty
+        tau = .5
+        dV = ((xP,x)->xP-x).(VUP,VUf)
+        @. penalization[2] = -tau*dV[2]
+        @. penalization[3] = -tau*dV[3]
+        @. penalization[4] = -tau*dV[4]
+        penalization[4][mapB] .= zeros(size(mapB))
+        # avgV = ((xP,x)->1/2*(xP+x)).(VUP,VUf)
+        # @. penalization[4][mapB] = -tau*(avgV[2][mapB]*dV[2][mapB]
+        #                                 +avgV[3][mapB]*dV[3][mapB]
+        #                                 +  dV[4][mapB]*dV[4][mapB]/2)/VUf[4][mapB]
 
-    penalization = (x->LIFT*x).(penalization)
+        penalization = (x->LIFT*x).(penalization)
+    end
+
     dg_div!(rhs,sigma_x,sxf,sxP,sigma_y,syf,syP,md,rd)
-    return rhs .+ penalization
+
+    if viscous_dissp
+        return rhs .+ penalization, rhstest
+    else
+        return rhs, rhstest
+    end
 end
 
-function rhs_viscous!(Q,md::MeshData,rd::RefElemData,rhs,VU,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy)
+function rhs_viscous!(Q,md::MeshData,rd::RefElemData,viscous_dissp,rhs,VU,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy)
     @unpack Pq,Vq,Vf,LIFT = rd
-    @unpack K,mapP,mapB,J = md
+    @unpack K,mapP,mapB,J,wJq = md
     Nd = length(Q)
     Nq = size(Vq,1)
     Np = size(Pq,1)
@@ -729,6 +773,14 @@ function rhs_viscous!(Q,md::MeshData,rd::RefElemData,rhs,VU,VUx,VUy,sigma_x,sigm
             end
         end
     end
+
+    rhstest = 0.0
+    for fld in 1:4
+        VUq = VU[fld][1:Nq,:]
+        rhstest += sum(wJq.*VUx[fld].*sigma_x[fld])
+        rhstest += sum(wJq.*VUy[fld].*sigma_y[fld])
+    end
+
     sigma_x = (x->Pq*x).(sigma_x)
     sigma_y = (x->Pq*x).(sigma_y)
 
@@ -738,21 +790,29 @@ function rhs_viscous!(Q,md::MeshData,rd::RefElemData,rhs,VU,VUx,VUy,sigma_x,sigm
     syP = (x->x[mapP]).(syf)
     impose_BCs_stress!(sxP,syP,sxf,syf,VUf,md)
 
-    # add penalty
-    tau = .5
-    dV = ((xP,x)->xP-x).(VUP,VUf)
-    @. penalization[2] = -tau*dV[2]
-    @. penalization[3] = -tau*dV[3]
-    @. penalization[4] = -tau*dV[4]
-    penalization[4][mapB] .= zeros(size(mapB))
-    # avgV = ((xP,x)->1/2*(xP+x)).(VUP,VUf)
-    # @. penalization[4][mapB] = -tau*(avgV[2][mapB]*dV[2][mapB]
-    #                                 +avgV[3][mapB]*dV[3][mapB]
-    #                                 +  dV[4][mapB]*dV[4][mapB]/2)/VUf[4][mapB]
+    if viscous_dissp
+        # add penalty
+        tau = .5
+        dV = ((xP,x)->xP-x).(VUP,VUf)
+        @. penalization[2] = -tau*dV[2]
+        @. penalization[3] = -tau*dV[3]
+        @. penalization[4] = -tau*dV[4]
+        penalization[4][mapB] .= zeros(size(mapB))
+        # avgV = ((xP,x)->1/2*(xP+x)).(VUP,VUf)
+        # @. penalization[4][mapB] = -tau*(avgV[2][mapB]*dV[2][mapB]
+        #                                 +avgV[3][mapB]*dV[3][mapB]
+        #                                 +  dV[4][mapB]*dV[4][mapB]/2)/VUf[4][mapB]
 
-    penalization = (x->LIFT*x).(penalization)
+        penalization = (x->LIFT*x).(penalization)
+    end
+
     dg_div!(rhs,sigma_x,sxf,sxP,sigma_y,syf,syP,md,rd)
-    return rhs .+ penalization
+
+    if viscous_dissp
+        return rhs .+ penalization, rhstest
+    else
+        return rhs, rhstest
+    end
 end
 
 
@@ -831,43 +891,43 @@ function dopri45_coeffs()
     return rk4a,rk4E,rk4c
 end
 
-function rhsRK(Q,rd,md,ops,euler_fluxes)
-    rhsQ,_ = rhs_inviscid(Q,md,ops,euler_fluxes,false)
-    visc_rhsQ = rhs_viscous(Q,md,rd)
+function rhsRK(Q,rd,md,ops,euler_fluxes,inviscid_dissp,viscous_dissp)
+    rhsQ,_ = rhs_inviscid(Q,md,ops,euler_fluxes,false,inviscid_dissp)
+    visc_rhsQ,visc_test = rhs_viscous(Q,md,rd,viscous_dissp)
     bcopy!.(rhsQ, @. rhsQ + visc_rhsQ)
 
     let Pq=rd.Pq, Vq=rd.Vq, wJq=md.wJq
         rhstest = 0.0
+        rhstest_visc = 0.0
         VU = v_ufun((x->Vq*x).(Q)...)
         VUq = (x->Vq*Pq*x).(VU)
         for field in eachindex(rhsQ)
             rhstest += sum(wJq.*VUq[field].*(Vq*rhsQ[field]))
+            rhstest_visc += sum(wJq.*VUq[field].*(Vq*visc_rhsQ[field]))
         end
-        return rhsQ,rhstest
+        rhstest_visc += visc_test
+        return rhsQ,rhstest,rhstest_visc
     end
 end
 
-function rhsRK!(Q,rd,md,ops,euler_fluxes,rhs,VU,Qh,QF,QM,QP,Uf,UP,rhsQ,tmp,tmp2,lam,LFc,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy)
-    rhsQ,_ = rhs_inviscid!(Q,md,ops,euler_fluxes,false,VU,Qh,QF,QM,QP,Uf,UP,rhsQ,tmp,tmp2,lam,LFc)
-    visc_rhsQ = rhs_viscous!(Q,md,rd,rhs,VU,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy)
+function rhsRK!(Q,rd,md,ops,euler_fluxes,inviscid_dissp,viscous_dissp,rhs,VU,Qh,QF,QM,QP,Uf,UP,rhsQ,tmp,tmp2,lam,LFc,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy)
+    rhsQ,_ = rhs_inviscid!(Q,md,ops,euler_fluxes,false,inviscid_dissp,VU,Qh,QF,QM,QP,Uf,UP,rhsQ,tmp,tmp2,lam,LFc)
+    visc_rhsQ,visc_test = rhs_viscous!(Q,md,rd,viscous_dissp,rhs,VU,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy)
     bcopy!.(rhsQ, @. rhsQ + visc_rhsQ)
 
     let Pq=rd.Pq, Vq=rd.Vq, wJq=md.wJq
         rhstest = 0.0
+        rhstest_visc = 0.0
         VU = v_ufun((x->Vq*x).(Q)...)
         VUq = (x->Vq*Pq*x).(VU)
         for field in eachindex(rhsQ)
             rhstest += sum(wJq.*VUq[field].*(Vq*rhsQ[field]))
+            rhstest_visc += sum(wJq.*VUq[field].*(Vq*visc_rhsQ[field]))
         end
-        return rhsQ,rhstest
+        rhstest_visc = rhstest_visc + visc_test
+        return rhsQ,rhstest,rhstest_visc
     end
 end
-
-# rhsQ,_ = rhsRK(Q,rd,md,ops,euler_fluxes_2D)
-# rhsQ2,_ = rhsRK!(Q,rd,md,ops,euler_fluxes,rhs,VU,Qh,QF,QM,QP,Uf,UP,rhsQ_tmp,tmp,tmp2,lam,LFc,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy)
-# # rhs_inviscid(Q,md,ops,euler_fluxes_2D,false)
-# # visc_rhsQ = rhs_viscous(Q,md,rd)
-# # visc_rhsQ2 = rhs_viscous!(Q,md,rd,rhs,VU,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy)
 
 rka,rkE,rkc = dopri45_coeffs()
 
@@ -885,23 +945,28 @@ interval = 5
 dthist = Float64[dt]
 thist = Float64[0.0]
 errhist = Float64[0.0]
+vischist = Float64[0.0]
+rhstesthist = Float64[0.0]
 wsJ = diagm(rd.wf)*md.sJ
 
-#rhsQ,_ = rhsRK(Q,rd,md,ops,euler_fluxes_2D)
-rhsQ,_ = rhsRK!(Q,rd,md,ops,euler_fluxes_2D,rhs,VU,Qh,QF,QM,QP,Uf,UP,rhsQ_tmp,tmp,tmp2,lam,LFc,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy)
+prevQ = [zeros(size(x)) for i in eachindex(Q)]
+
+#rhsQ,_,_ = rhsRK(Q,rd,md,ops,euler_fluxes_2D,inviscid_dissp,viscous_dissp)
+rhsQ,_,_ = rhsRK!(Q,rd,md,ops,euler_fluxes_2D,inviscid_dissp,viscous_dissp,rhs,VU,Qh,QF,QM,QP,Uf,UP,rhsQ_tmp,tmp,tmp2,lam,LFc,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy)
 bcopy!.(rhsQrk[1],rhsQ) # initialize DOPRI rhs (FSAL property)
 @time begin
 while t < T
     # DOPRI step and
     rhstest = 0.0
+    rhstest_visc = 0.0
     for INTRK = 2:7
         k = zero.(Qtmp)
         for s = 1:INTRK-1
             bcopy!.(k, @. k + rka[INTRK,s]*rhsQrk[s])
         end
         bcopy!.(Qtmp, @. Q + dt*k)
-        #rhsQ,rhstest = rhsRK(Qtmp,rd,md,ops,euler_fluxes_2D)
-        rhsQ,rhstest = rhsRK!(Qtmp,rd,md,ops,euler_fluxes_2D,rhs,VU,Qh,QF,QM,QP,Uf,UP,rhsQ_tmp,tmp,tmp2,lam,LFc,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy)
+        #rhsQ,rhstest,rhstest_visc = rhsRK(Qtmp,rd,md,ops,euler_fluxes_2D,inviscid_dissp,viscous_dissp)
+        rhsQ,rhstest,rhstest_visc = rhsRK!(Qtmp,rd,md,ops,euler_fluxes_2D,inviscid_dissp,viscous_dissp,rhs,VU,Qh,QF,QM,QP,Uf,UP,rhsQ_tmp,tmp,tmp2,lam,LFc,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy)
         bcopy!.(rhsQrk[INTRK],rhsQ)
     end
     errEstVec = zero.(Qtmp)
@@ -931,10 +996,15 @@ while t < T
 
     push!(dthist,dt)
     push!(thist,t)
+    push!(vischist,rhstest_visc)
+    push!(rhstesthist,rhstest)
 
     global i = i + 1  # number of total steps attempted
     if i%interval==0
-        println("i = $i, t = $t, dt = $dtnew, errEst = $errEst, rhstest = $rhstest")
+        global prevQ
+        preverr = sum(norm.(Q .- prevQ))
+        bcopy!.(prevQ, Q)
+        println("i = $i, t = $t, dt = $dtnew, errEst = $errEst, \nrhstest = $rhstest, rhstest_visc = $rhstest_visc, preverr = $preverr")
     end
 end
 
@@ -950,6 +1020,31 @@ end
 gr(aspect_ratio=:equal,legend=false,
    markerstrokewidth=0,markersize=2)
 
+xp = Vp*x
+yp = Vp*y
 vv = Vp*Q[1]
 vv = Vp*(@. (Q[2]/Q[1])^2 + (Q[3]/Q[1])^2)
-scatter(Vp*x,Vp*y,vv,zcolor=vv,camera=(0,90),colorbar=:right)
+scatter(xp,yp,vv,zcolor=vv,camera=(0,90),colorbar=:right)
+
+open("xp.txt","w") do io
+    writedlm(io,xp)
+end
+
+open("yp.txt","w") do io
+    writedlm(io,yp)
+end
+
+open("thist.txt","w") do io
+    writedlm(io,thist)
+end
+
+open("visc.txt","w") do io
+    writedlm(io,vischist)
+end
+
+open("squaredv.txt","w") do io
+    writedlm(io,vv)
+end
+open("rhstesthist.txt","w") do io
+    writedlm(io,rhstesthist)
+end
