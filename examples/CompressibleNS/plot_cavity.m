@@ -1,7 +1,10 @@
-K = 450;
+% K = 450;
+% Nplot = 66;
+
+K = 16*16*2;
 Nplot = 66;
 
-folder_name = 'N2-K15-T20-isot-dissp';
+folder_name = 'N3-K16-T100-isot-nodissp';
 
 fileID = fopen(sprintf('./%s/xp.txt',folder_name));
 formatSpec = '%f';
@@ -32,14 +35,32 @@ rhstesthist = fscanf(fileID,formatSpec);
 
 
 figure(1)
-scatter3(xp(:),yp(:),squaredv(:),18,squaredv(:),'filled');
+scatter3(xp(:),yp(:),squaredv(:),18,squaredv(:),'filled','s');
 view(0,90)
 colormap default;
-colorbar;
+c = colorbar;
+pbaspect([1 1 1])
+set(gca,'YTickLabel',[]);
+set(gca,'XTickLabel',[]);
+set(gca,'FontSize',15);
+L=cellfun(@(x)sprintf('%.1f',x),num2cell(get(c,'xtick')),'Un',0);
+set(c,'XTickLabel',L);
+
+
+
+visc = visc(2:end);
+thist = thist(2:end);
+thist(end) = 100.00;
+rhstesthist = rhstesthist(2:end);
 
 figure(2)
-scatter(thist,visc,7,'filled')
-
+scatter(thist,visc,5,'filled')
+set(gca,'FontSize',15);
+xlabel('Time')
+%ylim([-inf 0])
 
 figure(3)
-scatter(thist,rhstesthist,7,'filled')
+scatter(thist,rhstesthist,5,'filled')
+set(gca,'FontSize',15);
+xlabel('Time')
+ylim([-inf 0])

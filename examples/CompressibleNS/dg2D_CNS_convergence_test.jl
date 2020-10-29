@@ -17,78 +17,6 @@ using SetupDG
 push!(LOAD_PATH, "./examples/EntropyStableEuler")
 using EntropyStableEuler
 
-"Approximation parameters"
-N = 3 # The order of approximation
-K1D = 16
-# N = 2 # The order of approximation
-# K1D = 15
-CFL = 0.5
-T = 100.0 # endtime
-BCTYPE = 2 # 1 - adiabatic, 2 - Isothermal, 3 - Slip
-TESTCASE = 1 # 1 - lid driven caivty, 2 - wave diffusion, 3 - shocktube
-inviscid_dissp = false
-viscous_dissp = false
-
-"Viscous parameters"
-Re = 1000
-mu = 1/Re
-lambda = -2/3*mu
-Pr = .71
-
-"Time integration"
-rk4a,rk4b,rk4c = rk45_coeffs()
-CN = (N+1)*(N+2)/2  # estimated trace constant for CFL
-h  = 2/K1D
-dt = CFL * h / CN
-Nsteps = convert(Int,ceil(T/dt))
-dt = T/Nsteps
-dt0 = dt
-
-"Mesh related variables"
-VX, VY, EToV = uniform_tri_mesh(K1D, K1D)
-
-# initialize ref element and mesh
-rd = init_reference_tri(N)
-md = init_mesh((VX,VY),EToV,rd)
-
-# # Make domain periodic
-# @unpack Nfaces,Vf = rd
-# @unpack xf,yf,K,mapM,mapP,mapB = md
-# LX,LY = (x->maximum(x)-minimum(x)).((VX,VY)) # find lengths of domain
-# mapPB = build_periodic_boundary_maps(xf,yf,LX,LY,Nfaces*K,mapM,mapP,mapB)
-# mapP[mapB] = mapPB
-# @pack! md = mapP
-
-# construct hybridized SBP operators
-@unpack M,Dr,Ds,Vq,Pq,Vf,wf,nrJ,nsJ = rd
-Qr = Pq'*M*Dr*Pq
-Qs = Pq'*M*Ds*Pq
-Ef = Vf*Pq
-Br = diagm(wf.*nrJ)
-Bs = diagm(wf.*nsJ)
-Qrh = .5*[Qr-Qr' Ef'*Br;
-         -Br*Ef  Br]
-Qsh = .5*[Qs-Qs' Ef'*Bs;
-         -Bs*Ef  Bs]
-
-Vh = [Vq;Vf]
-Ph = M\transpose(Vh)
-VhP = Vh*Pq
-
-# make sparse skew symmetric versions of the operators"
-# precompute union of sparse ids for Qr, Qs
-Qrhskew = .5*(Qrh-transpose(Qrh))
-Qshskew = .5*(Qsh-transpose(Qsh))
-
-# interpolate geofacs to both vol/surf nodes
-@unpack rxJ,sxJ,ryJ,syJ = md
-rxJ,sxJ,ryJ,syJ = (x->Vh*x).((rxJ,sxJ,ryJ,syJ)) # interp to hybridized points
-@pack! md = rxJ,sxJ,ryJ,syJ
-
-# pack SBP operators into tuple
-@unpack LIFT = rd
-ops = (Qrhskew,Qshskew,VhP,Ph,LIFT,Vq)
-
 function euler_fluxes_2D(UL,UR)
     rhoL = first(UL); betaL = last(UL)
     rhoR = first(UR); betaR = last(UR)
@@ -130,8 +58,6 @@ function euler_fluxes_2D(rhoL,uL,vL,betaL,rhoR,uR,vR,betaR,
     return (FxS1,FxS2,FxS3,FxS4),(FyS1,FyS2,FyS3,FyS4)
 end
 
-
-
 function init_BC_funs(md::MeshData,BCTYPE::Int64)
     @unpack xf,yf,mapP,mapB,nxJ,nyJ,sJ = md
     xb,yb = (x->x[mapB]).((xf,yf))
@@ -144,7 +70,10 @@ function init_BC_funs(md::MeshData,BCTYPE::Int64)
     vwall = [leftwall;rightwall]
     hwall = [bottomwall;lid]
     xlid = xf[lid]
-    vlid = ones(size(xlid))
+    #vlid = ones(size(xlid))
+    #vlid = @. exp(-1.0/(5.0*(1.0-xlid^2)))
+    #vlid = @. xlid^2-1
+    vlid = @. (1+cos(pi*xlid))/2
 
     boundary = [lid;wall]
     nxw = nxJ[wall]./sJ[wall]
@@ -262,7 +191,6 @@ function init_BC_funs(md::MeshData,BCTYPE::Int64)
     end
     return impose_BCs_inviscid!,impose_BCs_entropyvars!,impose_BCs_stress!
 end
-impose_BCs_inviscid!,impose_BCs_entropyvars!,impose_BCs_stress! = init_BC_funs(md,BCTYPE)
 
 "dense version - speed up by prealloc + transpose for col major "
 function dense_hadamard_sum(Qhe,ops,vgeo,flux_fun)
@@ -444,7 +372,7 @@ function rhs_inviscid(Q,md::MeshData,ops,flux_fun,compute_rhstest,inviscid_dissp
     return rhsQ,rhstest
 end
 
-function rhs_inviscid!(Q,md::MeshData,ops,flux_fun,compute_rhstest,inviscid_dissp,VU,Qh,QF,QM,QP,Uf,UP,rhsQ,tmp,tmp2,lam,LFc)
+function rhs_inviscid!(Q,md::MeshData,ops,flux_fun,compute_rhstest,inviscid_dissp,VU,Qh,QF,QM,QP,Uf,UP,rhsQ,tmp,tmp2,lam,LFc,impose_BCs_inviscid!)
     @unpack rxJ,sxJ,ryJ,syJ,sJ,J,wJq = md
     @unpack nxJ,nyJ,sJ,mapP,mapB,K = md
     Qrh,Qsh,VhP,Ph,Lf,Vq = ops
@@ -643,7 +571,6 @@ function init_visc_fxn(λ,μ,Pr)
         return viscous_matrices!
     end
 end
-viscous_matrices! = init_visc_fxn(lambda,mu,Pr)
 
 function rhs_viscous(Q,md::MeshData,rd::RefElemData,viscous_dissp)
     @unpack Pq,Vq,Vf,LIFT = rd
@@ -746,7 +673,7 @@ function rhs_viscous(Q,md::MeshData,rd::RefElemData,viscous_dissp)
     end
 end
 
-function rhs_viscous!(Q,md::MeshData,rd::RefElemData,Re,BCTYPE,viscous_dissp,rhs,VU,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy)
+function rhs_viscous!(Q,md::MeshData,rd::RefElemData,Re,BCTYPE,viscous_dissp,rhs,VU,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy,impose_BCs_entropyvars!,impose_BCs_stress!,viscous_matrices!)
     @unpack Pq,Vq,Vf,LIFT = rd
     @unpack K,mapP,mapB,J,wJq = md
     Nd = length(Q)
@@ -848,74 +775,6 @@ function rhs_viscous!(Q,md::MeshData,rd::RefElemData,Re,BCTYPE,viscous_dissp,rhs
     end
 end
 
-
-
-
-#####################
-### Time Stepping ###
-#####################
-bcopy!(x,y) = x .= y
-
-# define initial conditions at nodes
-@unpack x,y = md
-Ma = .3
-rho = ones(size(x))
-u = zeros(size(x))
-v = zeros(size(x))
-p = (1/(Ma^2*γ))*ones(size(x))
-
-if TESTCASE == 2
-    rho = @. 1.0 + exp(-10*(x^2+y^2))
-    u = zeros(size(x))
-    v = zeros(size(x))
-    p = @. rho^γ
-elseif TESTCASE == 3
-    rho_t(x) = x <= 0 ? 120.0 : 1.2
-    rho = @. rho_t(x)
-    u = zeros(size(x))
-    v = zeros(size(x))
-    p = @. rho/γ
-end
-# rho = ones(size(x))
-# u = @. exp(-10*(((y-1)^2+x^2)))
-# v = zeros(size(x))
-# p = (1/(Ma^2*γ))*ones(size(x))
-
-Q = primitive_to_conservative(rho,u,v,p)
-Q = collect(Q) # make Q,resQ arrays of arrays for mutability
-resQ = [zeros(size(x)) for i in eachindex(Q)]
-
-@unpack Pq,Vq,Vf,LIFT = rd
-@unpack K,mapP,mapB,J = md
-Qrh,Qsh,VhP,Ph,Lf,Vq = ops
-Nh,Nq = size(VhP)
-Nfq = size(Lf,2)
-Nd = length(Q)
-Nq = size(Vq,1)
-Np = size(Pq,1)
-Nfq = size(Vf,1)
-rhs = (zeros(Float64,Np,K),zeros(Float64,Np,K),zeros(Float64,Np,K),zeros(Float64,Np,K))
-VU = (zeros(Float64,Nq,K),zeros(Float64,Nq,K),zeros(Float64,Nq,K),zeros(Float64,Nq,K))
-VUx = (zeros(Float64,Np,K),zeros(Float64,Np,K),zeros(Float64,Np,K),zeros(Float64,Np,K))
-VUy = (zeros(Float64,Np,K),zeros(Float64,Np,K),zeros(Float64,Np,K),zeros(Float64,Np,K))
-sigma_x = (zeros(Float64,Nq,K),zeros(Float64,Nq,K),zeros(Float64,Nq,K),zeros(Float64,Nq,K))
-sigma_y = (zeros(Float64,Nq,K),zeros(Float64,Nq,K),zeros(Float64,Nq,K),zeros(Float64,Nq,K))
-penalization = (zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K))
-Kxx = MMatrix{4,4,Float64}(zeros(Nd,Nd))
-Kyy = MMatrix{4,4,Float64}(zeros(Nd,Nd))
-Kxy = MMatrix{4,4,Float64}(zeros(Nd,Nd))
-Qh = (zeros(Float64,Nh,K),zeros(Float64,Nh,K),zeros(Float64,Nh,K),zeros(Float64,Nh,K))
-QF = (zeros(Float64,Nh,K),zeros(Float64,Nh,K),zeros(Float64,Nh,K),zeros(Float64,Nh,K))
-QM = (zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K))
-QP = (zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K))
-Uf = (zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K))
-UP = (zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K))
-rhsQ_tmp = (zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K))
-tmp = zeros(Float64,Nh,K)
-tmp2 = zeros(Float64,Nh,K)
-lam = zeros(Float64,Nfq,K)
-LFc = zeros(Float64,Nfq,K)
-
 function dopri45_coeffs()
     rk4a = [0.0             0.0             0.0             0.0             0.0             0.0         0.0
             0.2             0.0             0.0             0.0             0.0             0.0         0.0
@@ -936,6 +795,7 @@ end
 function rhsRK(Q,rd,md,ops,euler_fluxes,inviscid_dissp,viscous_dissp)
     rhsQ,_ = rhs_inviscid(Q,md,ops,euler_fluxes,false,inviscid_dissp)
     visc_rhsQ,visc_test = rhs_viscous(Q,md,rd,viscous_dissp)
+    bcopy!(x,y) = x .= y
     bcopy!.(rhsQ, @. rhsQ + visc_rhsQ)
 
     let Pq=rd.Pq, Vq=rd.Vq, wJq=md.wJq
@@ -952,9 +812,10 @@ function rhsRK(Q,rd,md,ops,euler_fluxes,inviscid_dissp,viscous_dissp)
     end
 end
 
-function rhsRK!(Q,rd,md,Re,BCTYPE,ops,euler_fluxes,inviscid_dissp,viscous_dissp,rhs,VU,Qh,QF,QM,QP,Uf,UP,rhsQ,tmp,tmp2,lam,LFc,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy)
-    rhsQ,_ = rhs_inviscid!(Q,md,ops,euler_fluxes,false,inviscid_dissp,VU,Qh,QF,QM,QP,Uf,UP,rhsQ,tmp,tmp2,lam,LFc)
-    visc_rhsQ,visc_test = rhs_viscous!(Q,md,rd,Re,BCTYPE,viscous_dissp,rhs,VU,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy)
+function rhsRK!(Q,rd,md,Re,BCTYPE,ops,euler_fluxes,inviscid_dissp,viscous_dissp,rhs,VU,Qh,QF,QM,QP,Uf,UP,rhsQ,tmp,tmp2,lam,LFc,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy,impose_BCs_inviscid!,impose_BCs_entropyvars!,impose_BCs_stress!,viscous_matrices!)
+    rhsQ,_ = rhs_inviscid!(Q,md,ops,euler_fluxes,false,inviscid_dissp,VU,Qh,QF,QM,QP,Uf,UP,rhsQ,tmp,tmp2,lam,LFc,impose_BCs_inviscid!)
+    visc_rhsQ,visc_test = rhs_viscous!(Q,md,rd,Re,BCTYPE,viscous_dissp,rhs,VU,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy,impose_BCs_entropyvars!,impose_BCs_stress!,viscous_matrices!)
+    bcopy!(x,y) = x .= y
     bcopy!.(rhsQ, @. rhsQ + visc_rhsQ)
 
     let Pq=rd.Pq, Vq=rd.Vq, wJq=md.wJq
@@ -971,122 +832,258 @@ function rhsRK!(Q,rd,md,Re,BCTYPE,ops,euler_fluxes,inviscid_dissp,viscous_dissp,
     end
 end
 
-rka,rkE,rkc = dopri45_coeffs()
 
-# DOPRI storage
-Qtmp = similar.(Q)
-rhsQrk = ntuple(x->zero.(Q),length(rkE))
 
-errEst = 0.0
-prevErrEst = 0.0
+################
+####  Main  ####
+################
 
-t = 0.0
-i = 0
-interval = 5
+Re_arr = [100]#[10;100;1000]#[10;100]
+N_arr = [1;2;3;4] #[2;3;4]
+K1D_arr = [32]#[2;4;8;16]#[4;8;16;32;64]
+err_arr = zeros(length(K1D_arr),length(N_arr),2,2,length(Re_arr))
+i_disp = [true]#[true; false]
+v_disp = [true]#[true; false]
 
-dthist = Float64[dt]
-thist = Float64[0.0]
-errhist = Float64[0.0]
-vischist = Float64[0.0]
-rhstesthist = Float64[0.0]
-wsJ = diagm(rd.wf)*md.sJ
+for n_idx in 1:length(N_arr)
+    for k_idx in 1:length(K1D_arr)
+        for id in 1:2
+            for vd in 1:2
+                for r_idx in 1:length(Re_arr)
+                    "Approximation parameters"
+                    N = N_arr[n_idx] # The order of approximation
+                    K1D = K1D_arr[k_idx]
 
-prevQ = [zeros(size(x)) for i in eachindex(Q)]
+                    println("========= K:", K1D, " N:", N, " \n")
 
-#rhsQ,_,_ = rhsRK(Q,rd,md,ops,euler_fluxes_2D,inviscid_dissp,viscous_dissp)
-rhsQ,_,_ = rhsRK!(Q,rd,md,Re,BCTYPE,ops,euler_fluxes_2D,inviscid_dissp,viscous_dissp,rhs,VU,Qh,QF,QM,QP,Uf,UP,rhsQ_tmp,tmp,tmp2,lam,LFc,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy)
-bcopy!.(rhsQrk[1],rhsQ) # initialize DOPRI rhs (FSAL property)
-@time begin
-while t < T
-    # DOPRI step and
-    rhstest = 0.0
-    rhstest_visc = 0.0
-    for INTRK = 2:7
-        k = zero.(Qtmp)
-        for s = 1:INTRK-1
-            bcopy!.(k, @. k + rka[INTRK,s]*rhsQrk[s])
+                    CFL = 0.01
+                    T = 1.0 # endtime
+                    BCTYPE = 1 # 1 - adiabatic, 2 - Isothermal, 3 - Slip
+                    TESTCASE = 1 # 1 - lid driven caivty, 2 - wave diffusion, 3 - shocktube
+                    inviscid_dissp = i_disp[id]
+                    viscous_dissp = v_disp[vd]
+
+                    "Viscous parameters"
+                    Re = Re_arr[r_idx]
+                    mu = 1/Re
+                    lambda = -2/3*mu
+                    Pr = .71
+                    viscous_matrices! = init_visc_fxn(lambda,mu,Pr)
+
+                    "Time integration"
+                    rk4a,rk4b,rk4c = rk45_coeffs()
+                    CN = (N+1)*(N+2)/2  # estimated trace constant for CFL
+                    h  = 2/K1D
+                    dt = CFL * h / CN
+                    Nsteps = convert(Int,ceil(T/dt))
+                    dt = T/Nsteps
+                    dt0 = dt
+
+                    "Mesh related variables"
+                    VX, VY, EToV = uniform_tri_mesh(K1D, K1D)
+
+                    # initialize ref element and mesh
+                    rd = init_reference_tri(N)
+                    md = init_mesh((VX,VY),EToV,rd)
+                    impose_BCs_inviscid!,impose_BCs_entropyvars!,impose_BCs_stress! = init_BC_funs(md,BCTYPE)
+
+                    # construct hybridized SBP operators
+                    @unpack M,Dr,Ds,Vq,Pq,Vf,wf,nrJ,nsJ = rd
+                    Qr = Pq'*M*Dr*Pq
+                    Qs = Pq'*M*Ds*Pq
+                    Ef = Vf*Pq
+                    Br = diagm(wf.*nrJ)
+                    Bs = diagm(wf.*nsJ)
+                    Qrh = .5*[Qr-Qr' Ef'*Br;
+                             -Br*Ef  Br]
+                    Qsh = .5*[Qs-Qs' Ef'*Bs;
+                             -Bs*Ef  Bs]
+
+                    Vh = [Vq;Vf]
+                    Ph = M\transpose(Vh)
+                    VhP = Vh*Pq
+
+                    # make sparse skew symmetric versions of the operators"
+                    # precompute union of sparse ids for Qr, Qs
+                    Qrhskew = .5*(Qrh-transpose(Qrh))
+                    Qshskew = .5*(Qsh-transpose(Qsh))
+
+                    # interpolate geofacs to both vol/surf nodes
+                    @unpack rxJ,sxJ,ryJ,syJ = md
+                    rxJ,sxJ,ryJ,syJ = (x->Vh*x).((rxJ,sxJ,ryJ,syJ)) # interp to hybridized points
+                    @pack! md = rxJ,sxJ,ryJ,syJ
+
+                    # pack SBP operators into tuple
+                    @unpack LIFT = rd
+                    ops = (Qrhskew,Qshskew,VhP,Ph,LIFT,Vq)
+
+
+                    #####################
+                    ### Time Stepping ###
+                    #####################
+                    bcopy!(x,y) = x .= y
+
+                    # define initial conditions at nodes
+                    @unpack x,y = md
+                    Ma = .3
+                    rho = ones(size(x))
+                    u = zeros(size(x))
+                    v = zeros(size(x))
+                    p = (1/(Ma^2*γ))*ones(size(x))
+
+                    Q = primitive_to_conservative(rho,u,v,p)
+                    Q = collect(Q) # make Q,resQ arrays of arrays for mutability
+                    resQ = [zeros(size(x)) for i in eachindex(Q)]
+
+                    @unpack Pq,Vq,Vf,LIFT = rd
+                    @unpack K,mapP,mapB,J = md
+                    Qrh,Qsh,VhP,Ph,Lf,Vq = ops
+                    Nh,Nq = size(VhP)
+                    Nfq = size(Lf,2)
+                    Nd = length(Q)
+                    Nq = size(Vq,1)
+                    Np = size(Pq,1)
+                    Nfq = size(Vf,1)
+                    rhs = (zeros(Float64,Np,K),zeros(Float64,Np,K),zeros(Float64,Np,K),zeros(Float64,Np,K))
+                    VU = (zeros(Float64,Nq,K),zeros(Float64,Nq,K),zeros(Float64,Nq,K),zeros(Float64,Nq,K))
+                    VUx = (zeros(Float64,Np,K),zeros(Float64,Np,K),zeros(Float64,Np,K),zeros(Float64,Np,K))
+                    VUy = (zeros(Float64,Np,K),zeros(Float64,Np,K),zeros(Float64,Np,K),zeros(Float64,Np,K))
+                    sigma_x = (zeros(Float64,Nq,K),zeros(Float64,Nq,K),zeros(Float64,Nq,K),zeros(Float64,Nq,K))
+                    sigma_y = (zeros(Float64,Nq,K),zeros(Float64,Nq,K),zeros(Float64,Nq,K),zeros(Float64,Nq,K))
+                    penalization = (zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K))
+                    Kxx = MMatrix{4,4,Float64}(zeros(Nd,Nd))
+                    Kyy = MMatrix{4,4,Float64}(zeros(Nd,Nd))
+                    Kxy = MMatrix{4,4,Float64}(zeros(Nd,Nd))
+                    Qh = (zeros(Float64,Nh,K),zeros(Float64,Nh,K),zeros(Float64,Nh,K),zeros(Float64,Nh,K))
+                    QF = (zeros(Float64,Nh,K),zeros(Float64,Nh,K),zeros(Float64,Nh,K),zeros(Float64,Nh,K))
+                    QM = (zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K))
+                    QP = (zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K))
+                    Uf = (zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K))
+                    UP = (zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K))
+                    rhsQ_tmp = (zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K),zeros(Float64,Nfq,K))
+                    tmp = zeros(Float64,Nh,K)
+                    tmp2 = zeros(Float64,Nh,K)
+                    lam = zeros(Float64,Nfq,K)
+                    LFc = zeros(Float64,Nfq,K)
+                    rka,rkE,rkc = dopri45_coeffs()
+
+                    # DOPRI storage
+                    Qtmp = similar.(Q)
+                    rhsQrk = ntuple(x->zero.(Q),length(rkE))
+
+                    errEst = 0.0
+                    prevErrEst = 0.0
+
+                    t = 0.0
+                    i = 0
+                    interval = 5
+
+                    dthist = Float64[dt]
+                    thist = Float64[0.0]
+                    errhist = Float64[0.0]
+                    vischist = Float64[0.0]
+                    rhstesthist = Float64[0.0]
+                    wsJ = diagm(rd.wf)*md.sJ
+
+                    prevQ = [zeros(size(x)) for i in eachindex(Q)]
+                    bcopy!(x,y) = x .= y
+
+                    #rhsQ,_,_ = rhsRK(Q,rd,md,ops,euler_fluxes_2D,inviscid_dissp,viscous_dissp)
+                    rhsQ,_,_ = rhsRK!(Q,rd,md,Re,BCTYPE,ops,euler_fluxes_2D,inviscid_dissp,viscous_dissp,rhs,VU,Qh,QF,QM,QP,Uf,UP,rhsQ_tmp,tmp,tmp2,lam,LFc,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy,impose_BCs_inviscid!,impose_BCs_entropyvars!,impose_BCs_stress!,viscous_matrices!)
+                    bcopy!.(rhsQrk[1],rhsQ) # initialize DOPRI rhs (FSAL property)
+                    @time begin
+                    while t < T
+                        # DOPRI step and
+                        rhstest = 0.0
+                        rhstest_visc = 0.0
+                        for INTRK = 2:7
+                            k = zero.(Qtmp)
+                            for s = 1:INTRK-1
+                                bcopy!.(k, @. k + rka[INTRK,s]*rhsQrk[s])
+                            end
+                            bcopy!.(Qtmp, @. Q + dt*k)
+                            #rhsQ,rhstest,rhstest_visc = rhsRK(Qtmp,rd,md,ops,euler_fluxes_2D,inviscid_dissp,viscous_dissp)
+                            rhsQ,rhstest,rhstest_visc = rhsRK!(Qtmp,rd,md,Re,BCTYPE,ops,euler_fluxes_2D,inviscid_dissp,viscous_dissp,rhs,VU,Qh,QF,QM,QP,Uf,UP,rhsQ_tmp,tmp,tmp2,lam,LFc,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy,impose_BCs_inviscid!,impose_BCs_entropyvars!,impose_BCs_stress!,viscous_matrices!)
+                            bcopy!.(rhsQrk[INTRK],rhsQ)
+                        end
+                        errEstVec = zero.(Qtmp)
+                        for s = 1:7
+                            bcopy!.(errEstVec, @. errEstVec + rkE[s]*rhsQrk[s])
+                        end
+
+                        errTol = 1e-5
+                        errEst = 0.0
+                        for field = 1:length(Qtmp)
+                            errEstScale = @. abs(errEstVec[field]) / (errTol*(1+abs(Q[field])))
+                            errEst += sum(errEstScale.^2) # hairer seminorm
+                        end
+                        errEst = sqrt(errEst/(length(Q[1])*4))
+                        if errEst < 1.0 # if err small, accept step and update
+                                bcopy!.(Q, Qtmp)
+                                t += dt
+                                bcopy!.(rhsQrk[1], rhsQrk[7]) # use FSAL property
+                        end
+                        order = 5
+                        dtnew = .8*dt*(.9/errEst)^(.4/(order+1)) # P controller
+                        if i > 0 # use PI controller if prevErrEst available
+                                dtnew *= (prevErrEst/max(1e-14,errEst))^(.3/(order+1))
+                        end
+                        dt = max(min(10*dt0,dtnew),1e-9) # max/min dt
+                        prevErrEst = errEst
+
+                        push!(dthist,dt)
+                        push!(thist,t)
+                        push!(vischist,rhstest_visc)
+                        push!(rhstesthist,rhstest)
+
+                        i = i + 1  # number of total steps attempted
+                        if i%interval==0
+                            #global prevQ
+                            preverr = sum(norm.(Q .- prevQ))
+                            bcopy!.(prevQ, Q)
+                            println("i = $i, t = $t, dt = $dtnew, errEst = $errEst, \nrhstest = $rhstest, rhstest_visc = $rhstest_visc, preverr = $preverr")
+                        end
+                    end
+
+                    end
+
+
+                    #############
+                    ### Error ###
+                    #############
+
+                    @unpack xf,yf,mapP,mapB,nxJ,nyJ,sJ = md
+                    xb,yb = (x->x[mapB]).((xf,yf))
+
+                    lid          = mapB[findall(@. abs(yb-1) < 1e-12)]
+                    wall         = mapB[findall(@. abs(yb-1) >= 1e-12)]
+                    boundary     = [lid;wall]
+                    xlid = xf[lid]
+                    #vlid = @. exp(-1.0/(5.0*(1.0-xlid^2)))
+                    #vlid = @. xlid^2-1
+                    vlid = @. (1+cos(pi*xlid))/2
+
+                    u_1 = Vf*(Q[2]./Q[1])
+                    u_2 = Vf*(Q[3]./Q[1])
+                    Nqf = size(Vf,1)
+                    u_1_lid = u_1[lid]
+                    u_1_wall = u_1[wall]
+                    u_2_boundary = u_2[boundary]
+
+                    Jf = 2.0/K1D
+                    WF = repeat(wf,1,K)
+                    err = sum(Jf*WF[boundary].*u_2_boundary.^2)
+                         +sum(Jf*WF[wall].*u_1_wall.^2)
+                         +sum(Jf*WF[lid].*(u_1_lid-vlid).^2)
+                    err = sqrt(err)
+                    err_arr[k_idx,n_idx,id,vd,r_idx] = err
+                    @show err
+                end
+            end
         end
-        bcopy!.(Qtmp, @. Q + dt*k)
-        #rhsQ,rhstest,rhstest_visc = rhsRK(Qtmp,rd,md,ops,euler_fluxes_2D,inviscid_dissp,viscous_dissp)
-        rhsQ,rhstest,rhstest_visc = rhsRK!(Qtmp,rd,md,Re,BCTYPE,ops,euler_fluxes_2D,inviscid_dissp,viscous_dissp,rhs,VU,Qh,QF,QM,QP,Uf,UP,rhsQ_tmp,tmp,tmp2,lam,LFc,VUx,VUy,sigma_x,sigma_y,penalization,Kxx,Kyy,Kxy)
-        bcopy!.(rhsQrk[INTRK],rhsQ)
-    end
-    errEstVec = zero.(Qtmp)
-    for s = 1:7
-        bcopy!.(errEstVec, @. errEstVec + rkE[s]*rhsQrk[s])
-    end
-
-    errTol = 1e-5
-    errEst = 0.0
-    for field = 1:length(Qtmp)
-        errEstScale = @. abs(errEstVec[field]) / (errTol*(1+abs(Q[field])))
-        errEst += sum(errEstScale.^2) # hairer seminorm
-    end
-    errEst = sqrt(errEst/(length(Q[1])*4))
-    if errEst < 1.0 # if err small, accept step and update
-            bcopy!.(Q, Qtmp)
-            global t += dt
-            bcopy!.(rhsQrk[1], rhsQrk[7]) # use FSAL property
-    end
-    order = 5
-    dtnew = .8*dt*(.9/errEst)^(.4/(order+1)) # P controller
-    if i > 0 # use PI controller if prevErrEst available
-            dtnew *= (prevErrEst/max(1e-14,errEst))^(.3/(order+1))
-    end
-    global dt = max(min(10*dt0,dtnew),1e-9) # max/min dt
-    global prevErrEst = errEst
-
-    push!(dthist,dt)
-    push!(thist,t)
-    push!(vischist,rhstest_visc)
-    push!(rhstesthist,rhstest)
-
-    global i = i + 1  # number of total steps attempted
-    if i%interval==0
-        global prevQ
-        preverr = sum(norm.(Q .- prevQ))
-        bcopy!.(prevQ, Q)
-        println("i = $i, t = $t, dt = $dtnew, errEst = $errEst, \nrhstest = $rhstest, rhstest_visc = $rhstest_visc, preverr = $preverr")
     end
 end
 
+open("err_arr.txt","w") do io
+    writedlm(io,err_arr)
 end
-
-
-################
-### Plotting ###
-################
-
-#plotting nodes
-@unpack Vp = rd
-gr(aspect_ratio=:equal,legend=false,
-   markerstrokewidth=0,markersize=2)
-
-xp = Vp*x
-yp = Vp*y
-vv = Vp*Q[1]
-vv = Vp*(@. (Q[2]/Q[1])^2 + (Q[3]/Q[1])^2)
-scatter(xp,yp,vv,zcolor=vv,camera=(0,90),colorbar=:right)
-
-# open("xp.txt","w") do io
-#     writedlm(io,xp)
-# end
-#
-# open("yp.txt","w") do io
-#     writedlm(io,yp)
-# end
-#
-# open("thist.txt","w") do io
-#     writedlm(io,thist)
-# end
-#
-# open("visc.txt","w") do io
-#     writedlm(io,vischist)
-# end
-#
-# open("squaredv.txt","w") do io
-#     writedlm(io,vv)
-# end
-# open("rhstesthist.txt","w") do io
-#     writedlm(io,rhstesthist)
-# end
