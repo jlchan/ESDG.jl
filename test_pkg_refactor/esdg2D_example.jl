@@ -1,15 +1,18 @@
+using Plots
+
 using BenchmarkTools
 using LoopVectorization
 using LinearAlgebra
-using Plots
 using UnPack
+
+using StartUpDG
+using StartUpDG.ExplicitTimestepUtils
+
+using FluxDiffUtils
 
 using EntropyStableEuler.Fluxes2D
 import EntropyStableEuler.Fluxes1D: wavespeed_1D # for LF flux
 import EntropyStableEuler: γ
-using FluxDiffUtils
-using StartUpDG
-using StartUpDG.ExplicitTimestepUtils
 
 include("HybridizedSBPUtils.jl")
 using .HybridizedSBPUtils
@@ -48,59 +51,6 @@ SBP_ops = (Matrix(Qrhskew'),Matrix(Qshskew'),Vh,Ph,VhP)
 @unpack rxJ, sxJ, ryJ, syJ = md
 rxJ, sxJ, ryJ, syJ = (x->[Vq;Vf]*x).((rxJ, sxJ, ryJ, syJ)) # interp to hybridized points
 @pack! md = rxJ, sxJ, ryJ, syJ
-
-# e = 1
-# Qh = (x->Vh*x).(Q)
-# Qh_log = (Qh...,log.(first(Qh)),log.(last(Qh)))
-# rhse = zero.(getindex.(Qh,:,e))
-# hadamard_sum!(rhse,(Qrhskew,Qshskew),euler_fluxes,getindex.(Qh_log,:,e))
-# rhse_old = dense_hadamard_sum(getindex.(Qh,:,e),(Qrhskew,Qshskew),euler_fluxes)
-# @show sum(norm.(rhse .- rhse_old))
-#
-# function time_had()
-#     hadamard_sum!(rhse,(Qrhskew,Qshskew),euler_fluxes,getindex.(Qh_log,:,e))
-# end
-
-# # old version
-# function dense_hadamard_sum(Qhe,ops,flux_fun)
-#
-#     (QxTr,QyTr) = ops
-#
-#     # precompute logs for logmean
-#     (rho,u,v,beta) = Qhe
-#     Qlog = (log.(rho), log.(beta))
-#
-#     n = size(QxTr,1)
-#     nfields = length(Qhe)
-#
-#     QF = zero.(Qhe) #ntuple(x->zeros(n),nfields)
-#     QFi = zeros(nfields)
-#     for i = 1:n
-#         Qi = getindex.(Qhe,i)
-#         Qlogi = getindex.(Qlog,i)
-#
-#         fill!(QFi,0)
-#         for j = 1:n
-#             Qj = getindex.(Qhe,j)
-#             Qlogj = getindex.(Qlog,j)
-#
-#             Fx,Fy = flux_fun(Qi...,Qlogi...,Qj...,Qlogj...)
-#             @. QFi += QxTr[j,i]*Fx + QyTr[j,i]*Fy
-#         end
-#
-#         for field in eachindex(Qhe)
-#             QF[field][i] = QFi[field]
-#         end
-#     end
-#
-#     return QF
-# end
-
-# function time_had2()
-#     dense_hadamard_sum(getindex.(Qh,:,e),(Qrhskew,Qshskew),euler_fluxes)
-# end
-# @btime time_had()
-# @btime time_had2()
 
 # convert to rho,u,v,beta vars
 function cons_to_prim_withlogs(rho,rhou,rhov,E)
@@ -143,17 +93,15 @@ function rhs(Q, SBP_ops, rd::RefElemData, md::MeshData)
     rhsQ = (x->LIFT*x).(flux)
 
     # compute volume contributions using flux differencing
-    rhse = zero.(getindex.(Qh,:,1))
+    rhse = zero.(getindex.(Q,:,1))
     for e = 1:K
         QxTr = rxJ[1,e]*QrTr + sxJ[1,e]*QsTr
         QyTr = ryJ[1,e]*QrTr + syJ[1,e]*QsTr
         # hadamard_sum!(rhse,(QxTr,QyTr),euler_fluxes,getindex.(Qh_log,:,e))
 
         # will compute sum(Ax.*Fx + Ay.*Fy,dims=2)
-        # euler_fluxes(QL_log_e...,QR_log_e...)
         hadamard_sum!(rhse,(QxTr,QyTr),euler_fluxes,getindex.(Qh_log,:,e);
                       skip_index=(i,j)->(i>Nq)&(j>Nq))
-        # dense_hadamard_sum(getindex.(Qh,:,e),(QxTr,QyTr),euler_fluxes)
         mxm_accum!.(rhsQ,rhse,e)
     end
 
@@ -168,9 +116,6 @@ function rhs(Q, SBP_ops, rd::RefElemData, md::MeshData)
 
     return map(x -> -x./J,rhsQ),rhstest
 end
-
-# rhsQ,rhstest = rhs(Q,SBP_ops,rd,md)
-# error("d")
 
 # "Time integration coefficients"
 rk4a,rk4b,rk4c = ck45()
