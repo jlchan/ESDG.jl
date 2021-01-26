@@ -26,7 +26,8 @@ function lobatto_quad_2D(N)
 end
 
 rq,sq,wq = lobatto_quad_2D(N)
-rd = RefElemData(Quad(), N; quad_rule_vol=(rq,sq,wq), quad_rule_face=(r1D,w1D))
+rd = RefElemData(Quad(), N;
+        quad_rule_vol=(rq,sq,wq), quad_rule_face=gauss_lobatto_quad(0,0,N))
 rd = @set rd.LIFT = droptol!(sparse(rd.LIFT),1e-12)
 rd = @set rd.Vf = droptol!(sparse(rd.Vf),1e-12)
 
@@ -48,14 +49,10 @@ function precompute(rd::RefElemData,md::MeshData)
     # @unpack Dr,Ds = rd
     @unpack M,LIFT,Vf = rd
 
-    # not actually unit vectors, just predivide by J
-    nx = md.nxyzJ[1] ./ J[1,1]
-    ny = md.nxyzJ[2] ./ J[1,1]
-
     # precompute for Cartesian mesh
     Qr,Qs = M*rd.Drst[1], M*rd.Drst[2]
-    Qx = @. (md.rstxyzJ[1,1][1]*Qr + md.rstxyzJ[1,2][1]*Qs) / J[1,1]
-    Qy = @. (md.rstxyzJ[2,1][1]*Qr + md.rstxyzJ[2,2][1]*Qs) / J[1,1]
+    Qx = @. md.rstxyzJ[1,1][1]*Qr + md.rstxyzJ[1,2][1]*Qs
+    Qy = @. md.rstxyzJ[2,1][1]*Qr + md.rstxyzJ[2,2][1]*Qs
     SxTr,SyTr = map(A->droptol!(sparse(transpose(M\(A-A'))),1e-12),(Qx,Qy)) # flip sign for skew transpose
 
     # build Fmask
@@ -65,7 +62,7 @@ function precompute(rd::RefElemData,md::MeshData)
         Fmask[ij[1]] = ij[2]
     end
 
-    return nx,ny,Qx,Qy,SxTr,SyTr,Fmask,LIFT,diag(M),mapP
+    return SxTr,SyTr,Fmask,diag(M)
 end
 
 function compute_logs(Q)
@@ -76,16 +73,16 @@ end
 f2D(QL,QR) = fS_prim_log(Euler{2}(),QL,QR)
 
 # compute surface flux + lifted contributions
-function surface_contributions!(rhsQ,Qlog,rd,md,Fmask,nx,ny)
+function surface_contributions!(rhsQ,Qlog,rd,md,Fmask)
     @unpack LIFT = rd
-    @unpack mapP = md
+    @unpack mapP,nxJ,nyJ = md
     Qflog = map(x->x[Fmask,:],Qlog) # WARNING: global
     QPlog = map(x->x[mapP],Qflog)   # WARNING: global
-    flux = @SVector [zeros(size(nx,1)) for fld = 1:4] # tmp storage
-    for e = 1:size(nx,2)
+    flux = @SVector [zeros(size(nxJ,1)) for fld = 1:4] # tmp storage
+    for e = 1:size(nxJ,2)
         for i = 1:size(nxJ,1)
             fi = f2D(getindex.(Qflog,i,e),getindex.(QPlog,i,e))
-            fni = nx[i].*fi[1] + ny[i].*fi[2]
+            fni = nxJ[i].*fi[1] + nyJ[i].*fi[2]
             setindex!.(flux,fni,i)
         end
         map((x,y)->x .+= LIFT*y,view.(rhsQ,:,e),flux) # WARNING: LIFT can be optimized
@@ -101,44 +98,44 @@ function volume_contributions!(rhsQ,Qlog,SxTr,SyTr)
 end
 
 function rhs(Q,md::MeshData,rd::RefElemData)
-    nx,ny,Qx,Qy,SxTr,SyTr,Fmask,LIFT,wq,mapP = precompute(rd,md)
+    SxTr,SyTr,Fmask,wq = precompute(rd,md)
     rhsQ = @SVector [zeros(Float64,size(md.xyz[1])) for i = 1:4]
     Qlog = compute_logs(Q)
-    surface_contributions!(rhsQ,Qlog,rd,md,Fmask,nx,ny)
+    surface_contributions!(rhsQ,Qlog,rd,md,Fmask)
     volume_contributions!(rhsQ,Qlog,SxTr,SyTr)
     return VectorOfArray((x-> -1.0 .*x).(rhsQ))
 end
 
 function rhs!(rhsQ,Q,md,rd)
     Qlog = compute_logs(Q)
-    surface_contributions!(rhsQ,Qlog,rd,md,Fmask,nx,ny)
+    surface_contributions!(rhsQ,Qlog,rd,md,Fmask)
     volume_contributions!(rhsQ,Qlog,SxTr,SyTr)
-    return VectorOfArray((x-> -1.0 .*x).(rhsQ))
+    return VectorOfArray((x-> -x ./ J[1,1]).(rhsQ))
 end
 
-nx,ny,Qx,Qy,SxTr,SyTr,Fmask,LIFT,wq,mapP = precompute(rd,md)
-rhsQ = @SVector [zeros(Float64,size(md.xyz[1])) for i = 1:4]
-Qlog = compute_logs(Q)
+# SxTr,SyTr,Fmask,wq = precompute(rd,md)
+# rhsQ = @SVector [zeros(Float64,size(md.xyz[1])) for i = 1:4]
+# Qlog = compute_logs(Q)
 # @btime rhs!($rhsQ,$Q,$md,$rd)
 
-# rk4a,rk4b,rk4c = ck45()
-# CN = (N+1)*(N+2)  # trace constant
-# dt = CFL * 2 / (CN*K1D)
-# Nsteps = convert(Int,ceil(FinalTime/dt))
-# dt = FinalTime/Nsteps
-#
-# resQ = zero(Q)
-# for i = 1:Nsteps
-#     for INTRK = 1:5
-#         rhsQ = rhs(Q,md,rd)
-#         @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
-#         @. Q   += rk4b[INTRK]*resQ
-#     end
-#
-#     if i%100==0 || i==Nsteps
-#         println("Number of time steps $i out of $Nsteps")
-#     end
-# end
-#
-# zp = rd.Vp*Q[1]
-# scatter(map(x->rd.Vp*x,md.xyz)...,zp,zcolor=zp,lw=2,leg=false,cam=(0,90),msw=0)
+rk4a,rk4b,rk4c = ck45()
+CN = (N+1)*(N+2)  # trace constant
+dt = CFL * 2 / (CN*K1D)
+Nsteps = convert(Int,ceil(FinalTime/dt))
+dt = FinalTime/Nsteps
+
+resQ = zero(Q)
+for i = 1:Nsteps
+    for INTRK = 1:5
+        rhsQ = rhs(Q,md,rd)
+        @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
+        @. Q   += rk4b[INTRK]*resQ
+    end
+
+    if i%100==0 || i==Nsteps
+        println("Number of time steps $i out of $Nsteps")
+    end
+end
+
+zp = rd.Vp*Q[1]
+scatter(map(x->rd.Vp*x,md.xyz)...,zp,zcolor=zp,lw=2,leg=false,cam=(0,90),msw=0)
