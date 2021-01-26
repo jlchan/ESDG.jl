@@ -12,12 +12,11 @@ using StaticArrays
 using Test
 
 N = 3
-K1D = 16
+K1D = 8
 CFL = .5
 FinalTime = 1.0
 
-function lobatto_quad_2D(N)
-    # make lumped lobatto element
+function lobatto_quad_2D(N) # make lumped lobatto element
     r1D,w1D = gauss_lobatto_quad(0,0,N)
     rq,sq = vec.(NodesAndModes.meshgrid(r1D))
     wr,ws = vec.(NodesAndModes.meshgrid(w1D))
@@ -35,27 +34,17 @@ VX,VY,EToV = uniform_mesh(Quad(),K1D)
 md_nonperiodic = MeshData(VX,VY,EToV,rd)
 md = make_periodic(md_nonperiodic,rd)
 
-@unpack x,y = md
-rho = @. 2 + .0*exp(-25*(x^2+y^2))
-# rho = @. 2 + .1*sin(pi*x)*sin(pi*y)
-u = ones(size(x))
-v = .0*randn(size(x))
-p = one.(rho) # rho.^Euler{2}().γ
-Q = VectorOfArray(SVector{4}(prim_to_cons(Euler{2}(),(rho,u,v,p))...))
-
 function precompute(rd::RefElemData,md::MeshData)
-    # @unpack rxJ,sxJ,ryJ,syJ,nxJ,nyJ
-    @unpack J,sJ,mapP = md
-    # @unpack Dr,Ds = rd
-    @unpack M,LIFT,Vf = rd
+    @unpack rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,sJ,mapP  = md
+    @unpack Dr,Ds,M,LIFT,Vf = rd
 
     # precompute for Cartesian mesh
-    Qr,Qs = M*rd.Drst[1], M*rd.Drst[2]
-    Qx = @. md.rstxyzJ[1,1][1]*Qr + md.rstxyzJ[1,2][1]*Qs
-    Qy = @. md.rstxyzJ[2,1][1]*Qr + md.rstxyzJ[2,2][1]*Qs
+    Qr,Qs = M*Dr, M*Ds
+    Qx = @. rxJ[1]*Qr + sxJ[1]*Qs
+    Qy = @. ryJ[1]*Qr + syJ[1]*Qs
     SxTr,SyTr = map(A->droptol!(sparse(transpose(M\(A-A'))),1e-12),(Qx,Qy)) # flip sign for skew transpose
 
-    # build Fmask
+    # build Fmask to extract face ids
     Vf_ids = findall(@. abs(Vf) > 1e-12)
     Fmask = zeros(Int64,size(Vf,1))
     for ij in Vf_ids
@@ -97,26 +86,30 @@ function volume_contributions!(rhsQ,Qlog,SxTr,SyTr)
     return nothing
 end
 
-function rhs(Q,md::MeshData,rd::RefElemData)
+function rhs!(rhsQ,Q,md,rd,SxTr,SyTr,Fmask)
+    fill!.(rhsQ,zero(eltype(Q)))
     SxTr,SyTr,Fmask,wq = precompute(rd,md)
-    rhsQ = @SVector [zeros(Float64,size(md.xyz[1])) for i = 1:4]
     Qlog = compute_logs(Q)
     surface_contributions!(rhsQ,Qlog,rd,md,Fmask)
     volume_contributions!(rhsQ,Qlog,SxTr,SyTr)
-    return VectorOfArray((x-> -1.0 .*x).(rhsQ))
+    (x-> x ./= -md.J[1,1]).(rhsQ)
 end
 
-function rhs!(rhsQ,Q,md,rd)
-    Qlog = compute_logs(Q)
-    surface_contributions!(rhsQ,Qlog,rd,md,Fmask)
-    volume_contributions!(rhsQ,Qlog,SxTr,SyTr)
-    return VectorOfArray((x-> -x ./ J[1,1]).(rhsQ))
+function initial_condition(md)
+    @unpack x,y = md
+    rho = @. 2 + .1*exp(-25*(x^2+y^2))
+    # rho = @. 2 + .1*sin(pi*x)*sin(pi*y)
+    u = .5*ones(size(x))
+    v = 0*ones(size(x))
+    p = one.(rho) # rho.^Euler{2}().γ
+    Q = VectorOfArray(SVector{4}(prim_to_cons(Euler{2}(),(rho,u,v,p))...))
+    return Q
 end
 
-# SxTr,SyTr,Fmask,wq = precompute(rd,md)
-# rhsQ = @SVector [zeros(Float64,size(md.xyz[1])) for i = 1:4]
-# Qlog = compute_logs(Q)
-# @btime rhs!($rhsQ,$Q,$md,$rd)
+# init arrays
+SxTr,SyTr,Fmask,wq = precompute(rd,md)
+rhsQ = VectorOfArray(@SVector [zeros(size(md.xyz[1])) for i = 1:4])
+Q = initial_condition(md)
 
 rk4a,rk4b,rk4c = ck45()
 CN = (N+1)*(N+2)  # trace constant
@@ -127,7 +120,7 @@ dt = FinalTime/Nsteps
 resQ = zero(Q)
 for i = 1:Nsteps
     for INTRK = 1:5
-        rhsQ = rhs(Q,md,rd)
+        rhs!(rhsQ.u,Q,md,rd,SxTr,SyTr,Fmask)
         @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
         @. Q   += rk4b[INTRK]*resQ
     end
