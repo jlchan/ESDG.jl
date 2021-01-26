@@ -63,7 +63,7 @@ end
 
 function initial_condition(md)
     @unpack x,y = md
-    rho = @. 2 + .1*exp(-25*(x^2+y^2))
+    rho = @. 2 + .0*exp(-25*(x^2+y^2))
     # rho = @. 2 + .1*sin(pi*x)*sin(pi*y)
     u = .5*ones(size(x))
     v = 0*ones(size(x))
