@@ -27,7 +27,7 @@ end
 
 
 K = 200
-T = 0.2
+T = 6.0
 
 # Bl = -0.5
 # Br = 0.5
@@ -51,9 +51,9 @@ p_x(x) = (x <= 0.0) ? 1.0 : 0.1
 # rho_x(x) = (x <= 0.0) ? 1.0 : 0.5
 # u_x(x) = 1.0
 # p_x(x) = (x <= 0.0) ? 1.0 : 1.0
-rho_x(x) = (x <= 3.0) ? 1.0 : 0.1
+rho_x(x) = (x <= 3.0) ? 1.0 : 0.001
 u_x(x) = 0.0
-p_x(x) = (x <= 3.0) ? 0.001 : 1e-7
+p_x(x) = (x <= 3.0) ? 0.1 : 1e-7
 
 rho = @. rho_x(x)
 u = @. u_x(x)
@@ -114,7 +114,7 @@ Q = collect(Q)
             #scatter!(xp,Q[1][k]*ones(length(xp)))
         #end
     end
-end every 10
+end every 1000
 
 
 # p = pfun_nd.(Q[1],Q[2],Q[3])

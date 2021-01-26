@@ -16,7 +16,7 @@ using SetupDG
 push!(LOAD_PATH, "./examples/EntropyStableEuler.jl/src")
 using EntropyStableEuler
 using EntropyStableEuler.Fluxes1D
-const γ = 5/3# 1.4
+const γ = 1.4#5/3# 1.4
 
 function wavespeed_1D(rho,rhou,E)
     p = pfun_nd(rho,(rhou,),E)
@@ -39,27 +39,28 @@ end
 
 "Approximation parameters"
 N = 1 # The order of approximation
-K = 2000
+K = 50
 T = 0.2 # endtime
-T = 6.0
+#T = 6.0
+#T = 0.0001
 
-# # Sod shocktube
-# const Bl = -0.5
-# const Br = 0.5
-# const rhoL = 1.0
-# const rhoR = 0.125
-# const pL = 1.0
-# const pR = 0.1
-# const xC = 0.0
-
-# Leblanc shocktube
-const Bl = 0.0
-const Br = 9.0
+# Sod shocktube
+const Bl = -0.5
+const Br = 0.5
 const rhoL = 1.0
-const rhoR = 0.001
-const pL = 0.1
-const pR = 1e-7
-const xC = 3.0
+const rhoR = 0.125
+const pL = 1.0
+const pR = 0.1
+const xC = 0.0
+
+# # Leblanc shocktube
+# const Bl = 0.0
+# const Br = 9.0
+# const rhoL = 1.0
+# const rhoR = 0.001
+# const pL = 0.1
+# const pR = 1e-7
+# const xC = 3.0
 
 "Mesh related variables"
 #VX = LinRange(-0.5,0.5,K+1)
@@ -166,53 +167,7 @@ function rhs_IDPlow(Q,K,N)
 
     # rhsQ = @. 1/J*(-dfdx+visc)
     # return rhsQ
-#=
-    """Sod tube"""
-    J = 1/K/2 # assume uniform interval
-    dfdx = (zeros(N+1,K),zeros(N+1,K),zeros(N+1,K))
-    for i = 2:K*(N+1)-1
-        for c = 1:3
-            dfdx[c][i] = 1/2*(flux[c][mod1(i+1,K*(N+1))] - flux[c][mod1(i-1,K*(N+1))])
-        end
-    end
-    dfdx[1][1] = 1/2*(flux[1][2] - 0.0)
-    dfdx[2][1] = 1/2*(flux[2][2] - 1.0)
-    dfdx[3][1] = 1/2*(flux[3][2] - 0.0)
-    dfdx[1][end] = 1/2*(0.0 - flux[1][end-1])
-    dfdx[2][end] = 1/2*(0.1 - flux[2][end-1])
-    dfdx[3][end] = 1/2*(0.0 - flux[3][end-1])
     
-    visc = (zeros(N+1,K),zeros(N+1,K),zeros(N+1,K))
-    for i = 2:K*(N+1)-1
-        wavespd_curr = wavespeed_1D(Q[1][i],Q[2][i],Q[3][i])
-        wavespd_R = wavespeed_1D(Q[1][mod1(i+1,K*(N+1))],Q[2][mod1(i+1,K*(N+1))],Q[3][mod1(i+1,K*(N+1))])
-        wavespd_L = wavespeed_1D(Q[1][mod1(i-1,K*(N+1))],Q[2][mod1(i-1,K*(N+1))],Q[3][mod1(i-1,K*(N+1))])
-        dL = 1/2*max(wavespd_curr,wavespd_L)
-        dR = 1/2*max(wavespd_curr,wavespd_R)
-        for c = 1:3
-            visc[c][i] = dL*(Q[c][mod1(i-1,K*(N+1))]-Q[c][i]) + dR*(Q[c][mod1(i+1,K*(N+1))]-Q[c][i])
-        end
-    end
-    # i = 1, (rho, rhoU, E) = (1.0, 0.0, 1.0/(γ-1))
-    wavespd_curr = wavespeed_1D(Q[1][1],Q[2][1],Q[3][1])
-    wavespd_R = wavespeed_1D(Q[1][2],Q[2][2],Q[3][2])
-    wavespd_L = wavespeed_1D(1.0,0.0,1.0/(γ-1))
-    dL = 1/2*max(wavespd_curr,wavespd_L)
-    dR = 1/2*max(wavespd_curr,wavespd_R)
-    visc[1][1] = dL*(1.0-Q[1][1]) + dR*(Q[1][2]-Q[1][1])
-    visc[2][1] = dL*(0.0-Q[2][1]) + dR*(Q[2][2]-Q[2][1])
-    visc[3][1] = dL*(1.0/(γ-1)-Q[3][1]) + dR*(Q[3][2]-Q[3][1])
-
-    # i = end, (rho, rhoU, E) = (0.125, 0.0, 0.1/(γ-1))
-    wavespd_curr = wavespeed_1D(Q[1][end],Q[2][end],Q[3][end])
-    wavespd_R = wavespeed_1D(0.125,0.0,0.1/(γ-1))
-    wavespd_L = wavespeed_1D(Q[1][end-1],Q[2][end-1],Q[3][end-1])
-    dL = 1/2*max(wavespd_curr,wavespd_L)
-    dR = 1/2*max(wavespd_curr,wavespd_R)
-    visc[1][end] = dL*(Q[1][end-1]-Q[1][end]) + dR*(0.125-Q[1][end])
-    visc[2][end] = dL*(Q[2][end-1]-Q[2][end]) + dR*(0.0-Q[2][end])
-    visc[3][end] = dL*(Q[3][end-1]-Q[3][end]) + dR*(0.1/(γ-1)-Q[3][end])
-=#
     """shocktube"""
     J = (Br-Bl)/K/2 # assume uniform interval
     dfdx = (zeros(N+1,K),zeros(N+1,K),zeros(N+1,K))
