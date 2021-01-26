@@ -1,0 +1,13 @@
+[deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+EntropyStableEuler = "afeafd78-3f85-4602-b848-ed3fb24127e1"
+FluxDiffUtils = "61bfa2bf-ac51-4dc3-9c62-6a5180432d13"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+NodesAndModes = "7aca2e03-f7e2-4192-9ec8-f4ca66d597fb"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+RecursiveArrayTools = "731186ca-8d62-57ce-b412-fbd966d074cd"
+Setfield = "efcf1570-3423-57d1-acb7-fd33fddbac46"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+StartUpDG = "472ebc20-7c99-4d4b-9470-8fde4e9faa0f"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

@@ -3,7 +3,6 @@ using EntropyStableEuler
 using FluxDiffUtils
 using LinearAlgebra
 using NodesAndModes
-using Plots
 using Printf
 using RecursiveArrayTools
 using Setfield
@@ -12,12 +11,15 @@ using StartUpDG
 using StaticArrays
 using Test
 
-function benchmark_euler(; initial_refinement_level=1, polydeg=3)
-  include("euler2D_functions.jl")
+BLAS.set_num_threads(Threads.nthreads())
 
+include("euler2D_functions.jl")
+
+function benchmark_euler(; initial_refinement_level=1, polydeg=3)
   N = polydeg
   K1D = 2^initial_refinement_level
 
+  # make sparse operators
   r1D,w1D = gauss_lobatto_quad(0,0,N)
   rq,sq = vec.(NodesAndModes.meshgrid(r1D))
   wr,ws = vec.(NodesAndModes.meshgrid(w1D))
