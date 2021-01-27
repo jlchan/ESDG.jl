@@ -100,5 +100,5 @@ end
 
 
 versioninfo(verbose=true)
-tabulate_benchmarks(benchmark_linadv)
-tabulate_benchmarks(benchmark_euler)
+# tabulate_benchmarks(benchmark_linadv)
+tabulate_benchmarks(benchmark_euler; polydeg=7)

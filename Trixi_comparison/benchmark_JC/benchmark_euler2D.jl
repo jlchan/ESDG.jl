@@ -168,4 +168,4 @@ function tabulate_benchmarks(args...; kwargs...)
 end
 
 versioninfo(verbose=true)
-tabulate_benchmarks(benchmark_euler; levels=0:5)
+tabulate_benchmarks(benchmark_euler; levels=0:5, polydeg=7)
