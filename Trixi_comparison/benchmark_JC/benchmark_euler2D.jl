@@ -13,7 +13,6 @@ using Test
 
 BLAS.set_num_threads(Threads.nthreads())
 
-
 function precompute(rd::RefElemData,md::MeshData)
     @unpack rxJ,sxJ,ryJ,syJ,nxJ,nyJ,J,sJ,mapP  = md
     @unpack Dr,Ds,M,LIFT,Vf = rd
@@ -31,13 +30,28 @@ function precompute(rd::RefElemData,md::MeshData)
         Fmask[ij[1]] = ij[2]
     end
 
-    return SxTr,SyTr,Fmask,diag(M)
+    vmapM = reshape(1:length(md.x),size(md.x)...)[Fmask,:]
+    vmapP = vmapM[mapP]
+
+    r1D,w1D = gauss_lobatto_quad(0,0,N)
+    Lscale = 1.0 / w1D[1]
+
+    return SxTr,SyTr,Fmask,vmapM,vmapP,Lscale
 end
 
 function compute_logs(Q)
-    Qprim = cons_to_prim_beta(Euler{2}(),Q)  # WARNING: global
+    Qprim = cons_to_prim_beta(Euler{2}(),Q)  # WARNING: global. Why is it faster than the no-alloc version though?
     return (Qprim[1],Qprim[2],Qprim[3],Qprim[4],log.(Qprim[1]),log.(Qprim[4])) # append logs
 end
+
+# function compute_logs!(Qlog,Q)
+#     for i = 1:length(first(Q.u))
+#         Qprim = cons_to_prim_beta(Euler{2}(),getindex.(Q.u,i))
+#         Qlogi = (Qprim[1],Qprim[2],Qprim[3],Qprim[4],log(Qprim[1]),log(Qprim[4]))
+#         setindex!.(Qlog,Qlogi,i)
+#     end
+#     return nothing
+# end
 
 f2D(QL,QR) = fS_prim_log(Euler{2}(),QL,QR)
 
@@ -59,6 +73,30 @@ function surface_contributions!(rhsQ,Qlog,rd,md,Fmask)
     return nothing
 end
 
+function applyLIFT!(x,Fmask,Lscale,xf)
+    for (idf,idv) in enumerate(Fmask)
+       x[idv] += xf[idf]*Lscale
+    end
+    return nothing
+end
+
+function surface_contributions2!(rhsQ,Qlog,rd,md,Fmask,vmapM,vmapP,Lscale)
+    @unpack LIFT = rd
+    @unpack mapP,nxJ,nyJ = md
+
+    flux = @SVector [zeros(size(nxJ,1)) for fld = 1:4] # tmp storage
+    for e = 1:size(nxJ,2)
+        for i = 1:size(nxJ,1)
+            fi = f2D(getindex.(Qlog,vmapM[i,e]),getindex.(Qlog,vmapP[i,e]))
+            fni = nxJ[i].*fi[1] + nyJ[i].*fi[2]
+            setindex!.(flux,fni,i)
+        end
+        # map((x,y)->x .+= LIFT*y,view.(rhsQ,:,e),flux) # WARNING: LIFT can be optimized
+        map((x,xf)->applyLIFT!(x,Fmask,Lscale,xf),view.(rhsQ,:,e),flux)
+    end
+    return nothing
+end
+
 function volume_contributions!(rhsQ,Qlog,SxTr,SyTr)
     for e = 1:size(first(Qlog),2)
         hadamard_sum_ATr!(view.(rhsQ,:,e),(SxTr,SyTr),f2D,view.(Qlog,:,e)) # overwrites
@@ -66,14 +104,14 @@ function volume_contributions!(rhsQ,Qlog,SxTr,SyTr)
     return nothing
 end
 
-function rhs!(rhsQ,Q,md,rd,SxTr,SyTr,Fmask)
+function rhs!(rhsQ,Q,md,rd,precomp)
+    SxTr,SyTr,Fmask,vmapM,vmapP,Lscale = precomp
     fill!.(rhsQ,zero(eltype(Q)))
-    SxTr,SyTr,Fmask,wq = precompute(rd,md)
     Qlog = compute_logs(Q)
-    surface_contributions!(rhsQ,Qlog,rd,md,Fmask)
+    # surface_contributions!(rhsQ,Qlog,rd,md,Fmask)
+    surface_contributions2!(rhsQ,Qlog,rd,md,Fmask,vmapM,vmapP,Lscale)
     volume_contributions!(rhsQ,Qlog,SxTr,SyTr)
     (x-> x ./= -md.J[1,1]).(rhsQ)
-    return nothing
 end
 
 function initial_condition(md)
@@ -105,10 +143,10 @@ function benchmark_euler(; initial_refinement_level=1, polydeg=3)
   md_nonperiodic = MeshData(VX,VY,EToV,rd)
   md = make_periodic(md_nonperiodic,rd)
 
-  SxTr,SyTr,Fmask,wq = precompute(rd,md)
+  precomp = precompute(rd,md)
   rhsQ = VectorOfArray(@SVector [zeros(size(md.xyz[1])) for i = 1:4])
   Q = initial_condition(md)
-  return @benchmark rhs!($rhsQ.u,$Q,$md,$rd,$SxTr,$SyTr,$Fmask)
+  return @benchmark rhs!($rhsQ.u,$Q,$md,$rd,$precomp)
 end
 
 function run_benchmarks(benchmark_run; levels=0:5, polydeg=3)
@@ -130,4 +168,4 @@ function tabulate_benchmarks(args...; kwargs...)
 end
 
 versioninfo(verbose=true)
-tabulate_benchmarks(benchmark_euler)
+tabulate_benchmarks(benchmark_euler; levels=0:5)

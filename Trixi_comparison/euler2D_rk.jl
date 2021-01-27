@@ -12,21 +12,17 @@ using StaticArrays
 using Test
 
 N = 3
-K1D = 8
+K1D = 16
 CFL = .5
 FinalTime = 1.0
 
-function lobatto_quad_2D(N) # make lumped lobatto element
-    r1D,w1D = gauss_lobatto_quad(0,0,N)
-    rq,sq = vec.(NodesAndModes.meshgrid(r1D))
-    wr,ws = vec.(NodesAndModes.meshgrid(w1D))
-    wq = @. wr*ws
-    return rq,sq,wq
-end
+r1D,w1D = gauss_lobatto_quad(0,0,N)
+rq,sq = vec.(NodesAndModes.meshgrid(r1D))
+wr,ws = vec.(NodesAndModes.meshgrid(w1D))
+wq = @. wr*ws
 
-rq,sq,wq = lobatto_quad_2D(N)
 rd = RefElemData(Quad(), N;
-        quad_rule_vol=(rq,sq,wq), quad_rule_face=gauss_lobatto_quad(0,0,N))
+        quad_rule_vol=(rq,sq,wq), quad_rule_face=(r1D,w1D))
 rd = @set rd.LIFT = droptol!(sparse(rd.LIFT),1e-12)
 rd = @set rd.Vf = droptol!(sparse(rd.Vf),1e-12)
 
@@ -51,13 +47,28 @@ function precompute(rd::RefElemData,md::MeshData)
         Fmask[ij[1]] = ij[2]
     end
 
-    return SxTr,SyTr,Fmask,diag(M)
+    vmapM = reshape(1:length(md.x),size(md.x)...)[Fmask,:]
+    vmapP = vmapM[mapP]
+
+    r1D,w1D = gauss_lobatto_quad(0,0,N)
+    Lscale = 1.0 / w1D[1]
+
+    return SxTr,SyTr,Fmask,vmapM,vmapP,Lscale
 end
 
 function compute_logs(Q)
-    Qprim = cons_to_prim_beta(Euler{2}(),Q)  # WARNING: global
+    Qprim = cons_to_prim_beta(Euler{2}(),Q)  # WARNING: global. Why is it faster than the no-alloc version though?
     return (Qprim[1],Qprim[2],Qprim[3],Qprim[4],log.(Qprim[1]),log.(Qprim[4])) # append logs
 end
+
+# function compute_logs!(Qlog,Q)
+#     for i = 1:length(first(Q.u))
+#         Qprim = cons_to_prim_beta(Euler{2}(),getindex.(Q.u,i))
+#         Qlogi = (Qprim[1],Qprim[2],Qprim[3],Qprim[4],log(Qprim[1]),log(Qprim[4]))
+#         setindex!.(Qlog,Qlogi,i)
+#     end
+#     return nothing
+# end
 
 f2D(QL,QR) = fS_prim_log(Euler{2}(),QL,QR)
 
@@ -79,6 +90,30 @@ function surface_contributions!(rhsQ,Qlog,rd,md,Fmask)
     return nothing
 end
 
+function applyLIFT!(x,Fmask,Lscale,xf)
+    for (idf,idv) in enumerate(Fmask)
+       x[idv] += xf[idf]*Lscale
+    end
+    return nothing
+end
+
+function surface_contributions2!(rhsQ,Qlog,rd,md,Fmask,vmapM,vmapP,Lscale)
+    @unpack LIFT = rd
+    @unpack mapP,nxJ,nyJ = md
+
+    flux = @SVector [zeros(size(nxJ,1)) for fld = 1:4] # tmp storage
+    for e = 1:size(nxJ,2)
+        for i = 1:size(nxJ,1)
+            fi = f2D(getindex.(Qlog,vmapM[i,e]),getindex.(Qlog,vmapP[i,e]))
+            fni = nxJ[i].*fi[1] + nyJ[i].*fi[2]
+            setindex!.(flux,fni,i)
+        end
+        # map((x,y)->x .+= LIFT*y,view.(rhsQ,:,e),flux) # WARNING: LIFT can be optimized
+        map((x,xf)->applyLIFT!(x,Fmask,Lscale,xf),view.(rhsQ,:,e),flux)
+    end
+    return nothing
+end
+
 function volume_contributions!(rhsQ,Qlog,SxTr,SyTr)
     for e = 1:size(first(Qlog),2)
         hadamard_sum_ATr!(view.(rhsQ,:,e),(SxTr,SyTr),f2D,view.(Qlog,:,e)) # overwrites
@@ -86,11 +121,12 @@ function volume_contributions!(rhsQ,Qlog,SxTr,SyTr)
     return nothing
 end
 
-function rhs!(rhsQ,Q,md,rd,SxTr,SyTr,Fmask)
+function rhs!(rhsQ,Q,md,rd,precomp)
+    SxTr,SyTr,Fmask,vmapM,vmapP,Lscale = precomp
     fill!.(rhsQ,zero(eltype(Q)))
-    SxTr,SyTr,Fmask,wq = precompute(rd,md)
     Qlog = compute_logs(Q)
-    surface_contributions!(rhsQ,Qlog,rd,md,Fmask)
+    # surface_contributions!(rhsQ,Qlog,rd,md,Fmask)
+    surface_contributions2!(rhsQ,Qlog,rd,md,Fmask,vmapM,vmapP,Lscale)
     volume_contributions!(rhsQ,Qlog,SxTr,SyTr)
     (x-> x ./= -md.J[1,1]).(rhsQ)
 end
@@ -107,7 +143,7 @@ function initial_condition(md)
 end
 
 # init arrays
-SxTr,SyTr,Fmask,wq = precompute(rd,md)
+precomp = precompute(rd,md)
 rhsQ = VectorOfArray(@SVector [zeros(size(md.xyz[1])) for i = 1:4])
 Q = initial_condition(md)
 
@@ -120,7 +156,7 @@ dt = FinalTime/Nsteps
 resQ = zero(Q)
 for i = 1:Nsteps
     for INTRK = 1:5
-        rhs!(rhsQ.u,Q,md,rd,SxTr,SyTr,Fmask)
+        rhs!(rhsQ.u,Q,md,rd,precomp)
         @. resQ = rk4a[INTRK]*resQ + dt*rhsQ
         @. Q   += rk4b[INTRK]*resQ
     end
