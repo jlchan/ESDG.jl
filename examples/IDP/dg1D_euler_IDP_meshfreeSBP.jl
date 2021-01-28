@@ -38,8 +38,8 @@ end
 
 const TOL = 1e-16
 "Approximation parameters"
-N = 10 # The order of approximation
-K = 5
+N = 3 # The order of approximation
+K = 50
 T = 1.0
 T = 6.0
 #T = 0.0039
@@ -193,6 +193,14 @@ function limiting_param(U_low, P_ij)
     return l
 end
 
+function flux_lowIDP(U_i,U_j,f_i,f_j,c_ij,wavespd)
+    return c_ij*(f_i+f_j)-abs(c_ij)*wavespd*(U_j-U_i)
+end
+
+function flux_high(f_i,f_j,c_ij)
+    return c_ij*(f_i+f_j)
+end
+
 function rhs_IDP(U,K,N,wq,S,S0,dt,Mlump_inv)
     p = pfun_nd.(U[1],U[2],U[3])
     flux = zero.(U)
@@ -227,8 +235,8 @@ function rhs_IDP(U,K,N,wq,S,S0,dt,Mlump_inv)
                 if i != j # skip diagonal
                     wavespd = max(wavespd_arr[i,k],wavespd_arr[j,k])
                     for c = 1:3
-                        F_low[c][i,j] = S0[i,j]*(flux[c][j,k]+flux[c][i,k])-abs(S0[i,j])*wavespd*(U[c][j,k]-U[c][i,k])
-                        F_high[c][i,j] = S[i,j]*(flux[c][j,k]+flux[c][i,k])
+                        F_low[c][i,j]  = flux_lowIDP(U[c][i,k],U[c][j,k],flux[c][i,k],flux[c][j,k],S0[i,j],wavespd)
+                        F_high[c][i,j] = flux_high(flux[c][i,k],flux[c][j,k],S[i,j])
                     end
                 end
             end
@@ -244,24 +252,22 @@ function rhs_IDP(U,K,N,wq,S,S0,dt,Mlump_inv)
         wavespd_r = max(wavespd_arr[end,k],wavespeed_1D(U_right[1],U_right[2],U_right[3]))
 
         for c = 1:3
-            F_low_P[c][1] = -1.0/2.0*(f_left[c]+flux[c][1,k])-1.0/2.0*wavespd_l*(U_left[c]-U[c][1,k]) 
-            F_low_P[c][2] = 1.0/2.0*(f_right[c]+flux[c][end,k])-1.0/2.0*wavespd_r*(U_right[c]-U[c][end,k])
+            F_low_P[c][1] = flux_lowIDP(U[c][1,k],U_left[c],flux[c][1,k],f_left[c],-0.5,wavespd_l) 
+            F_low_P[c][2] = flux_lowIDP(U[c][end,k],U_right[c],flux[c][end,k],f_right[c],0.5,wavespd_r)
 
-            F_high_P[c][1] = -1.0/2.0*(f_left[c]+flux[c][1,k])
-            F_high_P[c][2] = 1.0/2.0*(f_right[c]+flux[c][end,k])
+            F_high_P[c][1] = flux_high(flux[c][1,k],f_left[c],-0.5)
+            F_high_P[c][2] = flux_high(flux[c][end,k],f_right[c],0.5)
         end
 
         # Calculate limiting parameters over interior of the element
         P_ij = zeros(3,1)
         # TODO: redundant
-        rhs_low = [zeros(N+1,1),zeros(N+1,1),zeros(N+1,1)]
         U_low =  [zeros(N+1,1),zeros(N+1,1),zeros(N+1,1)]
         for c = 1:3
-            rhs_low[c] .= sum(-F_low[c],dims=2)
-            rhs_low[c][1] -= F_low_P[c][1]
-            rhs_low[c][end] -= F_low_P[c][2]
-            rhs_low[c] = 1/J*Mlump_inv*rhs_low[c]
-            U_low[c] = U[c][:,k]+dt*rhs_low[c]
+            U_low[c] .= sum(-F_low[c],dims=2)
+            U_low[c][1] -= F_low_P[c][1]
+            U_low[c][end] -= F_low_P[c][2]
+            U_low[c] .= U[c][:,k]+dt/J*Mlump_inv*U_low[c]
         end
         for i = 1:N+1
             lambda_j = (i >= 2 && i <= N) ? 1/N : 1/(N+1)
@@ -316,8 +322,8 @@ function rhs_IDP(U,K,N,wq,S,S0,dt,Mlump_inv)
                 if i != j # skip diagonal
                     wavespd = max(wavespd_arr[i,k+1],wavespd_arr[j,k+1])
                     for c = 1:3
-                        F_low_tmp[c][i,j] = S0[i,j]*(flux[c][j,k+1]+flux[c][i,k+1])-abs(S0[i,j])*wavespd*(U[c][j,k+1]-U[c][i,k+1])
-                        F_high_tmp[c][i,j] = S[i,j]*(flux[c][j,k+1]+flux[c][i,k+1])
+                        F_low_tmp[c][i,j] = flux_lowIDP(U[c][i,k+1],U[c][j,k+1],flux[c][i,k+1],flux[c][j,k+1],S0[i,j],wavespd)
+                        F_high_tmp[c][i,j] = flux_high(flux[c][i,k+1],flux[c][j,k+1],S[i,j])
                     end
                 end
             end
@@ -326,17 +332,14 @@ function rhs_IDP(U,K,N,wq,S,S0,dt,Mlump_inv)
             f_left = [flux[1][end,k]; flux[2][end,k]; flux[3][end,k]]
             wavespd_l = max(wavespd_arr[1,k+1],wavespeed_1D(U_left[1],U_left[2],U_left[3]))
             for c = 1:3
-                F_lowP_tmp[c] = -1.0/2.0*(f_left[c]+flux[c][1,k+1])-1.0/2.0*wavespd_l*(U_left[c]-U[c][1,k+1]) 
-                F_highP_tmp[c] = -1.0/2.0*(f_left[c]+flux[c][1,k+1])
+                F_lowP_tmp[c] = flux_lowIDP(U[c][1,k+1],U_left[c],flux[c][1,k+1],f_left[c],-0.5,wavespd_l) 
+                F_highP_tmp[c] = flux_high(flux[c][1,k+1],f_left[c],-0.5)
             end
 
-            rhs_low = zeros(3,1)
             U_low = zeros(3,1)
             for c = 1:3
-                rhs_low[c] = sum(-F_low_tmp[c])
-                rhs_low[c] -= F_lowP_tmp[c][1]
-                rhs_low[c] = 1/J*Mlump_inv[1]*rhs_low[c]
-                U_low[c] = U[c][1,k+1]+dt*rhs_low[c]
+                U_low[c] = sum(-F_low_tmp[c])-F_lowP_tmp[c][1]
+                U_low[c] = U[c][1,k+1]+dt*1/J*Mlump_inv[1]*U_low[c]
             end
 
             for c = 1:3
@@ -352,6 +355,7 @@ function rhs_IDP(U,K,N,wq,S,S0,dt,Mlump_inv)
         for c = 1:3
             # With limiting
             rhsU[c][:,k] = sum((L.-1).*F_low[c] - L.*F_high[c],dims=2)
+
             if k > 1
                 rhsU[c][1,k] += (L_P[k-1]-1)*F_low_P[c][1] - L_P[k-1]*F_high_P[c][1]
             else
@@ -472,6 +476,7 @@ resU = [zeros(size(x)),zeros(size(x)),zeros(size(x))]
 
 Vp = vandermonde_1D(N,LinRange(-1,1,10))/VDM
 gr(size=(300,300),ylims=(0,1.2),legend=false,markerstrokewidth=1,markersize=2)
+plot()
 
 dt = 0.0001
 Nsteps = Int(T/dt)
