@@ -66,8 +66,8 @@ end
 
 const TOL = 1e-16
 "Approximation parameters"
-N = 2 # The order of approximation
-K = 128
+N = 4 # The order of approximation
+K = 32
 T = 1.0
 T = 6.0
 #T = 0.0039
@@ -92,8 +92,9 @@ const rhoL = 1.0
 const rhoR = 0.001
 const pL = 0.1
 const pR = 1e-7
+#const pR = 1e-15
 const xC = 3.0
-const GIFINTERVAL = 600
+const GIFINTERVAL = 60
 T = 6.0
 
 "Mesh related variables"
@@ -256,6 +257,8 @@ function rhs_IDP(U,K,N,wq,S,S0,dt,Mlump_inv)
     L_P         = zeros(K-1) # limiting params at left/right boundary
     rhsU        = [zeros(N+1,K),zeros(N+1,K),zeros(N+1,K)]
 
+    L_plot = zeros(K)
+
     # Determine dt
     wavespd_arr = zeros(N+1,K)
     for k = 1:K
@@ -401,9 +404,7 @@ function rhs_IDP(U,K,N,wq,S,S0,dt,Mlump_inv)
 
         end
 
-        # L = ones(size(L))
-        # L_P = ones(size(L_P))
-        
+
         # construct rhs
         for c = 1:3
             # With limiting
@@ -423,9 +424,10 @@ function rhs_IDP(U,K,N,wq,S,S0,dt,Mlump_inv)
             rhsU[c][:,k] .= 1/J*Mlump_inv*rhsU[c][:,k]
         end
 
+        L_plot[k] = sum(L)
     end
 
-    return rhsU
+    return rhsU,L_plot
 end
 
 function rhs_IDPlow(U,K,N,Mlump_inv,p,flux,J)
@@ -581,16 +583,17 @@ Vp = vandermonde_1D(N,LinRange(-1,1,10))/VDM
 gr(size=(300,300),ylims=(0,1.2),legend=false,markerstrokewidth=1,markersize=2)
 plot()
 
-dt = 0.0001
+dt = 0.001
 Nsteps = Int(T/dt)
 @gif for i = 1:Nsteps
-    rhsU = rhs_IDP(U,K,N,wq,S,S0,dt,Mlump_inv)
+    rhsU,L_plot = rhs_IDP(U,K,N,wq,S,S0,dt,Mlump_inv)
     #rhsU = rhs_high(U,K,N,Mlump_inv,S)
     @. U = U + dt*rhsU
     global t = t + dt
     println("Current time $t with time step size $dt, and final time $T")  
     if i % GIFINTERVAL == 0  
         plot(Vp*x,Vp*U[1])
+        plot!(Bl+(Br-Bl)/K/2:(Br-Bl)/K:Br-(Br-Bl)/K/2,L_plot/N/(N+1),st=:bar,alpha=.3)
     end
 end every GIFINTERVAL
 
