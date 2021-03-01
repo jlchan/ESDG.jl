@@ -9,7 +9,7 @@ using StaticArrays
 
 const γ = 1.4
 
-export logmean
+export logmean, γ
 include("./logmean.jl")
 
 # # submodules
