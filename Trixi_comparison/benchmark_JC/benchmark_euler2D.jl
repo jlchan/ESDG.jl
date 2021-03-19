@@ -169,3 +169,21 @@ end
 
 versioninfo(verbose=true)
 tabulate_benchmarks(benchmark_euler; levels=0:5, polydeg=7)
+
+# with surface
+# #Elements | Runtime in seconds
+#         1 | 1.95e-05
+#         4 | 7.86e-05
+#        16 | 3.81e-04
+#        64 | 1.41e-03
+#       256 | 5.41e-03
+#      1024 | 2.12e-02
+
+# without surface
+# #Elements | Runtime in seconds
+#         1 | 1.84e-05
+#         4 | 7.75e-05
+#        16 | 3.13e-04
+#        64 | 1.32e-03
+#       256 | 6.08e-03
+#      1024 | 2.00e-02

@@ -1,4 +1,4 @@
-#!/usr/bin/evj julia
+#!/usr/bin/env julia
 # Benchmark some common RHS evaluations on a uniform 2D mesh in Trixi.jl
 
 using Pkg
@@ -79,6 +79,39 @@ function benchmark_euler(; initial_refinement_level=1, polydeg=3)
 end
 
 
+function benchmark_euler_volume_integral(; initial_refinement_level=1, polydeg=3)
+
+  γ = 1.4
+  equations = CompressibleEulerEquations2D(γ)
+
+  surface_flux = flux_ranocha
+  volume_flux  = flux_ranocha
+  solver = DGSEM(polydeg, surface_flux, VolumeIntegralFluxDifferencing(volume_flux))
+
+  coordinates_min = (-1.0, -1.0)
+  coordinates_max = ( 1.0,  1.0)
+  mesh = TreeMesh(coordinates_min, coordinates_max,
+                  initial_refinement_level=initial_refinement_level,
+                  n_cells_max=100_000)
+
+  semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver)
+
+  t0 = 0.0
+  u0 = compute_coefficients(t0, semi)
+  du = zero(u0)
+
+  GC.@preserve u0 du begin
+    @benchmark Trixi.calc_volume_integral!($(Trixi.wrap_array(du, semi)),
+                                           $(Trixi.wrap_array(u0, semi)),
+                                           $(Trixi.have_nonconservative_terms(equations)),
+                                           $(equations),
+                                           $(solver.volume_integral),
+                                           $(solver),
+                                           $(semi.cache))
+  end
+end
+
+
 function run_benchmarks(benchmark_run; levels=0:5, polydeg=3)
   runtimes = zeros(length(levels))
   for (idx,initial_refinement_level) in enumerate(levels)
@@ -100,5 +133,23 @@ end
 
 
 versioninfo(verbose=true)
-# tabulate_benchmarks(benchmark_linadv)
-tabulate_benchmarks(benchmark_euler; polydeg=7)
+# tabulate_benchmarks(benchmark_linadv, levels=0:8)
+# tabulate_benchmarks(benchmark_euler, levels=0:8)137
+tabulate_benchmarks(benchmark_euler_volume_integral, levels=0:5)
+
+# for polydeg = 3
+# #Elements | Runtime in seconds
+#         1 | 1.43e-06
+#         4 | 5.71e-06
+#        16 | 2.28e-05
+#        64 | 7.48e-05
+#       256 | 3.97e-04
+#      1024 | 1.80e-03
+
+# #Elements | Runtime in seconds
+#         1 | 1.84e-05
+#         4 | 7.75e-05
+#        16 | 3.13e-04
+#        64 | 1.32e-03
+#       256 | 6.08e-03
+#      1024 | 2.00e-02

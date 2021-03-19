@@ -61,14 +61,14 @@ function compute_logs(Q)
     return (Qprim[1],Qprim[2],Qprim[3],Qprim[4],log.(Qprim[1]),log.(Qprim[4])) # append logs
 end
 
-# function compute_logs!(Qlog,Q)
-#     for i = 1:length(first(Q.u))
-#         Qprim = cons_to_prim_beta(Euler{2}(),getindex.(Q.u,i))
-#         Qlogi = (Qprim[1],Qprim[2],Qprim[3],Qprim[4],log(Qprim[1]),log(Qprim[4]))
-#         setindex!.(Qlog,Qlogi,i)
-#     end
-#     return nothing
-# end
+function compute_logs!(Qlog,Q)
+    for i = 1:length(first(Q.u))
+        Qprim = cons_to_prim_beta(Euler{2}(),getindex.(Q.u,i))
+        Qlogi = (Qprim[1],Qprim[2],Qprim[3],Qprim[4],log(Qprim[1]),log(Qprim[4]))
+        setindex!.(Qlog,Qlogi,i)
+    end
+    return nothing
+end
 
 f2D(QL,QR) = fS_prim_log(Euler{2}(),QL,QR)
 
