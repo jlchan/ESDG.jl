@@ -7,12 +7,12 @@ using FluxDiffUtils
 using StaticArrays
 using Plots
 
-N = 3
-K = 16
-T = 2.0
+N = 4
+K = 200
+T = .2
 CFL = .125
 
-interval = 10
+interval = 100
 
 rd = RefElemData(Line(),N; quad_rule_vol=gauss_lobatto_quad(0,0,N))
 VX,EToV = uniform_mesh(Line(),K)
@@ -29,8 +29,21 @@ Q1[1,1] = -1
 Q1[N+1,N+1] = 1
 @. Q1 = .5*Q1
 
-# Q1 = QN
+# input = log10(S_e)
+function indicator(s)
+    
+    κ = 2
+    s0 = 4
+    if s < s0 - κ
+        return 0.0
+    elseif s > s0-κ && s < s0 + κ
+        return .5*(1 + sin(pi*(s-s0)/(2*κ)))
+    else
+        return 1.0
+    end
+end
 
+# Q1 = QN
 # try FEM mass
 # M = diagm(Q1*rd.r)
 # M = I(N+1) * 2/(N+1)
@@ -123,12 +136,13 @@ x = vec(x)
 # u = @. (x > -1/3)*1.0
 
 h = @. 1e-1 + exp(-25*x^2)
-# h = @. 1.0 + .5*(x > 0.0)
+h = @. 1e-1 + 1*(x < 0)
 # b = @. .5*sin(pi*x)
 b = @. 0*x
 # bmax = maximum(b)
 # h = @. 2.0 - b
-hu = @. 0*x
+u = @. .0 + .0*(x < .0)
+hu = @. h*u
 Q = SVector{2}(h,hu)
 
 dt0 = CFL*(x[2]-x[1]) / maximum(@. sqrt(abs(h)))
@@ -139,12 +153,12 @@ dt = T/Nsteps
 ubounds = (0.0,maximum(h))
 l = zeros(N+1,md.K)
 
-ops = Qg,QgTr,Q1g,Q1gTr,ΔQ,S1,invm
+ops = Qg,QgTr,Q1g,Q1gTr,ΔQ,S1,invm,inv(rd.VDM)
 Qtmp1 = similar.(Q)
 Qtmp2 = similar.(Q)
-function update_FE!(Qnew,l,Q,ops,dt,b,N,K)
+function update_FE!(Qnew,l,Q,ops,dt,b,N,K,rd)
 
-    Qg,QgTr,Q1g,Q1gTr,ΔQ,S1,invm = ops
+    Qg,QgTr,Q1g,Q1gTr,ΔQ,S1,invm,invVDM = ops
 
     # low order update
     r1 = hadsum(Q1gTr,fS,Q) .+ hadsum(abs.(Q1gTr),dS,Q)
@@ -165,6 +179,7 @@ function update_FE!(Qnew,l,Q,ops,dt,b,N,K)
                 idj = j + (e-1)*(N+1)
                 Qj = getindex.(Q,idj)
                 Aij = ΔQ[i,j] .* fS(Qi,Qj) - abs(S1[i,j]) .* dS(Qi,Qj)
+                # setindex!.(A_loc,Aij,i,j)
 
                 λj = 1/(size(ΔQ,2)-1) # dim(N(i)\i)
                 l_ij = min(1.0,abs(Qi[1]*λj/(dt*invm[idi]*Aij[1])))
@@ -173,12 +188,27 @@ function update_FE!(Qnew,l,Q,ops,dt,b,N,K)
                 val_i .+= Aij
                 val_i[2] += ΔbN[idi]/size(ΔQ,2)
             end
-            # val_i[2] += ΔbN[idi]
             setindex!.(val_e,val_i,i)
         end
+        # l_loc = min.(l_loc,l_loc')
+        # val_e[1] .= vec(sum(A_loc[1].*l_loc,dims=2))
+        # val_e[2] .= vec(sum(A_loc[2].*l_loc,dims=2))
+
+        # h = reshape(Q[1],N+1,K)[:,e]
+        # u = reshape(Q[2],N+1,K)[:,e]./h
+        # c1 = invVDM*(h-.5*u.^2)
+        # c2 = invVDM*(u)
+        # c = @. c1^2 + c2^2
+        # s = (c1[end]^2+c2[end]^2) / (dot(c1,c1) + dot(c2,c2))
+
+        c = invVDM*reshape(Q[1],N+1,K)[:,e]
+        s = sum(c[end].^2) / dot(c,c)
+        s_lim = indicator(-log10(s))
+        l_e = min(l_e,s_lim)
 
         # l_e = 0.0
         l[:,e] .= l_e # store for plotting
+        # l[:,e] .= vec(sum(l_loc,dims=2)/(N+1))
 
         for i = 1:size(ΔQ,1)
             idi = i + (e-1)*(N+1)
@@ -190,22 +220,25 @@ function update_FE!(Qnew,l,Q,ops,dt,b,N,K)
 end
 
 init_mass = sum(vec(MJ).*Q[1])
-@gif for i = 1:Nsteps
+plot()
+#@gif
+for i = 1:Nsteps
 
-    update_FE!(Qtmp1,l,Q,ops,dt,b,N,K)
-    update_FE!(Qtmp2,l,Qtmp1,ops,dt,b,N,K)
+    update_FE!(Qtmp1,l,Q,ops,dt,b,N,K,rd)
+    update_FE!(Qtmp2,l,Qtmp1,ops,dt,b,N,K,rd)
     map((x,y)->y .= .5 .* (x .+ y),Qtmp2,Q)
 
     if i%interval==0
         println("$i / $Nsteps: minh = $(minimum(Q[1])), Δmass = $(sum(vec(MJ).*Q[1]) - init_mass)")
-        plot(rd.Vp*reshape(x,N+1,K),rd.Vp*reshape(Q[1],N+1,K))
-        scatter!(.5*rd.wq'*reshape(x,N+1,K),.5*rd.wq'*reshape(Q[1],N+1,K))
+        #plot(rd.Vp*reshape(x,N+1,K),rd.Vp*reshape(Q[1],N+1,K))
+        # scatter!(.5*rd.wq'*reshape(x,N+1,K),.5*rd.wq'*reshape(Q[1],N+1,K))
         # plot!(rd.Vp*reshape(x,N+1,K),rd.Vp*reshape(Q[2],N+1,K),ls=:dash)
         # scatter!(x,Q[1],ms=1,ylims = (-1.0,2.0))
-        plot!(reshape(x,N+1,K),l,leg=false,ylims = (-1.0,2.0))
+        #plot!(reshape(x,N+1,K),l,leg=false,ylims = (-1.0,2.0))
     end
-end every interval
+end #every interval
 
+plot(rd.Vp*reshape(x,N+1,K),rd.Vp*reshape(Q[1],N+1,K),leg=false)
 # Δmass =
 # @show Δmass
 

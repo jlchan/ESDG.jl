@@ -9,7 +9,7 @@ using SparseArrays
 using Plots
 using ForwardDiff
 
-N = 7
+N = 3
 K = 10
 
 T = 10.0
@@ -17,7 +17,7 @@ CFL = .25
 interval = 100
 
 vol_quad = gauss_lobatto_quad(0,0,N)
-vol_quad = gauss_quad(0,0,N+1)
+vol_quad = gauss_quad(0,0,2*N+1)
 rd = RefElemData(Line(),N; quad_rule_vol=vol_quad)
 
 VX,EToV = uniform_mesh(Line(),K)
@@ -65,10 +65,10 @@ fCG(u) = -Vxg'*(wJq.*f.(Vqg*u))
 
 dfdu(u) = ForwardDiff.jacobian(fCG,u)
 λ,V = eigen(Mg\dfdu(u))
+@show maximum(real(λ))/size(Mg,1)
 scatter(real(λ),imag(λ),label="Linearization around u0(x)")
 # scatter!(real(λ),imag(λ),label="Linearization around u0(x) + Δu")
 plot!(title="Max real part = $(maximum(real(λ)))")
-
 # # Gregor's idea
 # x = vec(x)
 # v0 = R\(@. u0(x)^2/2)
