@@ -6,6 +6,7 @@ using SparseArrays
 using StaticArrays
 using Plots
 using Test
+using ForwardDiff
 
 N = 2
 K = 10
@@ -17,7 +18,7 @@ u0min = 1
 interval = 500
 
 vol_quad = gauss_lobatto_quad(0,0,N)
-vol_quad = gauss_quad(0,0,N+1)
+vol_quad = gauss_quad(0,0,2*N+1)
 rd = RefElemData(Line(),N; quad_rule_vol=vol_quad)
 
 VX,EToV = uniform_mesh(Line(),K)
@@ -143,7 +144,8 @@ u = @. u0(x) + 0e-3*cos(pi*x)
 # u = u0.(x) + randn(size(x))
 
 fEC(uL,uR) = @. (uL*uL + uL*uR + uR*uR)/6.0
-dS(uL,uR) = @. .5*max(abs(uL),abs(uR))*(uL-uR)
+# fEC(uL,uR) = @. (uL*uL + uR*uR)/4.0
+dS(uL,uR) = @. 0*.5*max(abs(uL),abs(uR))*(uL-uR)
 # fLF(uL,uR) = .5*(uL^2/2 + uR^2/2)
 # fLF(uL,uR) = .5*(uL+uR)
 
