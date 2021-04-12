@@ -5,6 +5,7 @@ using Setfield
 using StaticArrays
 
 using RecursiveArrayTools
+using TimerOutputs
 
 using LinearAlgebra
 using NodesAndModes
@@ -12,11 +13,24 @@ using StartUpDG
 using EntropyStableEuler
 using FluxDiffUtils
 
-N = 2
-K1D = 200
-CFL = .5
-T = .2
+macro threaded(expr)
+  # esc(quote ... end) as suggested in https://github.com/JuliaLang/julia/issues/23221
+  return esc(quote
+    if Threads.nthreads() == 1
+      $(expr)
+    else
+      Threads.@threads $(expr)
+    end
+  end)
+end
+
+N = 1
+K1D = 2000
+CFL = .001
+T = .0000001
 interval = 50
+
+const timer = TimerOutput()
 
 #######################################################
 #           problem setup                             #
@@ -25,7 +39,7 @@ interval = 50
 struct Sod end
 struct MHD end
 problem = Sod()
-# problem = MHD()
+problem = MHD()
 
 # speed of sound in general dims
 function cfun(U)
@@ -67,22 +81,23 @@ function add_source!(rhsQ,Q,md,problem::MHD)
     @unpack x = md
     u = @. Q[2]/Q[1]
     σ = 1.0
-    Ez = 10000.0
+    Ez = 1000 #10000.0
     By = 1.0
-    @. rhsQ[2] += σ*(Ez-By*u)*By
-    @. rhsQ[3] += σ*(Ez-By*u)*Ez
+    # @. rhsQ[2] += σ*(Ez-By*u)*By
+    # @. rhsQ[3] += σ*(Ez-By*u)*Ez
     return nothing
 end
 function impose_BCs!(UP,problem::MHD)
 
-    ρ,ρu,E = UP
-
+    ρP,ρuP,EP = UP
     UBC_left = prim_to_cons(Euler{1}(),u0(-1,problem))
-    UBC_right = prim_to_cons(Euler{1}(),u0(1,problem))
-    for fld = 1:length(UP)
-        UP[fld][1] = UBC_left[fld]
-        UP[fld][end] = UBC_right[fld]
-    end
+    UP[2][1] = UBC_left[2] # set inflow momentum
+    UP[3][1] = UBC_left[3] # set inflow energy (should set based on temp?)
+
+    # pP = pfun(Euler{1}(),getindex.(UP,2)) # right pressure - extrapolate
+    # UBC_right = prim_to_cons(Euler{1}(),getindex.(UP,2))
+    # UP[2][2] = UBC_right[2] # set inflow momentum
+    # UP[3][2] = UBC_right[3] # set inflow energy (should set based on temp?)
 end
 make_domain(VX,problem::MHD) = VX = @. .5*(1+VX)*.125
 
@@ -113,7 +128,8 @@ VhP = Vh*Pq
 
 # make skew symmetric versions of the operators"
 Qrhskew = .5*(Qrh-transpose(Qrh))
-SBP_ops = (Matrix(Qrhskew'),Ph,VhP)
+QrTr = Matrix(Qrhskew')
+SBP_ops = (; QrTr,Ph,VhP)
 
 # @unpack rxJ = md # hack - rxJ = 1 here, ignore
 
@@ -132,7 +148,7 @@ Q = VectorOfArray(prim_to_cons(Euler{1}(),SVector{3}(rho,u,p)))
 
 function rhs(Q, SBP_ops, rd::RefElemData, md::MeshData, problem)
 
-    QrTr,Ph,VhP = SBP_ops
+    @unpack QrTr,Ph,VhP = SBP_ops
     Ph *= 2.0
     @unpack LIFT,Vf,Vq = rd
     @unpack rxJ,J,K = md
@@ -141,33 +157,45 @@ function rhs(Q, SBP_ops, rd::RefElemData, md::MeshData, problem)
 
     Nh,Nq = size(VhP)
 
-    # entropy var projection
-    VU = (x->VhP*x).(v_ufun(Euler{1}(),(x->Vq*x).(Q.u)))
-    Uh = u_vfun(Euler{1}(),VU)
+    @timeit timer "entropy projection" begin
+        # entropy var projection
+        VU = (x->VhP*x).(v_ufun(Euler{1}(),(x->Vq*x).(Q.u)))
+        Uh = u_vfun(Euler{1}(),VU)
+    end
 
-    # compute face values
-    Uf = (x->x[Nq+1:Nh,:]).(Uh)
-    UP = (x->x[mapP]).(Uf)
-    impose_BCs!(UP,problem)
+    @timeit timer "interface fluxes" begin
+        # compute face values
+        Uf = (x->x[Nq+1:Nh,:]).(Uh)
+        UP = (x->x[mapP]).(Uf)
+        impose_BCs!(UP,problem)
 
-    # simple lax friedrichs dissipation
-    (rhoM,rhouM,EM) = Uf
-    lam = abs.(rhouM./rhoM) + sqrt.(Euler{1}().γ*pfun(Euler{1}(),Uf)./rhoM)
-    LFc = .25*max.(lam,lam[mapP]).*sJ
+        # simple lax friedrichs dissipation
+        (rhoM,rhouM,EM) = Uf
+        lam = abs.(rhouM./rhoM) + sqrt.(Euler{1}().γ*pfun(Euler{1}(),Uf)./rhoM)
+        LFc = .25*max.(lam,lam[mapP]).*sJ
 
-    fSx = fS(Euler{1}(),Uf,UP)
-    normal_flux(fx,u) = @. fx*nxJ - LFc*(u[mapP]-u)
-    flux = map(normal_flux,fSx,Uf)
-    rhsQ = (x->LIFT*x).(flux)
+        fSx = fS(Euler{1}(),Uf,UP)
+        normal_flux(fx,u) = @. fx*nxJ - LFc*(u[mapP]-u)
+        flux = map(normal_flux,fSx,Uf)
+    end
+    @timeit timer "apply lift" begin
+        rhsQ = (x->LIFT*x).(flux)
+    end
 
-    # compute volume contributions using flux differencing
-    rhse = zero.(getindex.(Uh,:,1))
-    for e = 1:K
-        fill!.(rhse,0.0)
-        hadamard_sum_ATr!(rhse, (QrTr,), (x,y)->tuple(fS(Euler{1}(),x,y)),
-                          getindex.(Uh,:,e); skip_index=(i,j)->(i>Nq)&&(j>Nq))
-        for fld = 1:length(rhse)
-            rhsQ[fld][:,e] .+= Ph*rhse[fld]
+    @timeit timer "flux differencing" begin
+        # compute volume contributions using flux differencing
+
+        rhse = zero.(getindex.(Uh,:,1))
+        for e = 1:K
+        # rhse_cache = [zero.(getindex.(Uh,:,1)) for _ = 1:Threads.nthreads()]
+        # @threaded for e = 1:K
+        #     rhse = rhse_cache[Threads.threadid()]
+            fill!.(rhse,0.0)
+            hadamard_sum_ATr!(rhse, (QrTr,), (x,y)->tuple(fS(Euler{1}(),x,y)),
+                              getindex.(Uh,:,e); skip_index=(i,j)->(i>Nq)&&(j>Nq))
+            for fld = 1:length(rhse)
+                mul!(view(rhsQ[fld],:,e),Ph,rhse[fld],1.,1.)
+            end
         end
     end
 
@@ -185,7 +213,7 @@ dt = T/Nsteps
 
 # "Perform time-stepping"
 resQ = zero(Q)
-#@gif
+#@gif for i = 1:Nsteps
 for i = 1:Nsteps
     for INTRK = 1:5
         rhsQ = rhs(Q,SBP_ops,rd,md,problem)
@@ -196,8 +224,11 @@ for i = 1:Nsteps
 
     if i%interval==0 || i==Nsteps
         println("Time step $i out of $Nsteps")
-        # scatter((x->rd.Vp*x).((x,Q[1])),zcolor=rd.Vp*Q[1],msw=0,ms=2,cam=(0,90))
+        # zz = rd.Vp*(Q[1])
+        # scatter(rd.Vp*x,zz,zcolor=zz,msw=0,ms=2,cam=(0,90),leg=false)
     end
-end #every interval
+#end every interval
+end
 
-scatter((x->rd.Vp*x).((x,Q[1])),msw=0,ms=1.5,leg=false)
+show(timer)
+# scatter((x->rd.Vp*x).((x,Q[1])),msw=0,ms=1.5,leg=false)
