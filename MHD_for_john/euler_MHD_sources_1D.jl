@@ -25,9 +25,9 @@ macro threaded(expr)
 end
 
 N = 1
-K1D = 2000
-CFL = .001
-T = .0000001
+K1D = 100
+CFL = .00001
+T = .0001
 interval = 50
 
 const timer = TimerOutput()
@@ -81,24 +81,57 @@ function add_source!(rhsQ,Q,md,problem::MHD)
     @unpack x = md
     u = @. Q[2]/Q[1]
     σ = 1.0
-    Ez = 1000 #10000.0
+    Ez = 10000.0
     By = 1.0
-    # @. rhsQ[2] += σ*(Ez-By*u)*By
-    # @. rhsQ[3] += σ*(Ez-By*u)*Ez
+    @. rhsQ[2] += σ*(Ez-By*u)*By
+    @. rhsQ[3] += σ*(Ez-By*u)*Ez
     return nothing
 end
 function impose_BCs!(UP,problem::MHD)
 
-    ρP,ρuP,EP = UP
-    UBC_left = prim_to_cons(Euler{1}(),u0(-1,problem))
-    UP[2][1] = UBC_left[2] # set inflow momentum
-    UP[3][1] = UBC_left[3] # set inflow energy (should set based on temp?)
+    γ = Euler{1}().γ
+    R = 8.3145 # gas constant
+    cv = R/(γ-1)
+    cp = cv + R
 
-    # pP = pfun(Euler{1}(),getindex.(UP,2)) # right pressure - extrapolate
-    # UBC_right = prim_to_cons(Euler{1}(),getindex.(UP,2))
-    # UP[2][2] = UBC_right[2] # set inflow momentum
-    # UP[3][2] = UBC_right[3] # set inflow energy (should set based on temp?)
+    # left BC:
+    ρL = UP[1][1]
+    uL = UP[2][1] / ρL
+    EL = UP[3][1]
+
+    T0 = 61.3483371*2.391387e+02
+    T = T0 - uL^2/(2*cp)
+    # T = (1 + (γ-1)/2*Mach_inflow^2)*T0
+    # a = sqrt(γ*R*T)
+    # Mach_inflow = uL/a
+
+    # cp/cv = 1.4, cv + R = cp => cp/cv = γ = 1 + R/cv -> cv = R/(γ-1)
+    e = cv*T
+    E_inflow = ρL*(e + .5*uL^2)
+
+    # impose left BCs
+    UP[2][1] = prim_to_cons(Euler{1}(),u0(-1,problem))[2] # free stream momentum
+    UP[3][1] = E_inflow
+
+    # # right BC
+    # ρR = UP[1][2]
+    # uR = UP[2][2] / ρR
+    # ER = UP[3][2]
+    # pR = pfun(Euler{1}(),(ρR,ρR*uR,ER))
+    #
+    # e = ER/ρR - .5*uR^2 # E = ρ (e + 1/2*u^2)
+    # T = e / cv # e = cv*T
+    # a = sqrt(γ*R*T)
+    # # a = sqrt(γ*pR/ρR)
+    # Mach_outflow = uR/a
+    # if Mach_outflow < 1
+    #     p_outflow = 14.7292
+    #     e = p_outflow/(ρR*(γ-1))
+    #     E_outflow = ρR*(e + .5*uR^2)
+    #     UP[3][2] = E_outflow
+    # end
 end
+
 make_domain(VX,problem::MHD) = VX = @. .5*(1+VX)*.125
 
 ###########################################
@@ -231,4 +264,4 @@ for i = 1:Nsteps
 end
 
 show(timer)
-# scatter((x->rd.Vp*x).((x,Q[1])),msw=0,ms=1.5,leg=false)
+scatter((x->rd.Vp*x).((x,Q[1])),msw=0,ms=1.5,leg=false)
