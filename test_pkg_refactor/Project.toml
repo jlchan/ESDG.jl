@@ -1,0 +1,11 @@
+[deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+EntropyStableEuler = "afeafd78-3f85-4602-b848-ed3fb24127e1"
+FluxDiffUtils = "61bfa2bf-ac51-4dc3-9c62-6a5180432d13"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+LoopVectorization = "bdcacae8-1622-11e9-2a5c-532679323890"
+NodesAndModes = "7aca2e03-f7e2-4192-9ec8-f4ca66d597fb"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+Setfield = "efcf1570-3423-57d1-acb7-fd33fddbac46"
+StartUpDG = "472ebc20-7c99-4d4b-9470-8fde4e9faa0f"
+UnPack = "3a884ed6-31ef-47d7-9d2a-63182c4928ed"
