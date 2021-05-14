@@ -11,6 +11,9 @@ using StructArrays: components,foreachfield
 using LinearAlgebra
 using MAT # read from .mat files 
 using Triangulate, Printf
+using RecipesBase
+using ColorTypes:HSV
+
 using CheapThreads
 
 export tmap!
@@ -22,6 +25,7 @@ end
 
 include("ModalESDG.jl")
 export hybridized_SBP_operators,ModalESDG
+
 include("DiagESBP.jl")
 include("NodalESDG.jl")
 export DiagESummationByParts,NodalESDG
@@ -37,5 +41,8 @@ export triangulateIO_to_VXYEToV,get_node_boundary_tags,
 # convenience constructs for some simple meshes
 include("triangulate_example_meshes.jl")
 export rectangular_domain,square_domain,square_hole_domain,scramjet,refine
+
+include("triangulate_plotting.jl")
+export MeshPlotter,BoundaryTagPlotter
 
 end

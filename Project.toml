@@ -5,11 +5,13 @@ version = "0.1.0"
 
 [deps]
 CheapThreads = "b630d9fa-e28e-4980-896d-83ce5e2106b2"
+ColorTypes = "3da002f7-5984-5a60-b8a6-cbb66c0b333f"
 LazyArrays = "5078a376-72f3-5289-bfd5-ec5146d43c02"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MAT = "23992714-dd62-5051-b70f-ba57cb901cac"
 NodesAndModes = "7aca2e03-f7e2-4192-9ec8-f4ca66d597fb"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+RecipesBase = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
 Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 StartUpDG = "472ebc20-7c99-4d4b-9470-8fde4e9faa0f"
