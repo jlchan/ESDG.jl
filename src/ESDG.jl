@@ -17,6 +17,8 @@ export tmap!
 end
 
 
+export hadamard_sum_ATr!
+include("flux_differencing.jl")
 
 # support for triangular meshes via Triangulate.jl (Jonathan Shewchuk's Triangle software)
 export triangulateIO_to_VXYEToV,get_node_boundary_tags,
