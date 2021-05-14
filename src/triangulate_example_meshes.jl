@@ -12,7 +12,7 @@ function triangulate_demo_domain(h = .05)
 end
 
 # domain on xlims x ylims = [xmin,xmas] x [ymin,ymax]
-function rectangular_domain(h = .1; xlims = [-1,1],ylims = [-1,1],segment_markers=[1,1,1,1])
+function rectangular_domain(h = .1; xlims = [-1,1],ylims = [-1,1],segment_markers=[1,2,3,4])
     triin=Triangulate.TriangulateIO()
     triin.pointlist=Matrix{Cdouble}([xlims[1] ylims[1];
                                      xlims[2] ylims[1];
