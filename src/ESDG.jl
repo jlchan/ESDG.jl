@@ -13,12 +13,20 @@ using Triangulate, Printf
 using RecipesBase, Colors
 
 using CheapThreads
+using ThreadingUtilities
 
-export tmap!
+export tmap!, resetCheapThreads
 @inline function tmap!(f,out,x)
     @batch for i in eachindex(x)
         @inbounds out[i] = f(x[i])
     end
+    return out # good practice for mutating functions?
+end
+
+# if CheapThreads freezes, this might fix it. Must run manually (not sure how to automatically detect freezes). 
+function resetCheapThreads()
+    CheapThreads.reset_workers!()
+    ThreadingUtilities.reinitialize_tasks!()
 end
 
 include("ModalESDG.jl")
