@@ -1,14 +1,12 @@
 module ESDG
 
 using Reexport
-@reexport using NodesAndModes
 @reexport using StartUpDG
 
-using StaticArrays
-using StructArrays
-using StructArrays: components,foreachfield
+@reexport using StaticArrays: SVector
+@reexport using StructArrays: StructArray,components,foreachfield
 
-using LinearAlgebra
+using SparseArrays
 using MAT # read from .mat files 
 using Triangulate, Printf
 using RecipesBase
