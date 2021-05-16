@@ -7,10 +7,10 @@ using Reexport
 @reexport using StructArrays: StructArray,components,foreachfield
 
 using SparseArrays
-using MAT # read from .mat files 
+
+using LinearAlgebra, MAT # for SBP
 using Triangulate, Printf
-using RecipesBase
-using ColorTypes:HSV
+using RecipesBase, Colors
 
 using CheapThreads
 

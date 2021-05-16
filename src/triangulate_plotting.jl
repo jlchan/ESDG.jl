@@ -2,7 +2,7 @@
     MeshPlotter(VX,VY,EToV)
     MeshPlotter(triout::TriangulateIO)
 
-Plot recipe to plot a mesh. . Usage: plot(MeshPlotter(triout))
+Plot recipe to plot a mesh. Usage: plot(MeshPlotter(triout))
 """
 struct MeshPlotter{Tv,Ti}
     VX::Vector{Tv}
@@ -42,11 +42,7 @@ end
     triout = m.triout
     tags = unique(triout.segmentmarkerlist)
     num_colors = length(tags)
-    if num_colors==1
-        colors = [HSV(0,1,1)]
-    else
-        colors = range(HSV(0,1,1), stop=HSV(360-360÷num_colors,1,1), length=num_colors)
-    end
+    colors = distinguishable_colors(num_colors)
     xseg = zeros(2,size(triout.segmentlist,2))
     yseg = zeros(2,size(triout.segmentlist,2))
     segcolor = HSV{Float32}[]
