@@ -22,25 +22,24 @@ export tmap!
 end
 
 include("ModalESDG.jl")
-export hybridized_SBP_operators,ModalESDG
+export hybridized_SBP_operators, ModalESDG
 
 include("DiagESBP.jl")
 include("NodalESDG.jl")
-export DiagESummationByParts,NodalESDG
+export DiagESummationByParts, NodalESDG
 
 include("flux_differencing.jl")
 export hadamard_sum_ATr!
 
 # support for triangular meshes via Triangulate.jl (Jonathan Shewchuk's Triangle software)
 include("triangulate_utils.jl")
-export triangulateIO_to_VXYEToV,get_node_boundary_tags,
-       plot_mesh,plot_mesh!,plot_segment_tags,plot_segment_tags!
+export triangulateIO_to_VXYEToV, get_node_boundary_tags, refine
 
-# convenience constructs for some simple meshes
+# some prebuilt meshes
 include("triangulate_example_meshes.jl")
-export rectangular_domain,square_domain,square_hole_domain,scramjet,refine
+export rectangular_domain, square_domain, square_hole_domain, scramjet 
 
 include("triangulate_plotting.jl")
-export MeshPlotter,BoundaryTagPlotter
+export MeshPlotter, BoundaryTagPlotter # mesh plot recipes
 
 end
