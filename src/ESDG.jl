@@ -2,13 +2,11 @@ module ESDG
 
 using Reexport
 @reexport using StartUpDG
+@reexport using StaticArrays
+@reexport using StructArrays
 
-@reexport using StaticArrays: SVector
-@reexport using StructArrays: StructArray,components,foreachfield
-
-using SparseArrays
-
-using LinearAlgebra, MAT # for SBP
+using LinearAlgebra, SparseArrays 
+using MAT # for SBP node reading
 using Triangulate, Printf
 using RecipesBase, Colors
 
@@ -23,7 +21,11 @@ export tmap!, resetCheapThreads
     return out # good practice for mutating functions?
 end
 
-# if CheapThreads freezes, this might fix it. Must run manually (not sure how to automatically detect freezes). 
+"""
+    function resetCheapThreads()
+
+If CheapThreads freezes, this might fix it. Must run manually (not sure how to automatically detect freezes). 
+"""
 function resetCheapThreads()
     CheapThreads.reset_workers!()
     ThreadingUtilities.reinitialize_tasks!()
@@ -39,7 +41,7 @@ export DiagESummationByParts, NodalESDG
 include("flux_differencing.jl")
 export hadamard_sum_ATr!
 
-# support for triangular meshes via Triangulate.jl (Jonathan Shewchuk's Triangle software)
+# triangular meshes via Triangulate.jl (Jonathan Shewchuk's Triangle software)
 include("triangulate_utils.jl")
 export triangulateIO_to_VXYEToV, get_node_boundary_tags, refine
 
