@@ -2,7 +2,7 @@
 
 A package for creating discretizations of time-dependent hyperbolic PDEs using energy or entropy stable high order discontinuous Galerkin methods on conforming unstructured meshes consisting of triangular, quadrilateral, or hexahedral elements.
 
-These codes are inspired by the Matlab codes for the book [Nodal Discontinuous Galerkin methods](https://link.springer.com/book/10.1007/978-0-387-72067-8) by Hesthaven and Warburton (2007).  While unstructured meshes are supported, all demos use uniform meshes, and the codebase is intended mainly for experimentation and method development.
+These codes are inspired by the Matlab codes for the book [Nodal Discontinuous Galerkin methods](https://link.springer.com/book/10.1007/978-0-387-72067-8) by Hesthaven and Warburton (2007).  
 
 ## References
 The discretizations used are based on the following references:
