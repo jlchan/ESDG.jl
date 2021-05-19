@@ -31,14 +31,14 @@ Find Triangle segment labels of boundary faces. Returns two arguments:
 - boundary_face_tags: tags of faces on the boundary
 - boundary_faces: list of faces on the boundary of the domain
 """
-function get_boundary_face_labels(triout::TriangulateIO,md::MeshData{2})
+function get_boundary_face_labels(triout::TriangulateIO,rd::RefElemData{2,Tri},md::MeshData{2})
     segmentlist = sort(triout.segmentlist,dims=1)
     boundary_faces = findall(vec(md.FToF) .== 1:length(md.FToF))
     boundary_face_tags = zeros(Int,length(boundary_faces))
     for (f,boundary_face) in enumerate(boundary_faces)
         element = (boundary_face - 1) ÷ rd.Nfaces + 1
         face    = (boundary_face - 1) % rd.Nfaces + 1
-        vertex_ids = sort(EToV[element,rd.fv[face]])
+        vertex_ids = sort(md.EToV[element,rd.fv[face]])
         tag_id = findfirst(c->view(segmentlist,:,c)==vertex_ids,axes(segmentlist,2))
         boundary_face_tags[f] = triout.segmentmarkerlist[tag_id]
     end
@@ -50,8 +50,8 @@ end
 
 Computes node_tags = Nfp x Nfaces * num_elements array where each entry is a Triangulate tag number.
 """
-function get_node_boundary_tags(triout::TriangulateIO,md::MeshData{2},rd::RefElemData{2,Tri})
-    boundary_face_tags,boundary_faces = get_boundary_face_labels(triout,md)
+function get_node_boundary_tags(triout::TriangulateIO,rd::RefElemData{2,Tri},md::MeshData{2})
+    boundary_face_tags,boundary_faces = get_boundary_face_labels(triout,rd,md)
     node_tags = zeros(Int,size(md.xf,1)÷rd.Nfaces,md.K*rd.Nfaces) # make Nfp x Nfaces*num_elements
     for (i,boundary_face) in enumerate(boundary_faces)
         node_tags[:,boundary_face] .= boundary_face_tags[i]
