@@ -39,25 +39,47 @@ struct DiagESummationByParts{T<:AbstractElemShape,DIM,Tv,Ti}
     Qrst::NTuple{DIM,Matrix{Tv}} # differentiation operators
     Ef::Matrix{Tv} # face node extraction operator/"interpolation" to face nodes
     Fmask::Vector{Ti} # index of volume nodes on faces
+    nrstJ::NTuple{DIM,Vector{Tv}} # scaled outward normals on reference element
 end
 
 """
     function DiagESummationByParts(elementType::Tri, N; quadrature_strength = 2*N-1)
+    function DiagESummationByParts(elementType::Quad, N)
 
 Returns a DiagESummationByParts object and also the corresponding RefElemData.
 """
+function DiagESummationByParts(elementType::Quad, N)
+    
+    # 2D SBP nodes/weights
+    r1D,w1D = gauss_lobatto_quad(0,0,N)
+    sq,rq = vec.(NodesAndModes.meshgrid(r1D)) # this is to match ordering of nrstJ
+    wr,ws = vec.(NodesAndModes.meshgrid(w1D)) 
+    wq = wr.*ws
+    quad_rule_vol = (rq,sq,wq)
+    quad_rule_face = (r1D,w1D)
+
+    # build polynomial reference element using quad rules
+    rd_sbp = RefElemData(elementType, N; quad_rule_vol=quad_rule_vol, quad_rule_face=quad_rule_face)
+
+    @unpack wf = rd_sbp
+    Qr_sbp = rd_sbp.M*rd_sbp.Dr
+    Qs_sbp = rd_sbp.M*rd_sbp.Ds
+    
+    Ef,Fmask = build_Ef_Fmask(rd_sbp)
+
+    return DiagESummationByParts(elementType,N,(rq,sq),wq,wf,(Qr_sbp,Qs_sbp),Ef,vec(Fmask),rd_sbp.nrstJ)
+end
+
 function DiagESummationByParts(elementType::Tri, N; quadrature_strength = 2*N-1)
     quad_rule_vol, quad_rule_face = diagE_sbp_nodes(elementType, N; quadrature_strength=quadrature_strength)
 
     # build polynomial reference element using quad rules
     rd_sbp = RefElemData(elementType, N; quad_rule_vol=quad_rule_vol, quad_rule_face=quad_rule_face)
 
-    return DiagESummationByParts(elementType, N, rd_sbp), rd_sbp
+    return DiagESummationByParts(elementType, N, rd_sbp)
 end
-    
-function DiagESummationByParts(elementType::Tri, N, rd_sbp::RefElemData)
-    
-    # determine Fmask = indices of face nodes among volume nodes
+
+function build_Ef_Fmask(rd_sbp::RefElemData)
     @unpack wq,wf,rq,sq,rf,sf,Nfaces = rd_sbp   
     rf,sf = (x->reshape(x,length(rf)÷Nfaces,Nfaces)).((rf,sf))
     Fmask = zeros(Int,length(rf)÷Nfaces,Nfaces) # 
@@ -70,6 +92,13 @@ function DiagESummationByParts(elementType::Tri, N, rd_sbp::RefElemData)
             Ef[id .+ (f-1)*size(rf,1),i] .= 1
         end
     end
+    return Ef,Fmask
+end
+    
+function DiagESummationByParts(elementType::Tri, N, rd_sbp::RefElemData)
+    
+    # determine Fmask = indices of face nodes among volume nodes
+    Ef,Fmask = build_Ef_Fmask(rd_sbp)
 
     # build traditional SBP operators from hybridized operators. 
     Qrh,Qsh,_ = hybridized_SBP_operators(rd_sbp)
@@ -80,5 +109,5 @@ function DiagESummationByParts(elementType::Tri, N, rd_sbp::RefElemData)
     Qr_sbp = Vh_sbp'*Qrh*Vh_sbp
     Qs_sbp = Vh_sbp'*Qsh*Vh_sbp
 
-    return DiagESummationByParts(elementType,N,(rq,sq),wq,wf,(Qr_sbp,Qs_sbp),Ef,vec(Fmask))
+    return DiagESummationByParts(elementType,N,(rq,sq),wq,wf,(Qr_sbp,Qs_sbp),Ef,vec(Fmask),rd_sbp.nrstJ)
 end

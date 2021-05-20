@@ -3,7 +3,7 @@ module ESDG
 using Reexport
 @reexport using StartUpDG
 @reexport using StaticArrays
-@reexport using StructArrays
+# @reexport using StructArrays # don't do this - doesn't export master branch?
 
 using LinearAlgebra, SparseArrays 
 using MAT # for SBP node reading
@@ -42,14 +42,14 @@ include("flux_differencing.jl")
 export hadamard_sum_ATr!
 
 # triangular meshes via Triangulate.jl (Jonathan Shewchuk's Triangle software)
-include("triangulate_utils.jl")
+include("mesh/triangulate_utils.jl")
 export triangulateIO_to_VXYEToV, get_node_boundary_tags, refine
 
 # some prebuilt meshes
-include("triangulate_example_meshes.jl")
+include("mesh/triangulate_example_meshes.jl")
 export rectangular_domain, square_domain, square_hole_domain, scramjet 
 
-include("triangulate_plotting.jl")
+include("mesh/triangulate_plotting.jl")
 export MeshPlotter, BoundaryTagPlotter # mesh plot recipes
 
 end
