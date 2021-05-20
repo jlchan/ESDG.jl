@@ -30,55 +30,6 @@ function diagE_sbp_nodes(elem::Tri, N; quadrature_strength=2*N-1)
     return (r,s,w),quad_rule_face 
 end
 
-struct DiagESummationByParts{T<:AbstractElemShape,DIM,Tv,Ti}
-    elementType::T
-    N::Int
-    points::NTuple{DIM,Vector{Tv}} # sbp nodes
-    wq::Vector{Tv} # volume weights
-    wf::Vector{Tv} # face weights
-    Qrst::NTuple{DIM,Matrix{Tv}} # differentiation operators
-    Ef::Matrix{Tv} # face node extraction operator/"interpolation" to face nodes
-    Fmask::Vector{Ti} # index of volume nodes on faces
-    nrstJ::NTuple{DIM,Vector{Tv}} # scaled outward normals on reference element
-end
-
-"""
-    function DiagESummationByParts(elementType::Tri, N; quadrature_strength = 2*N-1)
-    function DiagESummationByParts(elementType::Quad, N)
-
-Returns a DiagESummationByParts object and also the corresponding RefElemData.
-"""
-function DiagESummationByParts(elementType::Quad, N)
-    
-    # 2D SBP nodes/weights
-    r1D,w1D = gauss_lobatto_quad(0,0,N)
-    sq,rq = vec.(NodesAndModes.meshgrid(r1D)) # this is to match ordering of nrstJ
-    wr,ws = vec.(NodesAndModes.meshgrid(w1D)) 
-    wq = wr.*ws
-    quad_rule_vol = (rq,sq,wq)
-    quad_rule_face = (r1D,w1D)
-
-    # build polynomial reference element using quad rules
-    rd_sbp = RefElemData(elementType, N; quad_rule_vol=quad_rule_vol, quad_rule_face=quad_rule_face)
-
-    @unpack wf = rd_sbp
-    Qr_sbp = rd_sbp.M*rd_sbp.Dr
-    Qs_sbp = rd_sbp.M*rd_sbp.Ds
-    
-    Ef,Fmask = build_Ef_Fmask(rd_sbp)
-
-    return DiagESummationByParts(elementType,N,(rq,sq),wq,wf,(Qr_sbp,Qs_sbp),Ef,vec(Fmask),rd_sbp.nrstJ)
-end
-
-function DiagESummationByParts(elementType::Tri, N; quadrature_strength = 2*N-1)
-    quad_rule_vol, quad_rule_face = diagE_sbp_nodes(elementType, N; quadrature_strength=quadrature_strength)
-
-    # build polynomial reference element using quad rules
-    rd_sbp = RefElemData(elementType, N; quad_rule_vol=quad_rule_vol, quad_rule_face=quad_rule_face)
-
-    return DiagESummationByParts(elementType, N, rd_sbp)
-end
-
 function build_Ef_Fmask(rd_sbp::RefElemData)
     @unpack wq,wf,rq,sq,rf,sf,Nfaces = rd_sbp   
     rf,sf = (x->reshape(x,length(rf)÷Nfaces,Nfaces)).((rf,sf))
@@ -94,9 +45,63 @@ function build_Ef_Fmask(rd_sbp::RefElemData)
     end
     return Ef,Fmask
 end
+
+struct DiagESummationByParts{T<:AbstractElemShape,DIM,Tv,Ti}
+    elementType::T
+    N::Int # poly degree
+    points::NTuple{DIM,Vector{Tv}} # sbp nodes
+    wq::Vector{Tv} # volume weights
+    Qrst::NTuple{DIM,Matrix{Tv}} # differentiation matrices
+    wf::Vector{Tv} # face weights
+    nrstJ::NTuple{DIM,Vector{Tv}} # scaled outward normals on reference element
+    Fmask::Vector{Ti} # face indices into volume nodes, e.g., vol_nodes[Fmask] = face_nodes
+    Ef::Matrix{Tv} # face node extraction operator/"interpolation" to face nodes
+end
+
+"""
+    function DiagESummationByParts(elementType::Tri, N; quadrature_strength = 2*N-1)
+    function DiagESummationByParts(elementType::Quad, N)
+    function DiagESummationByParts!(elementType, N, rd::RefElemData) 
+
+Returns a DiagESummationByParts object. For `DiagESummationByParts!`, if `rd::RefElemData` is provided 
+as an argument, it is modified to make sure that quadrature and face nodes match the SBP nodes.
+"""
+function DiagESummationByParts(elementType, N; kwargs...)
+    # build polynomial reference element using quad rules
+    rd_sbp = RefElemData(elementType, N) # just initialize to default, will get overwritten
+    return DiagESummationByParts!(elementType, N, rd_sbp; kwargs...)
+end
+
+function DiagESummationByParts!(elementType::Quad, N, rd::RefElemData{2,Quad})
+
+    # make 2D SBP nodes/weights
+    r1D,w1D = gauss_lobatto_quad(0,0,N)
+    sq,rq = vec.(NodesAndModes.meshgrid(r1D)) # this is to match ordering of nrstJ
+    wr,ws = vec.(NodesAndModes.meshgrid(w1D)) 
+    wq = wr.*ws
+    quad_rule_vol = (rq,sq,wq)
+    quad_rule_face = (r1D,w1D)
+
+    rd_sbp = RefElemData(elementType, N, quad_rule_vol=quad_rule_vol, quad_rule_face=quad_rule_face)
     
-function DiagESummationByParts(elementType::Tri, N, rd_sbp::RefElemData)
+    @unpack wf = rd_sbp
+    Qr_sbp = rd_sbp.M*rd_sbp.Dr
+    Qs_sbp = rd_sbp.M*rd_sbp.Ds
     
+    Ef,Fmask = build_Ef_Fmask(rd_sbp)
+
+    rd = rd_sbp # modify rd to match SBP nodes
+
+    return DiagESummationByParts(elementType,N,(rq,sq),wq,(Qr_sbp,Qs_sbp),wf,rd_sbp.nrstJ,vec(Fmask),Ef)
+end
+
+function DiagESummationByParts!(elementType::Tri, N, rd::RefElemData{2,Tri}; quadrature_strength=2*N-1)
+    
+    quad_rule_vol, quad_rule_face = diagE_sbp_nodes(elementType, N; quadrature_strength=quadrature_strength)
+
+    # build polynomial reference element using quad rules
+    rd_sbp = RefElemData(elementType, N; quad_rule_vol=quad_rule_vol, quad_rule_face=quad_rule_face)
+
     # determine Fmask = indices of face nodes among volume nodes
     Ef,Fmask = build_Ef_Fmask(rd_sbp)
 
@@ -105,9 +110,12 @@ function DiagESummationByParts(elementType::Tri, N, rd_sbp::RefElemData)
 
     # See Section 3.2 of [High-order entropy stable dG methods for the SWE](https://arxiv.org/pdf/2005.02516.pdf) by Wu and Chan 2021.
     # [DOI](https://doi.org/10.1016/j.camwa.2020.11.006)
-    Vh_sbp = [I(length(rq)); Ef]
+    Vh_sbp = [I(length(rd_sbp.rq)); Ef]
     Qr_sbp = Vh_sbp'*Qrh*Vh_sbp
     Qs_sbp = Vh_sbp'*Qsh*Vh_sbp
 
-    return DiagESummationByParts(elementType,N,(rq,sq),wq,wf,(Qr_sbp,Qs_sbp),Ef,vec(Fmask),rd_sbp.nrstJ)
+    rd = rd_sbp
+
+    return DiagESummationByParts(elementType,N,rd_sbp.rstq,rd_sbp.wq,(Qr_sbp,Qs_sbp),
+                                 rd_sbp.wf,rd_sbp.nrstJ,vec(Fmask),Ef)
 end
