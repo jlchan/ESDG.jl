@@ -5,7 +5,7 @@
 
 Computes and accumulates (A.*F(u,u'))*1 into rhs. 
 """ 
-function hadamard_sum_ATr!(rhs, ATr, F, u, skip_index=(i,j)->false)
+@inline function hadamard_sum_ATr!(rhs, ATr, F, u, skip_index=(i,j)->false)
     rows,cols = axes(ATr)
     for i in cols
         ui = u[i]
@@ -25,7 +25,7 @@ end
 Given a tuple of operators `ATr_list` and a flux `F(UL,UR)` which returns a tuple of outputs, this will 
 accumulate rhs = ∑_i sum(A_i.*F(u,u')[i],dims=2).
 """
-function hadamard_sum_ATr!(rhs, ATr_list::NTuple{N}, F, u, skip_index=(i,j)->false) where {N}
+@inline function hadamard_sum_ATr!(rhs, ATr_list::NTuple{N}, F, u, skip_index=(i,j)->false) where {N}
     rows,cols = axes(first(ATr_list))
     for i in cols
         ui = u[i]
@@ -40,7 +40,7 @@ function hadamard_sum_ATr!(rhs, ATr_list::NTuple{N}, F, u, skip_index=(i,j)->fal
 end
 
 # accumulate A.*F into rhs but take advantage of sparsity of A
-function hadamard_sum_ATr!(rhs, ATr::AbstractSparseMatrix, F, u)
+@inline function hadamard_sum_ATr!(rhs, ATr::AbstractSparseMatrix, F, u)
     rows = rowvals(ATr)
     # vals = nonzeros(ATr)
     for i = 1:size(ATr,2) # all ops should be same length
