@@ -424,12 +424,6 @@ git-tree-sha1 = "e262a4909eda52b6d9f1d1f0eac6537d8267a4b5"
 uuid = "476501e8-09a2-5ece-8869-fb82de89a1fa"
 version = "0.6.19"
 
-[[SafeTestsets]]
-deps = ["Test"]
-git-tree-sha1 = "36ebc5622c82eb9324005cc75e7e2cc51181d181"
-uuid = "1bc83da4-3b8d-516f-aca4-4fe02f6d838f"
-version = "0.0.1"
-
 [[SciMLBase]]
 deps = ["ArrayInterface", "CommonSolve", "ConstructionBase", "Distributed", "DocStringExtensions", "IteratorInterfaceExtensions", "LinearAlgebra", "Logging", "RecipesBase", "RecursiveArrayTools", "StaticArrays", "Statistics", "Tables", "TreeViews"]
 git-tree-sha1 = "6d159dc51ca4197855a16c1e50bdfb4decd2cc75"

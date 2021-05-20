@@ -1,0 +1,9 @@
+[deps]
+CheapThreads = "b630d9fa-e28e-4980-896d-83ce5e2106b2"
+EntropyStableEuler = "afeafd78-3f85-4602-b848-ed3fb24127e1"
+LazyArrays = "5078a376-72f3-5289-bfd5-ec5146d43c02"
+OrdinaryDiffEq = "1dea7af3-3e70-54e6-95c3-0bf5283fa5ed"
+ProfileView = "c46f51b8-102a-5cf2-8d2c-8597cb0e0da7"
+StartUpDG = "472ebc20-7c99-4d4b-9470-8fde4e9faa0f"
+StructArrays = "09ab397b-f2b6-538f-b94a-2f83cf4a842a"
+TimerOutputs = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
