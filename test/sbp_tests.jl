@@ -1,3 +1,5 @@
+using ESDG
+using LinearAlgebra
 
 @testset "Triangular DiagE operators" begin
     N = 3
@@ -14,7 +16,7 @@
     end
 end    
 
-@testset "Quad DiagE (DGSEM) operators" begin
+@testset "Quadrilateral DiagE (DGSEM) operators" begin
     N = 3
     sbp = DiagESummationByParts(Quad(),N);
     Qr,Qs = sbp.Qrst
@@ -27,9 +29,9 @@ end
     @test (norm(sum(Qr,dims=2)) < 50*eps()) && (norm(sum(Qs,dims=2)) < 50*eps())
 end   
      
-@testset "Hybridized SBP operators" begin
+@testset "Hybridized SBP operators" for elementType = [Tri(), Quad()]
     N = 3
-    rd = RefElemData(Tri(),N)
+    rd = RefElemData(elementType,N)
     Qrh,Qsh,VhP,Ph = hybridized_SBP_operators(rd)
     @unpack r,rq,rf = rd
     rh = [rq;rf]        

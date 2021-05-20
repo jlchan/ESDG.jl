@@ -1,3 +1,4 @@
+using ESDG
 
 @testset "Test premade meshes" for premade_mesh in [square_hole_domain, rectangular_domain]
     triout = premade_mesh()
