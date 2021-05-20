@@ -36,7 +36,7 @@ export hybridized_SBP_operators, ModalESDG
 
 include("DiagESBP.jl")
 include("NodalESDG.jl")
-export DiagESummationByParts, NodalESDG
+export DiagESummationByParts, DiagESummationByParts!, NodalESDG
 
 include("flux_differencing.jl")
 export hadamard_sum_ATr!
