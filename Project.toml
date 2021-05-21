@@ -19,6 +19,8 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 StructArrays = "09ab397b-f2b6-538f-b94a-2f83cf4a842a"
 ThreadingUtilities = "8290d209-cae3-49c0-8002-c8c24d57dab5"
 Triangulate = "f7e6ffb2-c36d-4f8f-a77e-16e897189344"
+TriplotBase = "981d1d27-644d-49a2-9326-4793e63143c3"
+TriplotRecipes = "808ab39a-a642-4abf-81ff-4cb34ebbffa3"
 
 [compat]
 julia = "1"
