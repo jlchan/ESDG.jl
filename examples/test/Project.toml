@@ -1,0 +1,8 @@
+[deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
+ESDG = "a091946d-b497-4a09-a37c-7a3577425ecb"
+GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
+Triangulate = "f7e6ffb2-c36d-4f8f-a77e-16e897189344"
+TriplotBase = "981d1d27-644d-49a2-9326-4793e63143c3"
+TriplotRecipes = "808ab39a-a642-4abf-81ff-4cb34ebbffa3"

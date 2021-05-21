@@ -52,4 +52,7 @@ export rectangular_domain, square_domain, square_hole_domain, scramjet
 include("mesh/triangulate_plotting.jl")
 export MeshPlotter, BoundaryTagPlotter # mesh plot recipes
 
+include("ode_utils.jl")
+export monitor_callback
+
 end
