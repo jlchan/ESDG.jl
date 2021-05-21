@@ -1,9 +1,7 @@
-# using SparseArrays
-
 """
     function hadamard_sum_ATr!(rhs, ATr, F, u, skip_index=(i,j)->false)
 
-Computes and accumulates (A.*F(u,u'))*1 into rhs. 
+Computes and accumulates `sum(A.*F(u,u'),dims=2)` into `rhs`. 
 """ 
 @inline function hadamard_sum_ATr!(rhs, ATr, F, u, skip_index=(i,j)->false)
     rows,cols = axes(ATr)
@@ -23,7 +21,7 @@ end
     function hadamard_sum_ATr!(rhs, ATr_list::NTuple{N}, F, u, skip_index=(i,j)->false) where {N}
 
 Given a tuple of operators `ATr_list` and a flux `F(UL,UR)` which returns a tuple of outputs, this will 
-accumulate rhs = ∑_i sum(A_i.*F(u,u')[i],dims=2).
+accumulate ∑_i `sum(A_i.*F(u,u')[i],dims=2)` into `rhs`.
 """
 @inline function hadamard_sum_ATr!(rhs, ATr_list::NTuple{N}, F, u, skip_index=(i,j)->false) where {N}
     rows,cols = axes(first(ATr_list))
