@@ -37,4 +37,4 @@ end
 cb = monitoring_callback(10)
 
 # can't believe this just works.
-sol = solve(prob,SDIRK2(),dt = .1,save_everystep=false, callback=cb)
+sol = solve(prob,Tsit5(),dt = .1,save_everystep=false, callback=cb)

@@ -7,7 +7,7 @@ using ESDG
 using TimerOutputs # note: this is the NullOutput branch
 
 N = 3
-K1D = 10
+K1D = 20
 CFL = .1
 rd = RefElemData(Quad(), N)
 sbp = DiagESummationByParts!(Quad(),N,rd) # modify rd 
@@ -74,8 +74,9 @@ eqn = EntropyStableEuler.Euler{2}()
 @inline two_pt_flux_logs(QL,QR) = fS_prim_log(EntropyStableEuler.Euler{2}(),QL,QR)
 @inline cons_to_prim_logs(u) = cons_to_prim_beta_log(EntropyStableEuler.Euler{2}(),u)
 
-# timer = TimerOutput()
-timer = NullTimer()
+timer = TimerOutput()
+# timer = NullTimer()
+
 cache = (;create_cache(eqn,rd,md,sbp)..., equation=eqn, is_boundary_node, 
         fS_prim_log = two_pt_flux_logs, fS = two_pt_flux, dissipation=LxF_dissipation, 
         cons_to_prim_logs, solver = nothing, timer) 
@@ -85,24 +86,25 @@ function rhs!(dU,U,cache,t)
     @unpack rxJ,sxJ,ryJ,syJ,J,nxJ,nyJ,sJ,mapP = md
     @unpack QrskewTr,QsskewTr,invm,Fmask,wf = cache
     @unpack equation, fS_prim_log, fS, dissipation = cache
-    @unpack cons_to_prim_logs,Uf,Qlog,solver = cache
+    @unpack cons_to_prim_logs,Uf,Qlog = cache
     @unpack timer = cache
     
-    @timeit timer "Qlog" begin
+    # @timeit timer "Qlog" begin
         tmap!(cons_to_prim_logs,Qlog,U)
-    end
+        # map!(cons_to_prim_logs,Qlog,U)
+    # end
 
-    @timeit timer "get face vals" begin
+    # @timeit timer "get face vals" begin
         @batch for e = 1:size(U,2)
             for (i,vol_id) in enumerate(Fmask)        
                 Uf[i,e] = U[vol_id,e]        
             end
         end
-    end
+    # end
 
     @batch for e = 1:md.K
 
-        @timeit_debug timer "hadamard_sum" begin        
+        # @timeit timer "hadamard_sum" begin        
             rhse = cache.rhse_threads[Threads.threadid()]
             fill!(rhse,zero(eltype(rhse)))
 
@@ -111,9 +113,9 @@ function rhs!(dU,U,cache,t)
             
             hadamard_sum_ATr!(rhse, (QxTr,QyTr), fS_prim_log, view(Qlog,:,e)) 
             # hadamard_sum_ATr!(rhse, (QxTr,QyTr), fS, view(U,:,e)) 
-        end
+        # end
 
-        @timeit timer "interface fluxes" begin
+        # @timeit timer "interface fluxes" begin
             for (i,vol_id) = enumerate(Fmask)
                 UM = Uf[i,e]
                 normal = SVector{2}(nxJ[i,e], nyJ[i,e]) / sJ[i,e]
@@ -127,16 +129,18 @@ function rhs!(dU,U,cache,t)
                 val = (Fx * nxJ[i,e] + Fy * nyJ[i,e] + diss*sJ[i,e]) * wf[i]
                 rhse[vol_id] += val
             end
-        end
+        # end
 
-        @timeit timer "store output" begin
+        # @timeit timer "store output" begin
             @. rhse = -rhse / J[1,e] # split up broadcasts to avoid allocations
             @. dU[:,e] = invm * rhse             
-        end
+        # end
     end
 
     return nothing
 end
+
+
 
 U = StructArray{SVector{nvariables(eqn),Float64}}(undef,size(md.x)...)
 U .= ((x,y)->initial_condition(eqn,x,y)).(md.xyz...)
@@ -155,8 +159,8 @@ dt0 = CFL * h / CN
 tspan = (0.0,.5)
 ode = ODEProblem(rhs!,U,tspan,cache)
 sol = solve(ode, SSPRK43(), dt=dt0, save_everystep=false, callback=monitor_callback())
-U = sol.u[end]
 
+U = sol.u[end]
 zz = vec(rd.Vp*StructArrays.component(U,1))
 scatter(vec(rd.Vp*md.x),vec(rd.Vp*md.y),zz,zcolor=zz,ms=1,msw=0,ratio=1,cam=(0,90),leg=false)
 
