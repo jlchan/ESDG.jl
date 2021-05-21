@@ -10,6 +10,10 @@ using MAT # for SBP node reading
 using Triangulate, Printf
 using RecipesBase, Colors
 
+using TriplotRecipes
+export plotting_interpolation_matrix, DGTriPseudocolor
+include("visualization/Triplot_support.jl")
+
 using CheapThreads
 using ThreadingUtilities
 
@@ -24,7 +28,7 @@ end
 """
     function resetCheapThreads()
 
-If CheapThreads freezes, this might fix it. Must run manually (not sure how to automatically detect freezes). 
+If CheapThreads freezes, running this might fix it. Must run manually (not sure how to automatically detect freezes). 
 """
 function resetCheapThreads()
     CheapThreads.reset_workers!()
