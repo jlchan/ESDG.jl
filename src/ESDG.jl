@@ -11,13 +11,13 @@ using Triangulate, Printf
 using DiffEqBase # for callbacks
 using CheapThreads, ThreadingUtilities
 using RecipesBase, Colors
-# using TriplotRecipes
+using TriplotRecipes
 
 include("ode_utils.jl")
 export monitor_callback
 
-# include("visualization/Triplot_support.jl")
-# export plotting_interpolation_matrix, DGTriPseudocolor
+include("visualization/Triplot_support.jl")
+export plotting_interpolation_matrix, DGTriPseudocolor
 
 include("ModalESDG.jl")
 export hybridized_SBP_operators, ModalESDG
