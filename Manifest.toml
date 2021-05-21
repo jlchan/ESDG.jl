@@ -57,6 +57,12 @@ git-tree-sha1 = "ded953804d019afa9a3f98981d99b33e3db7b6da"
 uuid = "944b1d66-785c-5afd-91f1-9de20f533193"
 version = "0.7.0"
 
+[[ColorSchemes]]
+deps = ["ColorTypes", "Colors", "FixedPointNumbers", "Random", "StaticArrays"]
+git-tree-sha1 = "c8fd01e4b736013bc61b704871d20503b33ea402"
+uuid = "35d6a980-a343-548e-a6ea-1d62b119f2f4"
+version = "3.12.1"
+
 [[ColorTypes]]
 deps = ["FixedPointNumbers", "Random"]
 git-tree-sha1 = "024fe24d83e4a5bf5fc80501a314ce0d1aa35597"
@@ -369,6 +375,12 @@ version = "0.12.2"
 deps = ["Artifacts", "Dates", "Downloads", "LibGit2", "Libdl", "Logging", "Markdown", "Printf", "REPL", "Random", "SHA", "Serialization", "TOML", "Tar", "UUIDs", "p7zip_jll"]
 uuid = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 
+[[PlotUtils]]
+deps = ["ColorSchemes", "Colors", "Dates", "Printf", "Random", "Reexport", "Statistics"]
+git-tree-sha1 = "ae9a295ac761f64d8c2ec7f9f24d21eb4ffba34d"
+uuid = "995b91a9-d308-5afd-9ec6-746e21dbc043"
+version = "1.0.10"
+
 [[Preferences]]
 deps = ["TOML"]
 git-tree-sha1 = "00cfd92944ca9c760982747e9a1d0d5d86ab1e5a"
@@ -551,6 +563,21 @@ deps = ["DocStringExtensions", "Libdl", "Printf", "Test", "Triangle_jll"]
 git-tree-sha1 = "912e7ebde7fd8ea4d27aedbd31129aae5a5d8124"
 uuid = "f7e6ffb2-c36d-4f8f-a77e-16e897189344"
 version = "1.0.2"
+
+[[TriplotBase]]
+git-tree-sha1 = "45a73380a58e00978c91c4be1da9dd407bb3d14c"
+repo-rev = "master"
+repo-url = "https://github.com/pazner/TriplotBase.jl"
+uuid = "981d1d27-644d-49a2-9326-4793e63143c3"
+version = "0.1.0"
+
+[[TriplotRecipes]]
+deps = ["PlotUtils", "RecipesBase", "TriplotBase"]
+git-tree-sha1 = "286a1c4ccf3d9ef1f17a81bd35f8e22e42f4a474"
+repo-rev = "master"
+repo-url = "https://github.com/pazner/TriplotRecipes.jl"
+uuid = "808ab39a-a642-4abf-81ff-4cb34ebbffa3"
+version = "0.1.0"
 
 [[UUIDs]]
 deps = ["Random", "SHA"]
