@@ -14,7 +14,7 @@ end
 
 default_monitor(integrator) = println("on timestep $(integrator.iter), at time $(integrator.t).")
 
-# taken from https://github.com/trixi-framework/Trixi.jl/blob/99a7e2840872d0f1180a984dc034ec81be462a0b/src/callbacks_step/callbacks_step.jl#L17
+# copied from https://github.com/trixi-framework/Trixi.jl/blob/99a7e2840872d0f1180a984dc034ec81be462a0b/src/callbacks_step/callbacks_step.jl#L17-L23
 @inline function isfinished(integrator)
     # Checking for floating point equality is OK here as `DifferentialEquations.jl`
     # sets the time exactly to the final time in the last iteration
@@ -23,4 +23,4 @@ default_monitor(integrator) = println("on timestep $(integrator.iter), at time $
         integrator.iter == integrator.opts.maxiters
 end
 
-
+# TODO: add SavingCallback given a QOI functional https://tutorials.sciml.ai/html/introduction/04-callbacks_and_events.html

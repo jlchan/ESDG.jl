@@ -8,39 +8,24 @@ using Reexport
 using LinearAlgebra, SparseArrays 
 using MAT # for SBP node reading
 using Triangulate, Printf
-using RecipesBase, Colors
+using TriplotRecipes, RecipesBase, Colors
+using DiffEqBase # for callbacks
+using CheapThreads, ThreadingUtilities
 
-using TriplotRecipes
-export plotting_interpolation_matrix, DGTriPseudocolor
+include("ode_utils.jl")
+export monitor_callback
+
 include("visualization/Triplot_support.jl")
-
-using CheapThreads
-using ThreadingUtilities
-
-export tmap!, resetCheapThreads
-@inline function tmap!(f,out,x)
-    @batch for i in eachindex(x)
-        @inbounds out[i] = f(x[i])
-    end
-    return out # good practice for mutating functions?
-end
-
-"""
-    function resetCheapThreads()
-
-If CheapThreads freezes, running this might fix it. Must run manually (not sure how to automatically detect freezes). 
-"""
-function resetCheapThreads()
-    CheapThreads.reset_workers!()
-    ThreadingUtilities.reinitialize_tasks!()
-end
+export plotting_interpolation_matrix, DGTriPseudocolor
 
 include("ModalESDG.jl")
 export hybridized_SBP_operators, ModalESDG
 
 include("DiagESBP.jl")
+export DiagESummationByParts, DiagESummationByParts!
+
 include("NodalESDG.jl")
-export DiagESummationByParts, DiagESummationByParts!, NodalESDG
+export NodalESDG
 
 include("flux_differencing.jl")
 export hadamard_sum_ATr!
@@ -56,7 +41,7 @@ export rectangular_domain, square_domain, square_hole_domain, scramjet
 include("mesh/triangulate_plotting.jl")
 export MeshPlotter, BoundaryTagPlotter # mesh plot recipes
 
-include("ode_utils.jl")
-export monitor_callback
+include("misc_utils.jl")
+export tmap!, resetCheapThreads
 
 end
