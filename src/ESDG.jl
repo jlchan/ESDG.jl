@@ -2,14 +2,14 @@ module ESDG
 
 using Reexport
 @reexport using StartUpDG
-@reexport using StaticArrays
+# @reexport using StaticArrays
 # @reexport using StructArrays # don't do this - doesn't export master branch?
 
 using LinearAlgebra, SparseArrays 
 using MAT # for SBP node reading
 using Triangulate, Printf
 using DiffEqBase # for callbacks
-using CheapThreads, ThreadingUtilities
+using Polyester, ThreadingUtilities
 using RecipesBase, Colors
 using TriplotRecipes
 
@@ -43,6 +43,6 @@ include("mesh/triangulate_plotting.jl")
 export MeshPlotter, BoundaryTagPlotter # mesh plot recipes
 
 include("misc_utils.jl")
-export tmap!, resetCheapThreads
+export tmap!, resetThreads
 
 end

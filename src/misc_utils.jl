@@ -10,7 +10,9 @@ end
 
 If CheapThreads freezes, running this might fix it. Must run manually (not sure how to automatically detect freezes). 
 """
-function resetCheapThreads()
+#function resetCheapThreads()
+function resetThreads()
     CheapThreads.reset_workers!()
+    # Polyester.reset_workers!()
     ThreadingUtilities.reinitialize_tasks!()
 end
