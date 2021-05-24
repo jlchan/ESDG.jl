@@ -14,10 +14,10 @@ end
 """
     function DGTriPseudocolor(u_plot,rd::RefElemData,md::MeshData)
 
-Plots `u_plot` the solution on a triangular mesh. Assumes `size(u_plot,1)==size(rd.Vp,1)`, e.g., 
-`u_plot` is evaluated at the plotting nodes already. 
+Plots `u` the solution on a triangular mesh. Assumes `size(u_plot,1)==size(rd.Vp,2)`, e.g., 
+`u` is evaluated at interpolation nodes. 
 """
-TriplotRecipes.DGTriPseudocolor(u_plot,rd::RefElemData,md::MeshData) = DGTriPseudocolor(u_plot,rd.Vp,rd,md)
+TriplotRecipes.DGTriPseudocolor(u,rd::RefElemData,md::MeshData) = TriplotRecipes.DGTriPseudocolor(rd.Vp*u,rd.Vp,rd,md)
 
 """
     function DGTriPseudocolor(u, Nplot::Int,rd::RefElemData,md::MeshData)
