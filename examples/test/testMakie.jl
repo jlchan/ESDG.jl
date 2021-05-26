@@ -10,7 +10,7 @@ using GeometryBasics, Makie
 using LinearAlgebra
 
 N = 3
-Nplot = 25
+Nplot = 10
 elementType = Tri()
 rd = RefElemData(elementType,N)
 md = MeshData(uniform_mesh(elementType,64)...,rd)
@@ -26,11 +26,11 @@ y = @. y + .125*sin(4*pi/2 * (x-.75))*cos(pi/2*(y-.8))
 u = @. sin(pi*x)*sin(pi*y)*exp(-5*(x^2+y^2))
 u[:,1:md.K÷2] .+= .25
 zz = Vp*u
-# md_curved = @set md.xyz = (x,y);
 
-function MakieMeshPlot(u,rd::RefElemData{2},md::MeshData{2})
-    return MakieMeshPlot(rd.Vp*u,rd.Vp,rd.rst,md.xyz)
-end
+# md_curved = @set md.xyz = (x,y);
+# function MakieMeshPlot(u,rd::RefElemData{2},md::MeshData{2})
+#     return MakieMeshPlot(rd.Vp*u,rd.Vp,rd.rst,md.xyz)
+# end
 
 function MakieMeshPlot(uplot,Vp,rst::NTuple{2},xyz::NTuple{2})
 
