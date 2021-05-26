@@ -20,7 +20,7 @@ struct BoundaryTagPlotter
     triout::TriangulateIO
 end
 
-@recipe function f(m::MeshPlotter)
+RecipesBase.@recipe function f(m::MeshPlotter)
     @unpack VX,VY,EToV = m
 
     linecolor --> :black
@@ -38,7 +38,7 @@ end
     return xmesh,ymesh
 end
 
-@recipe function f(m::BoundaryTagPlotter)
+RecipesBase.@recipe function f(m::BoundaryTagPlotter)
     triout = m.triout
     tags = unique(triout.segmentmarkerlist)
     num_colors = length(tags)

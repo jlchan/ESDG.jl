@@ -10,8 +10,8 @@ using MAT # for SBP node reading
 using Triangulate, Printf
 using DiffEqBase # for callbacks
 using Polyester, ThreadingUtilities
-using RecipesBase, Colors
-using TriplotRecipes
+using RecipesBase, Colors, TriplotRecipes
+using GeometryBasics, Makie 
 
 include("ode_utils.jl")
 export monitor_callback
