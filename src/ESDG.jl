@@ -16,9 +16,6 @@ using GeometryBasics, Makie
 include("ode_utils.jl")
 export monitor_callback
 
-include("visualization/Triplot_support.jl")
-export plotting_interpolation_matrix, DGTriPseudocolor
-
 include("ModalESDG.jl")
 export hybridized_SBP_operators, ModalESDG
 
@@ -41,6 +38,10 @@ export rectangular_domain, square_domain, square_hole_domain, scramjet
 
 include("mesh/triangulate_plotting.jl")
 export MeshPlotter, BoundaryTagPlotter # mesh plot recipes
+
+include("visualization/Triplot_support.jl")
+include("visualization/Makie_support.jl")
+export plotting_interpolation_matrix, DGTriPseudocolor
 
 include("misc_utils.jl")
 export tmap!, resetThreads
