@@ -40,11 +40,7 @@ function TriplotRecipes.DGTriPseudocolor(u_plot, rst_plot, xyz_plot)
 
     Nplot,K = size(u_plot)
 
-    # triangulate plotting nodes on ref element (fast because thanks J. Shewchuk!)
-    triin = Triangulate.TriangulateIO()
-    triin.pointlist = permutedims(hcat(rst_plot...))
-    triout_plot,_ = triangulate("Q", triin)
-    t = triout_plot.trianglelist # reference element plotting triangulation
+    t = plotting_triangulation(rst_plot)
 
     # build discontinuous data on plotting triangular mesh 
     num_ref_elements = size(t,2)
