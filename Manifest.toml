@@ -909,7 +909,7 @@ version = "0.1.1"
 
 [[StartUpDG]]
 deps = ["ConstructionBase", "LinearAlgebra", "NodesAndModes", "Reexport", "Setfield", "SparseArrays", "StaticArrays", "UnPack"]
-git-tree-sha1 = "60a1af3b2cdd06c65fdd5e58dce64c061fb07ed1"
+path = "/Users/jessechan/.julia/dev/StartUpDG"
 uuid = "472ebc20-7c99-4d4b-9470-8fde4e9faa0f"
 version = "0.5.0"
 
