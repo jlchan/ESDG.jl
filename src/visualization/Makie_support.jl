@@ -1,5 +1,3 @@
-include("vis_utils.jl")
-
 # inputs = plotting points only. This should be the most general version
 
 # call example: mesh(Vp*u,(x->Vp*x).(rd.rst),(x->Vp*x).(md.xyz))
