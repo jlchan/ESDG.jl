@@ -25,7 +25,7 @@ end
 U = StructArray{SVector{4,Float64}}(undef,size(md.x)...)
 U .= initial_condition.(md.xyz...)
 
-function create_rhs_cache(equation,rd,md)
+function create_rhs_cache(equation,rd::RefElemData{Dim},md) where {Dim}
 
     Qrh,Qsh,VhP,Ph = hybridized_SBP_operators(rd)
     QrhskewTr,QshskewTr = (A->typeof(A)(-.5*(A-A'))).((Qrh,Qsh))
@@ -35,7 +35,7 @@ function create_rhs_cache(equation,rd,md)
     end
 
     # tmp variables for entropy projection
-    nvars, nvarslog = nvariables(equation), nvariables(equation) + 2
+    nvars, nvarslog = nvariables(equation), nvariables(equation) + Dim
     Uq = StructArray{SVector{nvars,Float64}}(ntuple(_->similar(md.xq),nvars)) # cons vars at quad pts
     Uh = StructArray{SVector{nvars,Float64}}(ntuple(_->similar([md.xq;md.xf]),nvars)) # entropy vars at hybridized pts
     VUq, VUh = similar(Uq), similar(Uh)  # entropy vars at quad pts
@@ -142,18 +142,8 @@ function rhs!(dU,U,rhs_cache,t)
     return nothing
 end
 
-t = 0.0
-rhs!(dU,U,rhs_cache,t)
-
-# function lorenz!(du,u,p,t)
-#     @unpack σ,β,δ = p
-#     du[1] = σ*(u[2]-u[1])
-#     du[2] = u[1]*(β-u[3]) - u[2]
-#     du[3] = u[1]*u[2] - δ*u[3]
-# end
-
-# u0 = [1.0;0.0;0.0]
-# tspan = (0.0,100.0)
-# p = (; σ=10, β=28, δ=8/3)
-# prob = ODEProblem(lorenz!,u0,tspan,p)
-# sol = solve(prob,Tsit5(),save_everystep=false,)
+dt0 = CFL * estimate_h(rd,md) / inverse_trace_constant(rd)
+tspan = (0.0,.5)
+ode = ODEProblem(rhs!,U,tspan,cache)
+sol = solve(ode, SSPRK43(), dt=dt0, save_everystep=false, callback=monitor_callback())
+show(cache.timer)
