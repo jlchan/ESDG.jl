@@ -1,15 +1,18 @@
 """
-    MeshPlotter(VX,VY,EToV)
-    MeshPlotter(triout::TriangulateIO)
+    MeshPlotter(VX,VY,EToV,fv)
+    MeshPlotter(rd::RefElemData,md::MeshData)
+    MeshPlotter(triout::TriangulateIO)    
 
-Plot recipe to plot a mesh. Usage: plot(MeshPlotter(triout))
+Plot recipe to plot a quadrilateral or triangular mesh. Usage: plot(MeshPlotter(rd,md))
 """
-struct MeshPlotter{Tv,Ti}
+struct MeshPlotter{Tv,Ti,Nfaces}
     VX::Vector{Tv}
     VY::Vector{Tv}
     EToV::Matrix{Ti}
+    fv::NTuple{Nfaces,Vector{Int}}
 end
-MeshPlotter(triout::TriangulateIO) = MeshPlotter(triangulateIO_to_VXYEToV(triout)...)
+MeshPlotter(triout::TriangulateIO) = MeshPlotter(triangulateIO_to_VXYEToV(triout)..., StartUpDG.face_vertices(Tri()))
+MeshPlotter(rd::RefElemData,md::MeshData) = MeshPlotter(md.VXYZ...,md.EToV,rd.fv)
 
 """
     BoundaryTagPlotter(triout::TriangulateIO)    
@@ -21,19 +24,21 @@ struct BoundaryTagPlotter
 end
 
 RecipesBase.@recipe function f(m::MeshPlotter)
-    @unpack VX,VY,EToV = m
+    @unpack VX,VY,EToV,fv = m
 
     linecolor --> :black
     legend --> false
     aspect_ratio --> 1
-    title --> "$(size(EToV,1)) elements"
+    # title --> "$(size(EToV,1)) elements"
 
     xmesh = Float64[]
     ymesh = Float64[]
     for vertex_ids in eachrow(EToV)
         ids = vcat(vertex_ids, vertex_ids[1])
-        append!(xmesh,[VX[ids];NaN])
-        append!(ymesh,[VY[ids];NaN])
+        for f in fv            
+            append!(xmesh,[VX[ids[f]];NaN])
+            append!(ymesh,[VY[ids[f]];NaN])
+        end
     end
     return xmesh,ymesh
 end
