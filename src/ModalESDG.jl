@@ -1,29 +1,4 @@
 """
-    function hybridized_SBP_operators(rd::RefElemData{DIMS}) 
-
-Constructs hybridized SBP operators given a RefElemData. Returns operators Qrsth...,VhP,Ph.
-"""
-function hybridized_SBP_operators(rd::RefElemData{DIMS}) where {DIMS}
-    @unpack M,Vq,Pq,Vf,wf,Drst,nrstJ = rd
-    Qrst = (D->Pq'*M*D*Pq).(Drst)
-    Ef = Vf*Pq
-    Brst = (nJ->diagm(wf.*nJ)).(nrstJ)
-    Qrsth = ((Q,B)->.5*[Q-Q' Ef'*B;-B*Ef B]).(Qrst,Brst)
-    Vh = [Vq;Vf]
-    Ph = M\transpose(Vh)
-    VhP = Vh*Pq
-    return Qrsth...,VhP,Ph
-end
-
-# function hybridized_SBP_operators(rd::RefElemData{2,Quad})
-#     Qrh,Qsh,VhP,Ph = invoke(hybridized_SBP_operators,Tuple{RefElemData{2}},rd)
-#     Qrh,Qsh = sparse.((Qrh,Qsh))
-#     droptol!(Qrh,50*eps())
-#     droptol!(Qsh,50*eps())
-#     return Qrh,Qsh,VhP,Ph
-# end
-
-"""
     struct ModalESDG{N,DIM,ElemType,F1,F2,F3} 
         volume_flux::F1 
         interface_flux::F2
@@ -89,13 +64,11 @@ function compute_entropy_projection!(Q,solver::ModalESDG,cache,eqn)
     @unpack VhP,Ph = cache
     @unpack Uq, VUq, VUh, Uh = cache
 
-    # if this freezes, try 
-    #=     CheapThreads.reset_workers!()
-           ThreadingUtilities.reinitialize_tasks!()    =#
+    # if this freezes, try resetThreads()
     StructArrays.foreachfield((uout,u)->matmul!(uout,Vq,u),Uq,Q)
-    bmap!(u->solver.cons2entropy(u,eqn),VUq,Uq) # 77.5μs
+    tmap!(u->solver.cons2entropy(u,eqn),VUq,Uq) # 77.5μs
     StructArrays.foreachfield((uout,u)->matmul!(uout,VhP,u),VUh,VUq)
-    bmap!(v->solver.entropy2cons(v,eqn),Uh,VUh) # 327.204 μs
+    tmap!(v->solver.entropy2cons(v,eqn),Uh,VUh) # 327.204 μs
 
     Nh,Nq = size(VhP)
     Uf = view(Uh,Nq+1:Nh,:) # 24.3 μs
