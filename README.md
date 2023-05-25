@@ -1,3 +1,5 @@
+# This repository is no longer maintained; please see [StartUpDG.jl](https://github.com/jlchan/StartUpDG.jl) or [Trixi.jl](https://github.com/trixi-framework/Trixi.jl/) for my current Julia-based DG codes.
+
 # ESDG.jl (**e**nergy/**e**ntropy stable **d**iscontinuous **G**alerkin)
 ## A Julia codebase for solving 1D/2D/3D time-dependent hyperbolic PDEs using energy or entropy stable high order DG methods on conforming unstructured meshes consisting of triangular, quadrilateral, or hexahedral elements.
 
